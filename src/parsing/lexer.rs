@@ -1,69 +1,102 @@
-use std::error;
-use std::fmt;
 use std::str::CharIndices;
+use std::{error, fmt};
 
 type CharPos = usize;
-type Scanned<'input> = Result<Spanned<Token<'input>>, LexError<'input>>;
+type Scanned<'input> = Result<Spanned<Token<'input>>, LexError>;
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct Span {
     pub start: CharPos,
     pub end: CharPos,
 }
 
+impl Span {
+    fn new(start: CharPos, end: CharPos) -> Self {
+        Span { start, end }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct Spanned<T> {
-    pub spanned: Span,
+    pub span: Span,
     pub node: T,
 }
 
+impl<T> Spanned<T> {
+    fn new(start: CharPos, end: CharPos, node: T) -> Self {
+        let span = Span { start, end };
+
+        Spanned { span, node }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub enum Token<'input> {
     Ident(&'input str),
     DecLit(i64),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct InputPos {
     pos: CharPos,
     value: char,
 }
 
 impl InputPos {
-    pub fn new(value: Option<(CharPos, char)>) -> Option<Self> {
+    fn new_opt(value: Option<(CharPos, char)>) -> Option<Self> {
         let (pos, value) = value?;
 
-        Some(InputPos { pos: pos, value })
+        Some(InputPos { pos, value })
     }
 }
 
-pub struct LexError<'input> {
-    tok: Spanned<Token<'input>>,
-    cause: Option<&'input error::Error>,
+pub struct LexError {
+    ch: Span,
+    cause: Option<String>,
 }
 
-impl<'input> LexError<'input> {
+impl LexError {
+    fn new(ch: Span) -> Self {
+        LexError { ch, cause: None }
+    }
+
+    fn with_cause(ch: Span, cause: &str) -> Self {
+        LexError {
+            ch,
+            cause: Some(cause.to_owned()),
+        }
+    }
+
     fn as_str(&self) -> &str {
-        "error while reading token"
+        "failed to lex token"
+    }
+
+    fn as_string(&self) -> String {
+        let msg = self.as_str();
+
+        if let Some(ref reason) = self.cause {
+            format!("{}, because: {}", msg, reason)
+        } else {
+            msg.to_string()
+        }
     }
 }
 
-impl<'input> fmt::Debug for LexError<'input> {
+impl fmt::Debug for LexError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-impl<'input> fmt::Display for LexError<'input> {
+impl fmt::Display for LexError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-impl<'input> error::Error for LexError<'input> {
+impl error::Error for LexError {
     fn description(&self) -> &str {
         self.as_str()
-    }
-
-    fn cause(&self) -> Option<&error::Error> {
-        None
     }
 }
 
@@ -79,7 +112,7 @@ impl<'input> Lexer<'input> {
 
         Lexer {
             src,
-            current: InputPos::new(chars.next()),
+            current: InputPos::new_opt(chars.next()),
             chars,
         }
     }
@@ -91,7 +124,7 @@ impl<'input> Lexer<'input> {
             return pos;
         }
 
-        CharPos::from(self.src.len())
+        self.src.len()
     }
 
     fn slice(&self, start: CharPos, end: CharPos) -> &'input str {
@@ -103,12 +136,16 @@ impl<'input> Lexer<'input> {
 
         &self.src[start..end]
     }
+
+    fn spanned<T>(&self, start: CharPos, t: T) -> Spanned<T> {
+        Spanned::new(start, self.pos(), t)
+    }
 }
 
 impl<'input> Lexer<'input> {
     fn advance(&mut self) -> Option<InputPos> {
         let curr = self.current?;
-        self.current = InputPos::new(self.chars.next());
+        self.current = InputPos::new_opt(self.chars.next());
         Some(curr)
     }
 
@@ -129,8 +166,40 @@ impl<'input> Lexer<'input> {
         self.slice(start, self.pos())
     }
 
+    fn skip_whitespace(&mut self) {
+        self.read_while(|c| c.is_whitespace());
+    }
+
+    fn scan_ident(&mut self) -> Scanned<'input> {
+        let start = self.pos();
+        let slice = self.read_while(|c| c.is_alphanumeric() || c == '_');
+        Ok(self.spanned(start, Token::Ident(slice)))
+    }
+
+    fn scan_dec_num(&mut self) -> Scanned<'input> {
+        let start = self.pos();
+        let slice = self.read_while(|c| c.is_digit(10));
+
+        let int: i64 = slice.parse().map_err(|err: std::num::ParseIntError| {
+            LexError::with_cause(Span::new(start, self.pos()), &format!("{}", err))
+        })?;
+
+        Ok(self.spanned(start, Token::DecLit(int)))
+    }
+
     fn scan_token(&mut self) -> Option<Scanned<'input>> {
-        unimplemented!()
+        self.skip_whitespace();
+        let start = self.pos();
+
+        let ch = self.current.map(|InputPos { value, .. }| value)?;
+
+        let scanned: Scanned = match ch {
+            c if c.is_alphabetic() => self.scan_ident(),
+            c if c.is_digit(10) => self.scan_dec_num(),
+            _ => Err(LexError::new(Span::new(start, start))),
+        };
+
+        Some(scanned)
     }
 }
 
@@ -144,7 +213,7 @@ impl<'input> Iterator for Lexer<'input> {
 
 #[cfg(test)]
 mod tests {
-    use super::Lexer;
+    use super::*;
 
     #[test]
     fn test_slice_returns_correct_substring() {
@@ -206,5 +275,16 @@ mod tests {
 
         let slice = lexer.read_while(|c| !c.is_digit(10));
         assert_eq!("hello", slice);
+    }
+
+    #[test]
+    fn test_scan_identifier() {
+        let source = "こんにちは";
+        let mut lexer = Lexer::new(source);
+
+        let ident = lexer.scan_token().unwrap().unwrap();
+        let expected = Spanned::new(0, source.len(), Token::Ident("こんにちは"));
+
+        assert_eq!(expected, ident);
     }
 }
