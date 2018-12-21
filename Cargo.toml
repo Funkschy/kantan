@@ -1,0 +1,7 @@
+[package]
+name = "mini-go"
+version = "0.1.0"
+authors = ["Funkschy <felixschoeller@outlook.de>"]
+edition = "2018"
+
+[dependencies]
