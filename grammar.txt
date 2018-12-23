@@ -1,0 +1,67 @@
+source_file         = top_level_decl*
+
+top_level_decl      = fn_decl
+
+fn_decl             = fn IDENTIFIER "(" param_list? ")" fn_body
+
+fn_body             = block
+
+param_list          = IDENTIFIER ":" type ( "," param_list )*
+
+type                = type_lit
+
+type_lit            = i32
+
+block               = "{" stmt_list "}"
+
+stmt_list           = stmt*
+
+stmt                = (decl_stmt | simple_stmt) ";"
+
+decl_stmt           = "let" IDENTIFIER "=" expr
+
+simple_stmt         = assign_stmt | expr_stmt
+
+assign_stmt         = expr assign_op expr
+
+assign_op           = "="
+
+expr_stmt           = expr 
+
+expr                = logic_or
+
+logic_or            = logic_and ( "or" logic_and )*
+
+logic_and           = equality ( "and" equality )*
+
+equality            = comparison (( "==" | "!=" ) comparison)*
+
+comparison          = arith_expr (( "<" | "<=" | ">" | ">=" ) arith_expr)*
+
+arith_expr          = term (( "+" | "-" ) term)*
+
+term                = factor (( "*" | "/" | "%") factor)*
+
+factor              = ( "!" | "-" ) primary_expr
+
+primary_expr        = primary call
+
+primary             = literal | "(" expr ")"
+
+call                = "(" arg_list? ")" | "[" expr "]" | "." IDENTIFIER
+
+arg_list            = expr ( "," expr )*
+
+literal             = "true" | "false" | STRING | NUMBER;
+
+--------------------------------------------------------------------------------
+
+NUMBER              = DIGIT DIGIT* ( "." DIGIT* )?
+
+DIGIT               = "0" ... "9"
+
+STRING              = """ <any char expect """>* """
+
+IDENTIFIER          = ALPHA ( ALPHA | DIGIT )*
+
+ALPHA               = "a" ... "z" | "A" ... "Z" | "_"

@@ -1,7 +1,9 @@
 [package]
-name = "mini-go"
+name = "mini-rust"
 version = "0.1.0"
 authors = ["Funkschy <felixschoeller@outlook.de>"]
 edition = "2018"
+description = "A compiler for a small subset of the Rust programming language"
+keywords = ["compiler", "rust", "parser"]
 
 [dependencies]
