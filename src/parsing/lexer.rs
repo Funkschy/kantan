@@ -1,37 +1,8 @@
 use std::str::CharIndices;
-use std::{error, fmt};
 
+use super::error::*;
 use super::token::*;
-use super::Scanner;
-
-type CharPos = usize;
-type Scanned<'input> = Result<Spanned<Token<'input>>, LexError>;
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct Span {
-    pub start: CharPos,
-    pub end: CharPos,
-}
-
-impl Span {
-    fn new(start: CharPos, end: CharPos) -> Self {
-        Span { start, end }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct Spanned<T> {
-    pub span: Span,
-    pub node: T,
-}
-
-impl<T> Spanned<T> {
-    fn new(start: CharPos, end: CharPos, node: T) -> Self {
-        let span = Span { start, end };
-
-        Spanned { span, node }
-    }
-}
+use super::*;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct InputPos {
@@ -44,56 +15,6 @@ impl InputPos {
         let (pos, value) = value?;
 
         Some(InputPos { pos, value })
-    }
-}
-
-pub struct LexError {
-    ch: Span,
-    cause: Option<String>,
-}
-
-impl LexError {
-    fn new(ch: Span) -> Self {
-        LexError { ch, cause: None }
-    }
-
-    fn with_cause(ch: Span, cause: &str) -> Self {
-        LexError {
-            ch,
-            cause: Some(cause.to_owned()),
-        }
-    }
-
-    fn as_str(&self) -> &str {
-        "failed to lex token"
-    }
-
-    fn as_string(&self) -> String {
-        let msg = self.as_str();
-
-        if let Some(ref reason) = self.cause {
-            format!("{}, because: {}", msg, reason)
-        } else {
-            msg.to_string()
-        }
-    }
-}
-
-impl fmt::Debug for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl fmt::Display for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl error::Error for LexError {
-    fn description(&self) -> &str {
-        self.as_str()
     }
 }
 
@@ -232,7 +153,7 @@ impl<'input> Lexer<'input> {
             c if c.is_digit(10) => self.scan_dec_num(),
             _ => {
                 self.advance();
-                Err(LexError::new(Span::new(start, start)))
+                Err(ParseError::LexError(LexError::new(Span::new(start, start))))
             }
         };
 
@@ -355,7 +276,7 @@ mod tests {
         let backtick = tokens.get(0);
 
         if let Some(Err(err)) = backtick {
-            assert_eq!("failed to lex token", format!("{}", err));
+            assert_eq!("[4:4] Failed to lex token", format!("{}", err));
         } else {
             panic!("Token should be some error");
         }
@@ -373,6 +294,25 @@ mod tests {
             Token::Plus,
             Token::Slash,
             Token::Minus,
+        ];
+
+        assert_eq!(expected, tokens);
+    }
+
+    #[test]
+    fn test_scan_number_in_multiple_parens() {
+        let source = "(((42)))";
+        let lexer = Lexer::new(source);
+
+        let tokens: Vec<Token> = lexer.map(|e| e.unwrap().node).collect();
+        let expected = vec![
+            Token::LParen,
+            Token::LParen,
+            Token::LParen,
+            Token::DecLit(42),
+            Token::RParen,
+            Token::RParen,
+            Token::RParen,
         ];
 
         assert_eq!(expected, tokens);
