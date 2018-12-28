@@ -118,6 +118,7 @@ impl<'input> Lexer<'input> {
         match slice {
             "i32" => Some(self.spanned(start, Token::TypeIdent(TypeIdent::I32))),
             "let" => Some(self.spanned(start, Token::Let)),
+            "fn" => Some(self.spanned(start, Token::Fn)),
             _ => None,
         }
     }
@@ -149,6 +150,8 @@ impl<'input> Lexer<'input> {
             ';' => consume_single!(self, start, Token::Semi),
             '(' => consume_single!(self, start, Token::LParen),
             ')' => consume_single!(self, start, Token::RParen),
+            '{' => consume_single!(self, start, Token::LBrace),
+            '}' => consume_single!(self, start, Token::RBrace),
             c if c.is_alphabetic() => self.scan_ident(),
             c if c.is_digit(10) => self.scan_dec_num(),
             _ => {

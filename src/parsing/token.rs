@@ -5,6 +5,7 @@ pub enum Token<'input> {
 
     // Keywords
     Let,
+    Fn,
     TypeIdent(TypeIdent),
 
     // Operators
@@ -19,6 +20,8 @@ pub enum Token<'input> {
 
     LParen, // (
     RParen, // )
+    LBrace, // {
+    RBrace, // }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
