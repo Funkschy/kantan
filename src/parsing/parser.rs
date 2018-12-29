@@ -1,7 +1,4 @@
-use super::ast::*;
-use super::error::LexError;
-use super::token::*;
-use super::*;
+use super::{ast::*, error::LexError, token::*, *};
 use std::iter::Peekable;
 
 type ExprResult<'input> = Result<Expr<'input>, ParseError<'input>>;
@@ -11,8 +8,9 @@ pub struct Parser<'input, I>
 where
     I: Scanner<'input>,
 {
-    pub source: &'input str,
+    pub(crate) source: &'input str,
     scanner: Peekable<I>,
+    err_count: usize,
 }
 
 impl<'input, I> Parser<'input, I>
@@ -26,23 +24,8 @@ where
         Parser {
             source,
             scanner: peekable,
+            err_count: 0,
         }
-    }
-
-    fn make_lex_err(span: Span, cause: &str) -> Scanned<'input> {
-        Err(ParseError::LexError(LexError::with_cause(span, cause)))
-    }
-
-    fn make_prefix_err(_token: &Spanned<Token<'input>>, cause: &str) -> ExprResult<'input> {
-        Err(ParseError::PrefixError(cause.to_owned()))
-    }
-
-    fn make_infix_err(_token: &Spanned<Token<'input>>, cause: &str) -> ExprResult<'input> {
-        Err(ParseError::InfixError(cause.to_owned()))
-    }
-
-    fn make_consume_err(token: Token<'input>) -> Scanned<'input> {
-        Err(ParseError::ConsumeError(token))
     }
 }
 
@@ -50,14 +33,15 @@ impl<'input, I> Parser<'input, I>
 where
     I: Scanner<'input>,
 {
-    pub fn parse(&mut self) -> Result<Program<'input>, ParseError<'input>> {
+    pub fn parse(&mut self) -> Program<'input> {
         let mut top_lvl_decls = vec![];
+        let as_err = |err| Stmt::Expr(Expr::Error(err));
 
         while self.scanner.peek().is_some() {
-            top_lvl_decls.push(self.top_lvl_decl()?);
+            top_lvl_decls.push(self.top_lvl_decl().unwrap_or_else(as_err));
         }
 
-        Ok(Program(top_lvl_decls))
+        Program(top_lvl_decls)
     }
 
     fn top_lvl_decl(&mut self) -> StmtResult<'input> {
@@ -76,7 +60,7 @@ where
     }
 
     fn statement(&mut self) -> StmtResult<'input> {
-        let expr = self.expression()?;
+        let expr = self.expression();
         self.consume(Token::Semi)?;
         Ok(Stmt::Expr(expr))
     }
@@ -93,8 +77,25 @@ where
         Ok(Block(stmts))
     }
 
-    pub fn expression(&mut self) -> ExprResult<'input> {
-        self.parse_expression(Precedence::None)
+    fn advance_until(&mut self, token: Token<'input>) {
+        while let Some(Ok(peek)) = self.scanner.peek() {
+            if peek.node == token {
+                break;
+            }
+
+            self.advance().unwrap();
+        }
+    }
+
+    pub fn expression(&mut self) -> Expr<'input> {
+        let as_err = |err| Expr::Error(err);
+        let expr = self.parse_expression(Precedence::None);
+
+        if expr.is_err() {
+            self.advance_until(Token::Semi);
+        }
+
+        expr.unwrap_or_else(as_err)
     }
 
     fn parse_expression(&mut self, precedence: Precedence) -> ExprResult<'input> {
@@ -113,7 +114,7 @@ where
         self.scanner.next().unwrap_or_else(|| {
             let len = self.source.len();
             let span = Span::new(len, len);
-            Self::make_lex_err(span, "Unexpected end of file")
+            self.make_lex_err(span, "Unexpected end of file")
         })
     }
 
@@ -129,16 +130,18 @@ where
         if let Token::Ident(ident) = next.node {
             Ok(ident)
         } else {
-            Err(ParseError::ConsumeError(next.node))
+            Err(self
+                .make_consume_err(next.node, Token::Ident(""))
+                .unwrap_err())
         }
     }
 
-    fn consume(&mut self, expected: Token) -> Scanned<'input> {
+    fn consume(&mut self, expected: Token<'input>) -> Scanned<'input> {
         let next = self.advance()?;
         if next.node == expected {
             Ok(next)
         } else {
-            Self::make_consume_err(next.node)
+            self.make_consume_err(next.node, expected)
         }
     }
 
@@ -159,7 +162,7 @@ where
                 let right = self.parse_expression(tok.precedence())?;
                 Ok(Expr::Binary(Box::new(left), tok, Box::new(right)))
             }
-            _ => Self::make_infix_err(token, "Invalid Token in infix rule"),
+            _ => self.make_infix_err(token),
         }
     }
 
@@ -167,12 +170,48 @@ where
         match token.node {
             Token::DecLit(lit) => Ok(Expr::DecLit(lit)),
             Token::LParen => {
-                let expr = self.expression()?;
+                let expr = self.expression();
                 self.consume(Token::RParen)?;
                 Ok(expr)
             }
-            _ => Self::make_prefix_err(token, "Invalid Token in prefix rule"),
+            Token::Minus => {
+                let next = self.expression();
+                Ok(Expr::Negate(Box::new(next)))
+            }
+            _ => self.make_prefix_err(token),
         }
+    }
+
+    fn make_lex_err(&mut self, span: Span, cause: &str) -> Scanned<'input> {
+        self.err_count += 1;
+        Err(ParseError::LexError(LexError::with_cause(span, cause)))
+    }
+
+    fn make_prefix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
+        self.err_count += 1;
+        let s = format!(
+            "[Error {}:{}] Invalid token in prefix rule: {:?}",
+            token.span.start, token.span.end, token.node
+        );
+        Err(ParseError::PrefixError(s))
+    }
+
+    fn make_infix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
+        self.err_count += 1;
+        let s = format!(
+            "[Error {}:{}] Invalid token in infix rule: {:?}",
+            token.span.start, token.span.end, token.node
+        );
+        Err(ParseError::InfixError(s))
+    }
+
+    fn make_consume_err(
+        &mut self,
+        actual: Token<'input>,
+        expected: Token<'input>,
+    ) -> Scanned<'input> {
+        self.err_count += 1;
+        Err(ParseError::ConsumeError { actual, expected })
     }
 }
 
@@ -182,12 +221,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse_with_one_error_should_have_err_count_of_one() {
+        let source = "fn err() {
+            1 ++ 2;
+            3 + 4;
+        }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![Stmt::FnDecl {
+                name: "err",
+                params: ParamList(vec![]),
+                body: Block(vec![
+                    Stmt::Expr(Expr::Error(ParseError::PrefixError(
+                        "[Error 26:26] Invalid token in prefix rule: Plus".to_owned()
+                    ))),
+                    Stmt::Expr(Expr::Binary(
+                        Box::new(Expr::DecLit(3)),
+                        Token::Plus,
+                        Box::new(Expr::DecLit(4))
+                    ))
+                ])
+            }]),
+            prg
+        );
+    }
+
+    #[test]
     fn test_parse_with_empty_main_returns_empty_fn_decl() {
         let source = "fn main() {}";
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let prg = parser.parse().unwrap();
+        let prg = parser.parse();
         assert_eq!(
             Program(vec![Stmt::FnDecl {
                 name: "main",
@@ -199,12 +267,35 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_with_one_stmt_in_main() {
+        let source = "fn main() {1 + 1;}";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![Stmt::FnDecl {
+                name: "main",
+                params: ParamList(vec![]),
+                body: Block(vec![Stmt::Expr(Expr::Binary(
+                    Box::new(Expr::DecLit(1)),
+                    Token::Plus,
+                    Box::new(Expr::DecLit(1))
+                ))])
+            }]),
+            prg
+        );
+
+        assert_eq!(0, parser.err_count);
+    }
+
+    #[test]
     fn test_parsing_number_in_parentheses_should_just_return_number() {
         let source = "((((42))))";
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression();
         assert_eq!(Expr::DecLit(42), expr);
     }
 
@@ -214,7 +305,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression();
         assert_eq!(
             Expr::Binary(
                 Box::new(Expr::DecLit(1)),
@@ -232,7 +323,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression();
         assert_eq!(
             Expr::Binary(
                 Box::new(Expr::Binary(
@@ -250,7 +341,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression();
         assert_eq!(
             Expr::Binary(
                 Box::new(Expr::Binary(
@@ -268,7 +359,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression();
         assert_eq!(
             Expr::Binary(
                 Box::new(Expr::DecLit(1)),

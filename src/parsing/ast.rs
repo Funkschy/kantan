@@ -27,5 +27,6 @@ pub struct Param<'input>(&'input str, TypeIdent);
 pub enum Expr<'input> {
     Error(ParseError<'input>),
     DecLit(i64),
+    Negate(Box<Expr<'input>>),
     Binary(Box<Expr<'input>>, Token<'input>, Box<Expr<'input>>),
 }

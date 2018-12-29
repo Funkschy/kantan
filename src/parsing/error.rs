@@ -8,7 +8,10 @@ pub enum ParseError<'input> {
     LexError(LexError),
     PrefixError(String),
     InfixError(String),
-    ConsumeError(Token<'input>),
+    ConsumeError {
+        actual: Token<'input>,
+        expected: Token<'input>,
+    },
 }
 
 impl<'input> fmt::Display for ParseError<'input> {
@@ -17,7 +20,9 @@ impl<'input> fmt::Display for ParseError<'input> {
             ParseError::LexError(err) => write!(f, "{}", err.as_string()),
             ParseError::PrefixError(err) => write!(f, "{}", err),
             ParseError::InfixError(err) => write!(f, "{}", err),
-            ParseError::ConsumeError(err) => write!(f, "Unexpected Token {:?}", err),
+            ParseError::ConsumeError { expected, actual } => {
+                write!(f, "Expected {:?}, but got {:?}", expected, actual)
+            }
         }
     }
 }
