@@ -3,6 +3,7 @@ use std::str::CharIndices;
 use super::error::*;
 use super::token::*;
 use super::*;
+use crate::types::Type;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct InputPos {
@@ -116,7 +117,7 @@ impl<'input> Lexer<'input> {
         slice: &'input str,
     ) -> Option<Spanned<Token<'input>>> {
         match slice {
-            "i32" => Some(self.spanned(start, Token::TypeIdent(TypeIdent::I32))),
+            "i32" => Some(self.spanned(start, Token::TypeIdent(Type::I32))),
             "let" => Some(self.spanned(start, Token::Let)),
             "fn" => Some(self.spanned(start, Token::Fn)),
             _ => None,
@@ -259,7 +260,7 @@ mod tests {
             Spanned::new(0, 2, Token::Let),
             Spanned::new(4, 7, Token::Ident("test")),
             Spanned::new(8, 8, Token::Colon),
-            Spanned::new(10, 12, Token::TypeIdent(TypeIdent::I32)),
+            Spanned::new(10, 12, Token::TypeIdent(Type::I32)),
             Spanned::new(14, 14, Token::Equals),
             Spanned::new(16, 16, Token::LParen),
             Spanned::new(17, 18, Token::DecLit(42)),

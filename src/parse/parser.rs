@@ -1,5 +1,6 @@
-use super::{ast::*, error::LexError, token::*, *};
 use std::iter::Peekable;
+
+use super::{ast::*, error::LexError, token::*, *};
 
 type ExprResult<'input> = Result<Expr<'input>, ParseError<'input>>;
 type StmtResult<'input> = Result<Stmt<'input>, ParseError<'input>>;

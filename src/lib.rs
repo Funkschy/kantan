@@ -1,2 +1,5 @@
+mod hir;
 #[allow(dead_code)]
-mod parsing;
+mod parse;
+mod resolve;
+mod types;

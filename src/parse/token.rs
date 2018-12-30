@@ -1,3 +1,5 @@
+use crate::types::Type;
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Token<'input> {
     Ident(&'input str),
@@ -6,7 +8,7 @@ pub enum Token<'input> {
     // Keywords
     Let,
     Fn,
-    TypeIdent(TypeIdent),
+    TypeIdent(Type),
 
     // Operators
     Equals, // =
@@ -22,11 +24,6 @@ pub enum Token<'input> {
     RParen, // )
     LBrace, // {
     RBrace, // }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum TypeIdent {
-    I32,
 }
 
 #[repr(u8)]
