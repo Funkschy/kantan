@@ -1,5 +1,6 @@
 use super::error::ParseError;
 use super::token::Token;
+use super::Spanned;
 use crate::types::Type;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -26,7 +27,7 @@ pub struct Param<'input>(&'input str, Type);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Expr<'input> {
-    Error(ParseError<'input>),
+    Error(Spanned<ParseError<'input>>),
     DecLit(i64),
     Negate(Box<Expr<'input>>),
     Binary(Box<Expr<'input>>, Token<'input>, Box<Expr<'input>>),

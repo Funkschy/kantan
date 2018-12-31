@@ -47,10 +47,10 @@ impl<'input> SymbolTable<'input> {
     }
 
     fn bind(&mut self, name: &'input str, ty: Type, is_param: bool) {
-        let scope_len = self.scopes.len();
+        let global = self.in_global_scope();
         let scope = self.scopes.last_mut().unwrap();
 
-        let kind = if scope_len == 1 {
+        let kind = if global {
             SymbolKind::Global
         } else if is_param {
             SymbolKind::Param
@@ -64,6 +64,10 @@ impl<'input> SymbolTable<'input> {
 }
 
 impl<'input> SymbolTable<'input> {
+    fn in_global_scope(&self) -> bool {
+        self.scopes.len() == 1
+    }
+
     fn lookup(&self, name: &'input str) -> Option<&Symbol> {
         for scope in self.scopes.iter().rev() {
             let symbol = scope.get(name);

@@ -157,7 +157,11 @@ impl<'input> Lexer<'input> {
             c if c.is_digit(10) => self.scan_dec_num(),
             _ => {
                 self.advance();
-                Err(ParseError::LexError(LexError::new(Span::new(start, start))))
+                let span = Span::new(start, start);
+                Err(Spanned {
+                    span,
+                    node: ParseError::LexError(LexError::new(span)),
+                })
             }
         };
 
@@ -279,7 +283,7 @@ mod tests {
         let tokens: Vec<Scanned> = lexer.skip(1).map(|e| e).collect();
         let backtick = tokens.get(0);
 
-        if let Some(Err(err)) = backtick {
+        if let Some(Err(Spanned { node: err, .. })) = backtick {
             assert_eq!("[4:4] Failed to lex token", format!("{}", err));
         } else {
             panic!("Token should be some error");

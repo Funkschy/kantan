@@ -35,7 +35,7 @@ impl<'input> From<LexError> for ParseError<'input> {
 
 #[derive(Eq, PartialEq)]
 pub struct LexError {
-    span: Span,
+    pub(crate) span: Span,
     cause: Option<String>,
 }
 

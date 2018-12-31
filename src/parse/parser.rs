@@ -2,8 +2,8 @@ use std::iter::Peekable;
 
 use super::{ast::*, error::LexError, token::*, *};
 
-type ExprResult<'input> = Result<Expr<'input>, ParseError<'input>>;
-type StmtResult<'input> = Result<Stmt<'input>, ParseError<'input>>;
+type ExprResult<'input> = Result<Expr<'input>, Spanned<ParseError<'input>>>;
+type StmtResult<'input> = Result<Stmt<'input>, Spanned<ParseError<'input>>>;
 
 pub struct Parser<'input, I>
 where
@@ -54,7 +54,7 @@ where
     }
 
     // TODO parse parameters
-    fn param_list(&mut self) -> Result<ParamList<'input>, ParseError<'input>> {
+    fn param_list(&mut self) -> Result<ParamList<'input>, Spanned<ParseError<'input>>> {
         self.consume(Token::LParen)?;
         self.consume(Token::RParen)?;
         Ok(ParamList(vec![]))
@@ -66,7 +66,7 @@ where
         Ok(Stmt::Expr(expr))
     }
 
-    fn block(&mut self) -> Result<Block<'input>, ParseError<'input>> {
+    fn block(&mut self) -> Result<Block<'input>, Spanned<ParseError<'input>>> {
         self.consume(Token::LBrace)?;
         let mut stmts = vec![];
 
@@ -126,14 +126,12 @@ where
         })
     }
 
-    fn consume_ident(&mut self) -> Result<&'input str, ParseError<'input>> {
+    fn consume_ident(&mut self) -> Result<&'input str, Spanned<ParseError<'input>>> {
         let next = self.advance()?;
         if let Token::Ident(ident) = next.node {
             Ok(ident)
         } else {
-            Err(self
-                .make_consume_err(next.node, Token::Ident(""))
-                .unwrap_err())
+            Err(self.make_consume_err(&next, Token::Ident("")).unwrap_err())
         }
     }
 
@@ -142,7 +140,7 @@ where
         if next.node == expected {
             Ok(next)
         } else {
-            self.make_consume_err(next.node, expected)
+            self.make_consume_err(&next, expected)
         }
     }
 
@@ -185,7 +183,10 @@ where
 
     fn make_lex_err(&mut self, span: Span, cause: &str) -> Scanned<'input> {
         self.err_count += 1;
-        Err(ParseError::LexError(LexError::with_cause(span, cause)))
+        Err(Spanned {
+            span,
+            node: ParseError::LexError(LexError::with_cause(span, cause)),
+        })
     }
 
     fn make_prefix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
@@ -194,7 +195,10 @@ where
             "[Error {}:{}] Invalid token in prefix rule: {:?}",
             token.span.start, token.span.end, token.node
         );
-        Err(ParseError::PrefixError(s))
+        Err(Spanned {
+            span: token.span,
+            node: ParseError::PrefixError(s),
+        })
     }
 
     fn make_infix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
@@ -203,16 +207,25 @@ where
             "[Error {}:{}] Invalid token in infix rule: {:?}",
             token.span.start, token.span.end, token.node
         );
-        Err(ParseError::InfixError(s))
+        Err(Spanned {
+            span: token.span,
+            node: ParseError::InfixError(s),
+        })
     }
 
     fn make_consume_err(
         &mut self,
-        actual: Token<'input>,
+        actual: &Spanned<Token<'input>>,
         expected: Token<'input>,
     ) -> Scanned<'input> {
         self.err_count += 1;
-        Err(ParseError::ConsumeError { actual, expected })
+        Err(Spanned {
+            span: actual.span,
+            node: ParseError::ConsumeError {
+                actual: actual.node,
+                expected,
+            },
+        })
     }
 }
 
@@ -236,9 +249,12 @@ mod tests {
                 name: "err",
                 params: ParamList(vec![]),
                 body: Block(vec![
-                    Stmt::Expr(Expr::Error(ParseError::PrefixError(
-                        "[Error 26:26] Invalid token in prefix rule: Plus".to_owned()
-                    ))),
+                    Stmt::Expr(Expr::Error(Spanned {
+                        node: ParseError::PrefixError(
+                            "[Error 26:26] Invalid token in prefix rule: Plus".to_owned()
+                        ),
+                        span: Span::new(26, 26)
+                    })),
                     Stmt::Expr(Expr::Binary(
                         Box::new(Expr::DecLit(3)),
                         Token::Plus,

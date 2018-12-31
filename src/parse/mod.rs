@@ -4,13 +4,13 @@ mod lexer;
 mod parser;
 mod token;
 
-use self::error::ParseError;
+use self::error::{LexError, ParseError};
 use self::token::Token;
 
-type Scanned<'input> = Result<Spanned<Token<'input>>, ParseError<'input>>;
+type Scanned<'input> = Result<Spanned<Token<'input>>, Spanned<ParseError<'input>>>;
 type CharPos = usize;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Span {
     pub start: CharPos,
     pub end: CharPos,
@@ -36,9 +36,18 @@ impl<T> Spanned<T> {
     }
 }
 
-pub trait Scanner<'input>:
-    Iterator<Item = Result<Spanned<Token<'input>>, ParseError<'input>>>
-{
+impl<'a> From<LexError> for Spanned<ParseError<'a>> {
+    fn from(err: LexError) -> Self {
+        let span = err.span;
+        let parse_err = ParseError::from(err);
+        Spanned {
+            span,
+            node: parse_err,
+        }
+    }
+}
+
+pub trait Scanner<'input>: Iterator<Item = Scanned<'input>> {
     fn source(&self) -> &'input str;
 }
 
