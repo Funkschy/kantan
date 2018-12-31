@@ -36,10 +36,10 @@ impl<T> Spanned<T> {
     }
 }
 
-impl<'a> From<LexError> for Spanned<ParseError<'a>> {
-    fn from(err: LexError) -> Self {
+impl<'a> From<Spanned<LexError>> for Spanned<ParseError<'a>> {
+    fn from(err: Spanned<LexError>) -> Self {
         let span = err.span;
-        let parse_err = ParseError::from(err);
+        let parse_err = ParseError::from(err.node);
         Spanned {
             span,
             node: parse_err,

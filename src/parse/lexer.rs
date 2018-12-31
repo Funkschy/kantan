@@ -129,10 +129,28 @@ impl<'input> Lexer<'input> {
         let slice = self.read_while(|c| c.is_digit(10));
 
         let int: i64 = slice.parse().map_err(|err: std::num::ParseIntError| {
-            LexError::with_cause(Span::new(start, self.pos()), &format!("{}", err))
+            Spanned::new(start, self.pos(), LexError::with_cause(&err.to_string()))
         })?;
 
         Ok(self.spanned(start, Token::DecLit(int)))
+    }
+
+    fn scan_string(&mut self) -> Scanned<'input> {
+        self.advance();
+        let start = self.pos();
+        let slice = self.read_while(|c| c != '"');
+
+        // consume last '"'
+        if self.advance().is_none() {
+            let pos = self.pos();
+            Err(Spanned::new(
+                pos,
+                pos,
+                LexError::with_cause("Reached end of file while reading string"),
+            ))?;
+        }
+
+        Ok(self.spanned(start, Token::StringLit(slice)))
     }
 
     fn scan_token(&mut self) -> Option<Scanned<'input>> {
@@ -153,6 +171,7 @@ impl<'input> Lexer<'input> {
             ')' => consume_single!(self, start, Token::RParen),
             '{' => consume_single!(self, start, Token::LBrace),
             '}' => consume_single!(self, start, Token::RBrace),
+            '"' => self.scan_string(),
             c if c.is_alphabetic() => self.scan_ident(),
             c if c.is_digit(10) => self.scan_dec_num(),
             _ => {
@@ -160,7 +179,7 @@ impl<'input> Lexer<'input> {
                 let span = Span::new(start, start);
                 Err(Spanned {
                     span,
-                    node: ParseError::LexError(LexError::new(span)),
+                    node: ParseError::LexError(LexError::new()),
                 })
             }
         };
@@ -180,6 +199,65 @@ impl<'input> Iterator for Lexer<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_scan_string_should_return_correct_string_without_parens() {
+        let source = r#""hello world""#;
+        let mut lexer = Lexer::new(&source);
+
+        let s = lexer.scan_token();
+        assert_eq!(
+            Some(Ok(Spanned::new(1, 12, Token::StringLit("hello world")))),
+            s
+        );
+
+        assert_eq!(None, lexer.scan_token());
+    }
+
+    #[test]
+    fn test_scan_string_decl() {
+        let source = r#"let s = "";"#;
+        let lexer = Lexer::new(&source);
+
+        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        assert_eq!(
+            vec![
+                Spanned::new(0, 2, Token::Let),
+                Spanned::new(4, 4, Token::Ident("s")),
+                Spanned::new(6, 6, Token::Equals),
+                Spanned::new(9, 9, Token::StringLit("")),
+                Spanned::new(10, 10, Token::Semi),
+            ],
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_scan_empty_string_should_return_correct_string_without_parens() {
+        let source = r#""""#;
+        let mut lexer = Lexer::new(&source);
+
+        let s = lexer.scan_token();
+        assert_eq!(Some(Ok(Spanned::new(1, 1, Token::StringLit("")))), s);
+    }
+
+    #[test]
+    fn test_scan_string_should_return_lexerror_when_reaching_eof() {
+        let source = r#""hello world"#;
+        let mut lexer = Lexer::new(&source);
+
+        let s = lexer.scan_token();
+        assert_eq!(
+            Some(Err(Spanned::new(
+                12,
+                12,
+                ParseError::from(LexError::with_cause(
+                    "Reached end of file while reading string"
+                ))
+            ))),
+            s
+        );
+    }
 
     #[test]
     fn test_slice_returns_correct_substring() {
@@ -284,7 +362,7 @@ mod tests {
         let backtick = tokens.get(0);
 
         if let Some(Err(Spanned { node: err, .. })) = backtick {
-            assert_eq!("Failed to lex token", format!("{}", err));
+            assert_eq!("Failed to lex token", err.to_string());
         } else {
             panic!("Token should be some error");
         }

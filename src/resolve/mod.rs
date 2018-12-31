@@ -55,8 +55,9 @@ impl<'input> Resolver<'input> {
 
     fn resolve_expr(&mut self, expr: &Expr<'input>) -> Result<Type, String> {
         match expr {
-            Expr::Error(ref err) => Err(format!("{}", err)),
+            Expr::Error(ref err) => Err(err.to_string()),
             Expr::DecLit(_) => Ok(Type::I32),
+            Expr::StringLit(_) => Ok(Type::String),
             Expr::Negate(expr) => self.resolve_expr(expr),
             Expr::Binary(l, _, r) => {
                 let left = self.resolve_expr(l)?;
@@ -69,7 +70,7 @@ impl<'input> Resolver<'input> {
     fn compare_types(expr: &Expr, first: Type, second: Type) -> Result<Type, String> {
         if first != second {
             Err(format!(
-                "Error in expression: '{:?}', Type: '{:?}' not compatible with Type: '{:?}'",
+                "Error in expression: '{}', Type: '{}' not compatible with Type: '{}'",
                 expr, first, second
             ))
         } else {

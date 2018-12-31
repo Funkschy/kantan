@@ -178,6 +178,7 @@ where
     fn prefix(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
         match token.node {
             Token::DecLit(lit) => Ok(Expr::DecLit(lit)),
+            Token::StringLit(lit) => Ok(Expr::StringLit(lit)),
             Token::LParen => {
                 let expr = self.expression();
                 self.consume(Token::RParen)?;
@@ -195,13 +196,13 @@ where
         self.err_count += 1;
         Err(Spanned {
             span,
-            node: ParseError::LexError(LexError::with_cause(span, cause)),
+            node: ParseError::LexError(LexError::with_cause(cause)),
         })
     }
 
     fn make_prefix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
         self.err_count += 1;
-        let s = format!("Invalid token in prefix rule: {:?}", token.node);
+        let s = format!("Invalid token in prefix rule: {}", token.node);
         Err(Spanned {
             span: token.span,
             node: ParseError::PrefixError(s),
@@ -210,7 +211,7 @@ where
 
     fn make_infix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
         self.err_count += 1;
-        let s = format!("Invalid token in infix rule: {:?}", token.node);
+        let s = format!("Invalid token in infix rule: {}", token.node);
         Err(Spanned {
             span: token.span,
             node: ParseError::InfixError(s),
@@ -254,9 +255,7 @@ mod tests {
                 params: ParamList(vec![]),
                 body: Block(vec![
                     Stmt::Expr(Expr::Error(Spanned {
-                        node: ParseError::PrefixError(
-                            "Invalid token in prefix rule: Plus".to_owned()
-                        ),
+                        node: ParseError::PrefixError("Invalid token in prefix rule: +".to_owned()),
                         span: Span::new(26, 26)
                     })),
                     Stmt::Expr(Expr::Binary(

@@ -1,5 +1,5 @@
 use super::token::Token;
-use super::{Span, Spanned};
+use super::Spanned;
 use std::error;
 use std::fmt;
 
@@ -21,7 +21,7 @@ impl<'input> fmt::Display for ParseError<'input> {
             ParseError::PrefixError(err) => write!(f, "{}", err),
             ParseError::InfixError(err) => write!(f, "{}", err),
             ParseError::ConsumeError { expected, actual } => {
-                write!(f, "Expected {:?}, but got {:?}", expected, actual)
+                write!(f, "Expected {}, but got {}", expected, actual)
             }
         }
     }
@@ -29,7 +29,7 @@ impl<'input> fmt::Display for ParseError<'input> {
 
 impl<'input> fmt::Display for Spanned<ParseError<'input>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = format!("{}", self.node);
+        let s = self.node.to_string();
         write!(f, "[Error {}:{}] {}", self.span.start, self.span.end, s)
     }
 }
@@ -42,18 +42,16 @@ impl<'input> From<LexError> for ParseError<'input> {
 
 #[derive(Eq, PartialEq)]
 pub struct LexError {
-    pub(crate) span: Span,
     cause: Option<String>,
 }
 
 impl LexError {
-    pub fn new(span: Span) -> Self {
-        LexError { span, cause: None }
+    pub fn new() -> Self {
+        LexError { cause: None }
     }
 
-    pub fn with_cause(span: Span, cause: &str) -> Self {
+    pub fn with_cause(cause: &str) -> Self {
         LexError {
-            span,
             cause: Some(cause.to_owned()),
         }
     }
@@ -71,7 +69,7 @@ impl LexError {
 
 impl fmt::Debug for LexError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.as_string())
+        write!(f, "{}", self)
     }
 }
 

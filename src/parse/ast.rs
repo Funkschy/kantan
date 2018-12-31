@@ -1,3 +1,5 @@
+use std::fmt;
+
 use super::error::ParseError;
 use super::token::Token;
 use super::Spanned;
@@ -33,6 +35,21 @@ pub struct Param<'input>(pub &'input str, pub Type);
 pub enum Expr<'input> {
     Error(Spanned<ParseError<'input>>),
     DecLit(i64),
+    StringLit(&'input str),
     Negate(Box<Expr<'input>>),
     Binary(Box<Expr<'input>>, Token<'input>, Box<Expr<'input>>),
+}
+
+impl<'input> fmt::Display for Expr<'input> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            Expr::Error(err) => err.to_string(),
+            Expr::DecLit(lit) => lit.to_string(),
+            Expr::StringLit(lit) => lit.to_string(),
+            Expr::Negate(expr) => expr.to_string(),
+            Expr::Binary(l, op, r) => format!("{} {} {}", l, op, r),
+        };
+
+        write!(f, "{}", s)
+    }
 }
