@@ -22,12 +22,12 @@ impl<'input> Symbol<'input> {
     }
 }
 
-struct SymbolTable<'input> {
+pub struct SymbolTable<'input> {
     scopes: Vec<HashMap<&'input str, Symbol<'input>>>,
 }
 
 impl<'input> SymbolTable<'input> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         SymbolTable {
             scopes: vec![HashMap::new()],
         }
@@ -35,18 +35,18 @@ impl<'input> SymbolTable<'input> {
 }
 
 impl<'input> SymbolTable<'input> {
-    fn scope_enter(&mut self) {
+    pub fn scope_enter(&mut self) {
         self.scopes.push(HashMap::new());
     }
 
-    fn scope_exit(&mut self) {
+    pub fn scope_exit(&mut self) {
         if self.scopes.len() <= 1 {
             panic!("Cannot exit out of global scope");
         }
         self.scopes.pop();
     }
 
-    fn bind(&mut self, name: &'input str, ty: Type, is_param: bool) {
+    pub fn bind(&mut self, name: &'input str, ty: Type, is_param: bool) {
         let global = self.in_global_scope();
         let scope = self.scopes.last_mut().unwrap();
 

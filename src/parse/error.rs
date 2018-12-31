@@ -1,5 +1,5 @@
 use super::token::Token;
-use super::Span;
+use super::{Span, Spanned};
 use std::error;
 use std::fmt;
 
@@ -24,6 +24,13 @@ impl<'input> fmt::Display for ParseError<'input> {
                 write!(f, "Expected {:?}, but got {:?}", expected, actual)
             }
         }
+    }
+}
+
+impl<'input> fmt::Display for Spanned<ParseError<'input>> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = format!("{}", self.node);
+        write!(f, "[Error {}:{}] {}", self.span.start, self.span.end, s)
     }
 }
 
@@ -52,10 +59,7 @@ impl LexError {
     }
 
     fn as_string(&self) -> String {
-        let msg = format!(
-            "[{}:{}] Failed to lex token",
-            self.span.start, self.span.end
-        );
+        let msg = "Failed to lex token";
 
         if let Some(ref reason) = self.cause {
             format!("{}, because: {}", msg, reason)

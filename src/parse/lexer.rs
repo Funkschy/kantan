@@ -284,7 +284,7 @@ mod tests {
         let backtick = tokens.get(0);
 
         if let Some(Err(Spanned { node: err, .. })) = backtick {
-            assert_eq!("[4:4] Failed to lex token", format!("{}", err));
+            assert_eq!("Failed to lex token", format!("{}", err));
         } else {
             panic!("Token should be some error");
         }

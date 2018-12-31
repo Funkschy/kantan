@@ -1,7 +1,7 @@
-mod ast;
+pub(crate) mod ast;
 mod error;
-mod lexer;
-mod parser;
+pub(crate) mod lexer;
+pub(crate) mod parser;
 mod token;
 
 use self::error::{LexError, ParseError};

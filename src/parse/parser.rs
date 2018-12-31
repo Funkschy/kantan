@@ -11,7 +11,7 @@ where
 {
     pub(crate) source: &'input str,
     scanner: Peekable<I>,
-    err_count: usize,
+    pub(crate) err_count: usize,
 }
 
 impl<'input, I> Parser<'input, I>
@@ -61,9 +61,19 @@ where
     }
 
     fn statement(&mut self) -> StmtResult<'input> {
-        let expr = self.expression();
+        let stmt = if self.peek_eq(Token::Let) {
+            self.consume(Token::Let)?;
+            let name = self.consume_ident()?;
+            self.consume(Token::Equals)?;
+            let value = self.expression();
+            Stmt::VarDecl { name, value }
+        } else {
+            let expr = self.expression();
+            Stmt::Expr(expr)
+        };
+
         self.consume(Token::Semi)?;
-        Ok(Stmt::Expr(expr))
+        Ok(stmt)
     }
 
     fn block(&mut self) -> Result<Block<'input>, Spanned<ParseError<'input>>> {
@@ -191,10 +201,7 @@ where
 
     fn make_prefix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
         self.err_count += 1;
-        let s = format!(
-            "[Error {}:{}] Invalid token in prefix rule: {:?}",
-            token.span.start, token.span.end, token.node
-        );
+        let s = format!("Invalid token in prefix rule: {:?}", token.node);
         Err(Spanned {
             span: token.span,
             node: ParseError::PrefixError(s),
@@ -203,10 +210,7 @@ where
 
     fn make_infix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
         self.err_count += 1;
-        let s = format!(
-            "[Error {}:{}] Invalid token in infix rule: {:?}",
-            token.span.start, token.span.end, token.node
-        );
+        let s = format!("Invalid token in infix rule: {:?}", token.node);
         Err(Spanned {
             span: token.span,
             node: ParseError::InfixError(s),
@@ -251,7 +255,7 @@ mod tests {
                 body: Block(vec![
                     Stmt::Expr(Expr::Error(Spanned {
                         node: ParseError::PrefixError(
-                            "[Error 26:26] Invalid token in prefix rule: Plus".to_owned()
+                            "Invalid token in prefix rule: Plus".to_owned()
                         ),
                         span: Span::new(26, 26)
                     })),
@@ -264,6 +268,30 @@ mod tests {
             }]),
             prg
         );
+    }
+
+    #[test]
+    fn test_parse_let_with_value_should_return_var_decl_stmt() {
+        let source = "fn main() {
+            let var = 5;
+        }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![Stmt::FnDecl {
+                name: "main",
+                params: ParamList(vec![]),
+                body: Block(vec![Stmt::VarDecl {
+                    name: "var",
+                    value: Expr::DecLit(5)
+                }])
+            }]),
+            prg
+        );
+
+        assert_eq!(0, parser.err_count);
     }
 
     #[test]

@@ -13,6 +13,10 @@ pub enum Stmt<'input> {
         params: ParamList<'input>,
         body: Block<'input>,
     },
+    VarDecl {
+        name: &'input str,
+        value: Expr<'input>,
+    },
     Expr(Expr<'input>),
 }
 
@@ -23,7 +27,7 @@ pub struct Block<'input>(pub Vec<Stmt<'input>>);
 pub struct ParamList<'input>(pub Vec<Param<'input>>);
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Param<'input>(&'input str, Type);
+pub struct Param<'input>(pub &'input str, pub Type);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Expr<'input> {
