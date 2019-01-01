@@ -286,7 +286,7 @@ mod tests {
                     Stmt::Expr(Spanned {
                         node: Expr::Binary(
                             Box::new(Expr::DecLit(3)),
-                            Token::Plus,
+                            Spanned::new(21, 21, Token::Plus),
                             Box::new(Expr::DecLit(4))
                         ),
                         span: Span::new(19, 23)
@@ -352,7 +352,7 @@ mod tests {
                     15,
                     Expr::Binary(
                         Box::new(Expr::DecLit(1)),
-                        Token::Plus,
+                        Spanned::new(13, 13, Token::Plus),
                         Box::new(Expr::DecLit(1))
                     )
                 ))])
@@ -384,10 +384,10 @@ mod tests {
             Spanned {
                 node: Expr::Binary(
                     Box::new(Expr::DecLit(1)),
-                    Token::Plus,
+                    Spanned::new(2, 2, Token::Plus),
                     Box::new(Expr::Binary(
                         Box::new(Expr::DecLit(2)),
-                        Token::Star,
+                        Spanned::new(6, 6, Token::Star),
                         Box::new(Expr::DecLit(3))
                     ))
                 ),
@@ -406,10 +406,10 @@ mod tests {
                 node: Expr::Binary(
                     Box::new(Expr::Binary(
                         Box::new(Expr::DecLit(2)),
-                        Token::Star,
+                        Spanned::new(2, 2, Token::Star),
                         Box::new(Expr::DecLit(3))
                     )),
-                    Token::Plus,
+                    Spanned::new(6, 6, Token::Plus),
                     Box::new(Expr::DecLit(1)),
                 ),
                 span: Span::new(0, 8)
@@ -427,10 +427,10 @@ mod tests {
                 node: Expr::Binary(
                     Box::new(Expr::Binary(
                         Box::new(Expr::DecLit(2)),
-                        Token::Plus,
+                        Spanned::new(3, 3, Token::Plus),
                         Box::new(Expr::DecLit(3))
                     )),
-                    Token::Star,
+                    Spanned::new(8, 8, Token::Star),
                     Box::new(Expr::DecLit(1)),
                 ),
                 span: Span::new(0, 10)
@@ -447,10 +447,10 @@ mod tests {
             Spanned {
                 node: Expr::Binary(
                     Box::new(Expr::DecLit(1)),
-                    Token::Plus,
+                    Spanned::new(2, 2, Token::Plus),
                     Box::new(Expr::Binary(
                         Box::new(Expr::DecLit(2)),
-                        Token::Star,
+                        Spanned::new(7, 7, Token::Star),
                         Box::new(Expr::DecLit(3))
                     ))
                 ),

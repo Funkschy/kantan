@@ -1,4 +1,3 @@
-mod hir;
 mod parse;
 mod resolve;
 mod types;
