@@ -29,9 +29,13 @@ pub struct Spanned<T> {
 }
 
 impl<T> Spanned<T> {
-    fn new(start: CharPos, end: CharPos, node: T) -> Self {
+    pub fn new(start: CharPos, end: CharPos, node: T) -> Self {
         let span = Span { start, end };
 
+        Spanned { span, node }
+    }
+
+    pub fn from_span(span: Span, node: T) -> Self {
         Spanned { span, node }
     }
 }

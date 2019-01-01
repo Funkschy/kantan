@@ -17,9 +17,9 @@ pub enum Stmt<'input> {
     },
     VarDecl {
         name: &'input str,
-        value: Expr<'input>,
+        value: Spanned<Expr<'input>>,
     },
-    Expr(Expr<'input>),
+    Expr(Spanned<Expr<'input>>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -33,7 +33,7 @@ pub struct Param<'input>(pub &'input str, pub Type);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Expr<'input> {
-    Error(Spanned<ParseError<'input>>),
+    Error(ParseError<'input>),
     DecLit(i64),
     StringLit(&'input str),
     Negate(Box<Expr<'input>>),

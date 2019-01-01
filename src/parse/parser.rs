@@ -2,7 +2,7 @@ use std::iter::Peekable;
 
 use super::{ast::*, error::LexError, token::*, *};
 
-type ExprResult<'input> = Result<Expr<'input>, Spanned<ParseError<'input>>>;
+type ExprResult<'input> = Result<Spanned<Expr<'input>>, Spanned<ParseError<'input>>>;
 type StmtResult<'input> = Result<Stmt<'input>, Spanned<ParseError<'input>>>;
 
 pub struct Parser<'input, I>
@@ -36,7 +36,13 @@ where
 {
     pub fn parse(&mut self) -> Program<'input> {
         let mut top_lvl_decls = vec![];
-        let as_err = |err| Stmt::Expr(Expr::Error(err));
+        let as_err = |err: Spanned<ParseError<'input>>| {
+            Stmt::Expr(Spanned::new(
+                err.span.start,
+                err.span.end,
+                Expr::Error(err.node),
+            ))
+        };
 
         while self.scanner.peek().is_some() {
             top_lvl_decls.push(self.top_lvl_decl().unwrap_or_else(as_err));
@@ -98,8 +104,11 @@ where
         }
     }
 
-    pub fn expression(&mut self) -> Expr<'input> {
-        let as_err = |err| Expr::Error(err);
+    pub fn expression(&mut self) -> Spanned<Expr<'input>> {
+        let as_err = |err: Spanned<ParseError<'input>>| {
+            Spanned::new(err.span.start, err.span.end, Expr::Error(err.node))
+        };
+
         let expr = self.parse_expression(Precedence::None);
 
         if expr.is_err() {
@@ -164,31 +173,47 @@ where
         })
     }
 
-    fn infix(&mut self, token: &Spanned<Token<'input>>, left: Expr<'input>) -> ExprResult<'input> {
+    fn infix(
+        &mut self,
+        token: &Spanned<Token<'input>>,
+        left: Spanned<Expr<'input>>,
+    ) -> ExprResult<'input> {
         let tok = token.node;
         match tok {
             Token::Plus | Token::Minus | Token::Star | Token::Slash => {
                 let right = self.parse_expression(tok.precedence())?;
-                Ok(Expr::Binary(Box::new(left), tok, Box::new(right)))
+                Ok(Spanned::new(
+                    left.span.start,
+                    right.span.end,
+                    Expr::Binary(Box::new(left.node), tok, Box::new(right.node)),
+                ))
             }
             _ => self.make_infix_err(token),
         }
     }
 
     fn prefix(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
+        let ok_spanned = |expr| Ok(Spanned::from_span(token.span, expr));
+
         match token.node {
-            Token::DecLit(lit) => Ok(Expr::DecLit(lit)),
-            Token::StringLit(lit) => Ok(Expr::StringLit(lit)),
+            Token::DecLit(lit) => ok_spanned(Expr::DecLit(lit)),
+            Token::StringLit(lit) => ok_spanned(Expr::StringLit(lit)),
             Token::LParen => {
-                let expr = self.expression();
+                let mut expr = self.expression();
                 self.consume(Token::RParen)?;
+                expr.span.start -= 1;
+                expr.span.end += 1;
                 Ok(expr)
             }
             Token::Minus => {
                 let next = self.expression();
-                Ok(Expr::Negate(Box::new(next)))
+                Ok(Spanned::new(
+                    token.span.start,
+                    next.span.end,
+                    Expr::Negate(Box::new(next.node)),
+                ))
             }
-            Token::Ident(ref name) => Ok(Expr::Ident(name)),
+            Token::Ident(ref name) => ok_spanned(Expr::Ident(name)),
             _ => self.make_prefix_err(token),
         }
     }
@@ -242,10 +267,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_one_error_should_have_err_count_of_one() {
-        let source = "fn err() {
-            1 ++ 2;
-            3 + 4;
-        }";
+        let source = "fn err() { 1 ++ 2; 3 + 4; }";
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -255,15 +277,20 @@ mod tests {
                 name: "err",
                 params: ParamList(vec![]),
                 body: Block(vec![
-                    Stmt::Expr(Expr::Error(Spanned {
-                        node: ParseError::PrefixError("Invalid token in prefix rule: +".to_owned()),
-                        span: Span::new(26, 26)
-                    })),
-                    Stmt::Expr(Expr::Binary(
-                        Box::new(Expr::DecLit(3)),
-                        Token::Plus,
-                        Box::new(Expr::DecLit(4))
-                    ))
+                    Stmt::Expr(Spanned {
+                        node: Expr::Error(ParseError::PrefixError(
+                            "Invalid token in prefix rule: +".to_owned()
+                        ),),
+                        span: Span::new(14, 14)
+                    }),
+                    Stmt::Expr(Spanned {
+                        node: Expr::Binary(
+                            Box::new(Expr::DecLit(3)),
+                            Token::Plus,
+                            Box::new(Expr::DecLit(4))
+                        ),
+                        span: Span::new(19, 23)
+                    })
                 ])
             }]),
             prg
@@ -272,9 +299,7 @@ mod tests {
 
     #[test]
     fn test_parse_let_with_value_should_return_var_decl_stmt() {
-        let source = "fn main() {
-            let var = 5;
-        }";
+        let source = "fn main() { let var = 5; }";
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -285,7 +310,7 @@ mod tests {
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::VarDecl {
                     name: "var",
-                    value: Expr::DecLit(5)
+                    value: Spanned::new(22, 22, Expr::DecLit(5))
                 }])
             }]),
             prg
@@ -322,10 +347,14 @@ mod tests {
             Program(vec![Stmt::FnDecl {
                 name: "main",
                 params: ParamList(vec![]),
-                body: Block(vec![Stmt::Expr(Expr::Binary(
-                    Box::new(Expr::DecLit(1)),
-                    Token::Plus,
-                    Box::new(Expr::DecLit(1))
+                body: Block(vec![Stmt::Expr(Spanned::new(
+                    11,
+                    15,
+                    Expr::Binary(
+                        Box::new(Expr::DecLit(1)),
+                        Token::Plus,
+                        Box::new(Expr::DecLit(1))
+                    )
                 ))])
             }]),
             prg
@@ -340,7 +369,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression();
+        let expr = parser.expression().node;
         assert_eq!(Expr::DecLit(42), expr);
     }
 
@@ -352,15 +381,18 @@ mod tests {
 
         let expr = parser.expression();
         assert_eq!(
-            Expr::Binary(
-                Box::new(Expr::DecLit(1)),
-                Token::Plus,
-                Box::new(Expr::Binary(
-                    Box::new(Expr::DecLit(2)),
-                    Token::Star,
-                    Box::new(Expr::DecLit(3))
-                ))
-            ),
+            Spanned {
+                node: Expr::Binary(
+                    Box::new(Expr::DecLit(1)),
+                    Token::Plus,
+                    Box::new(Expr::Binary(
+                        Box::new(Expr::DecLit(2)),
+                        Token::Star,
+                        Box::new(Expr::DecLit(3))
+                    ))
+                ),
+                span: Span::new(0, 8)
+            },
             expr
         );
 
@@ -370,15 +402,18 @@ mod tests {
 
         let expr = parser.expression();
         assert_eq!(
-            Expr::Binary(
-                Box::new(Expr::Binary(
-                    Box::new(Expr::DecLit(2)),
-                    Token::Star,
-                    Box::new(Expr::DecLit(3))
-                )),
-                Token::Plus,
-                Box::new(Expr::DecLit(1)),
-            ),
+            Spanned {
+                node: Expr::Binary(
+                    Box::new(Expr::Binary(
+                        Box::new(Expr::DecLit(2)),
+                        Token::Star,
+                        Box::new(Expr::DecLit(3))
+                    )),
+                    Token::Plus,
+                    Box::new(Expr::DecLit(1)),
+                ),
+                span: Span::new(0, 8)
+            },
             expr
         );
 
@@ -388,15 +423,18 @@ mod tests {
 
         let expr = parser.expression();
         assert_eq!(
-            Expr::Binary(
-                Box::new(Expr::Binary(
-                    Box::new(Expr::DecLit(2)),
-                    Token::Plus,
-                    Box::new(Expr::DecLit(3))
-                )),
-                Token::Star,
-                Box::new(Expr::DecLit(1)),
-            ),
+            Spanned {
+                node: Expr::Binary(
+                    Box::new(Expr::Binary(
+                        Box::new(Expr::DecLit(2)),
+                        Token::Plus,
+                        Box::new(Expr::DecLit(3))
+                    )),
+                    Token::Star,
+                    Box::new(Expr::DecLit(1)),
+                ),
+                span: Span::new(0, 10)
+            },
             expr
         );
 
@@ -406,15 +444,18 @@ mod tests {
 
         let expr = parser.expression();
         assert_eq!(
-            Expr::Binary(
-                Box::new(Expr::DecLit(1)),
-                Token::Plus,
-                Box::new(Expr::Binary(
-                    Box::new(Expr::DecLit(2)),
-                    Token::Star,
-                    Box::new(Expr::DecLit(3))
-                ))
-            ),
+            Spanned {
+                node: Expr::Binary(
+                    Box::new(Expr::DecLit(1)),
+                    Token::Plus,
+                    Box::new(Expr::Binary(
+                        Box::new(Expr::DecLit(2)),
+                        Token::Star,
+                        Box::new(Expr::DecLit(3))
+                    ))
+                ),
+                span: Span::new(0, 10)
+            },
             expr
         );
 ;

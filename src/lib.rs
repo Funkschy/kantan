@@ -4,7 +4,7 @@ mod resolve;
 mod types;
 
 use self::{
-    parse::{ast::*, lexer::Lexer, parser::Parser},
+    parse::{ast::*, lexer::Lexer, parser::Parser, Spanned},
     resolve::Resolver,
 };
 
@@ -25,7 +25,11 @@ pub fn compile(source: &str) {
 
 fn report_errors(prg: &Program) {
     for stmt in &prg.0 {
-        if let Stmt::Expr(Expr::Error(err)) = stmt {
+        if let Stmt::Expr(Spanned {
+            node: Expr::Error(err),
+            ..
+        }) = stmt
+        {
             println!("{}", err)
         }
     }
