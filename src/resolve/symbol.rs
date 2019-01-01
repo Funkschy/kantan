@@ -10,8 +10,8 @@ enum SymbolKind {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct Symbol<'input> {
-    ty: Type,
+pub struct Symbol<'input> {
+    pub ty: Type,
     kind: SymbolKind,
     name: &'input str,
 }
@@ -68,7 +68,7 @@ impl<'input> SymbolTable<'input> {
         self.scopes.len() == 1
     }
 
-    fn lookup(&self, name: &'input str) -> Option<&Symbol> {
+    pub fn lookup(&self, name: &'input str) -> Option<&Symbol> {
         for scope in self.scopes.iter().rev() {
             let symbol = scope.get(name);
             if symbol.is_some() {
@@ -79,7 +79,7 @@ impl<'input> SymbolTable<'input> {
         None
     }
 
-    fn lookup_current(&self, name: &'input str) -> Option<&Symbol> {
+    pub fn lookup_current(&self, name: &'input str) -> Option<&Symbol> {
         let last_scope = self.scopes.last().unwrap();
         last_scope.get(name)
     }

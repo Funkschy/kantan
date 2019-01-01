@@ -38,18 +38,18 @@ pub enum Expr<'input> {
     StringLit(&'input str),
     Negate(Box<Expr<'input>>),
     Binary(Box<Expr<'input>>, Token<'input>, Box<Expr<'input>>),
+    Ident(&'input str),
 }
 
 impl<'input> fmt::Display for Expr<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match self {
-            Expr::Error(err) => err.to_string(),
-            Expr::DecLit(lit) => lit.to_string(),
-            Expr::StringLit(lit) => lit.to_string(),
-            Expr::Negate(expr) => expr.to_string(),
-            Expr::Binary(l, op, r) => format!("{} {} {}", l, op, r),
-        };
-
-        write!(f, "{}", s)
+        match self {
+            Expr::Error(err) => write!(f, "{}", err),
+            Expr::DecLit(lit) => write!(f, "{}", lit),
+            Expr::StringLit(lit) => write!(f, "{}", lit),
+            Expr::Negate(expr) => write!(f, "{}", expr),
+            Expr::Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op, r)),
+            Expr::Ident(name) => write!(f, "{}", name),
+        }
     }
 }

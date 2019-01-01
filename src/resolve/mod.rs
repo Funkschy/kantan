@@ -64,6 +64,11 @@ impl<'input> Resolver<'input> {
                 let right = self.resolve_expr(r)?;
                 Self::compare_types(&expr, left, right)
             }
+            Expr::Ident(ref name) => self
+                .sym_table
+                .lookup(name)
+                .ok_or_else(|| "".to_owned())
+                .map(|sym| sym.ty),
         }
     }
 

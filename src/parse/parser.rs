@@ -188,6 +188,7 @@ where
                 let next = self.expression();
                 Ok(Expr::Negate(Box::new(next)))
             }
+            Token::Ident(ref name) => Ok(Expr::Ident(name)),
             _ => self.make_prefix_err(token),
         }
     }

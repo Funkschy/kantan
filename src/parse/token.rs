@@ -49,63 +49,28 @@ impl<'input> Token<'input> {
 
 impl<'input> fmt::Display for Token<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // for performance reasons, split into block, which needs allocation,
-        // and block, which doesn't
-
-        let mut needs_alloc = false;
-
-        // no allocation needed
-        let s = match self {
-            Token::Ident(ref name) => name,
-            Token::StringLit(ref lit) => lit,
+        match self {
+            Token::Ident(ref name) => write!(f, "{}", name),
+            Token::StringLit(ref lit) => write!(f, "{}", lit),
+            Token::DecLit(lit) => write!(f, "{}", lit.to_string()),
+            Token::TypeIdent(ty) => write!(f, "{}", ty.to_string()),
             // Keywords
-            Token::Let => "let",
-            Token::Fn => "fn",
+            Token::Let => write!(f, "let"),
+            Token::Fn => write!(f, "fn"),
             // Operators
-            Token::Equals => "=",
-            Token::Plus => "+",
-            Token::Minus => "-",
-            Token::Star => "*",
-            Token::Slash => "/",
+            Token::Equals => write!(f, "="),
+            Token::Plus => write!(f, "+"),
+            Token::Minus => write!(f, "-"),
+            Token::Star => write!(f, "*"),
+            Token::Slash => write!(f, "/"),
 
-            Token::Colon => ":",
-            Token::Semi => ";",
+            Token::Colon => write!(f, ":"),
+            Token::Semi => write!(f, ";"),
 
-            Token::LParen => "(",
-            Token::RParen => ")",
-            Token::LBrace => "{",
-            Token::RBrace => "}",
-            _ => {
-                needs_alloc = true;
-                ""
-            }
-        };
-
-        if needs_alloc {
-            let s = match self {
-                Token::DecLit(lit) => lit.to_string(),
-                Token::TypeIdent(ty) => ty.to_string(),
-                // guarantee that all cases are checked eventually
-                Token::Ident(_)
-                | Token::StringLit(_)
-                | Token::Let
-                | Token::Fn
-                | Token::Equals
-                | Token::Plus
-                | Token::Minus
-                | Token::Star
-                | Token::Slash
-                | Token::Colon
-                | Token::Semi
-                | Token::LParen
-                | Token::RParen
-                | Token::LBrace
-                | Token::RBrace => unreachable!(),
-            };
-
-            return write!(f, "{}", s);
+            Token::LParen => write!(f, "("),
+            Token::RParen => write!(f, ")"),
+            Token::LBrace => write!(f, "{{"),
+            Token::RBrace => write!(f, "}}"),
         }
-
-        write!(f, "{}", s)
     }
 }

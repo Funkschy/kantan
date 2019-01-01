@@ -18,6 +18,7 @@ pub fn compile(source: &str) {
         let mut resolver = Resolver::new();
         resolver.resolve(prg);
     } else {
+        println!("{} errors found in Program", parser.err_count);
         report_errors(&prg);
     }
 }
