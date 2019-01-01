@@ -1,16 +1,22 @@
 use self::symbol::SymbolTable;
-use crate::{parse::ast::*, parse::Spanned, types::Type};
+use super::format_error;
+use crate::{
+    parse::{ast::*, token::Token, Span, Spanned},
+    types::Type,
+};
 
 #[allow(dead_code)]
 mod symbol;
 
 pub(crate) struct Resolver<'input> {
+    source: &'input str,
     sym_table: SymbolTable<'input>,
 }
 
 impl<'input> Resolver<'input> {
-    pub fn new() -> Self {
+    pub fn new(source: &'input str) -> Self {
         Resolver {
+            source,
             sym_table: SymbolTable::new(),
         }
     }
@@ -60,25 +66,42 @@ impl<'input> Resolver<'input> {
             Expr::DecLit(_) => Ok(Type::I32),
             Expr::StringLit(_) => Ok(Type::String),
             Expr::Negate(expr) => self.resolve_expr(&Spanned::from_span(span, &*expr)),
-            Expr::Binary(l, _, r) => {
+            Expr::Binary(l, op, r) => {
                 let left = self.resolve_expr(&Spanned::from_span(span, &*l))?;
                 let right = self.resolve_expr(&Spanned::from_span(span, &*r))?;
-                Self::compare_types(&expr, left, right)
+                self.compare_types(op, expr.span, left, right)
             }
             Expr::Ident(ref name) => self
                 .sym_table
                 .lookup(name)
-                .ok_or_else(|| "".to_owned())
+                .ok_or_else(|| {
+                    format_error(
+                        self.source,
+                        span,
+                        &format!("'{}' not defined in scope", name),
+                    )
+                })
                 .map(|sym| sym.ty),
         }
     }
+}
 
-    fn compare_types(expr: &Spanned<&Expr>, first: Type, second: Type) -> Result<Type, String> {
+impl<'input> Resolver<'input> {
+    fn compare_types(
+        &self,
+        op: &Token<'input>,
+        span: Span,
+        first: Type,
+        second: Type,
+    ) -> Result<Type, String> {
         if first != second {
-            Err(format!(
-                "[Error {}:{}] Incompatible types in expression '{}': \n
-                Type: '{}' not compatible with Type: '{}'",
-                expr.span.start, expr.span.end, expr.node, first, second
+            Err(format_error(
+                self.source,
+                span,
+                &format!(
+                    "Binary operation '{}' cannot be applied to '{}' and '{}'",
+                    op, first, second,
+                ),
             ))
         } else {
             Ok(first)

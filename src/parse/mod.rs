@@ -2,7 +2,7 @@ pub(crate) mod ast;
 mod error;
 pub(crate) mod lexer;
 pub(crate) mod parser;
-mod token;
+pub(crate) mod token;
 
 use self::error::{LexError, ParseError};
 use self::token::Token;
