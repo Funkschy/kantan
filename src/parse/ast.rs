@@ -37,7 +37,7 @@ pub enum Expr<'input> {
     DecLit(i64),
     StringLit(&'input str),
     Negate(Box<Expr<'input>>),
-    Binary(Box<Expr<'input>>, Token<'input>, Box<Expr<'input>>),
+    Binary(Box<Expr<'input>>, Spanned<Token<'input>>, Box<Expr<'input>>),
     Ident(&'input str),
 }
 
@@ -48,7 +48,7 @@ impl<'input> fmt::Display for Expr<'input> {
             Expr::DecLit(lit) => write!(f, "{}", lit),
             Expr::StringLit(lit) => write!(f, "{}", lit),
             Expr::Negate(expr) => write!(f, "{}", expr),
-            Expr::Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op, r)),
+            Expr::Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op.node, r)),
             Expr::Ident(name) => write!(f, "{}", name),
         }
     }

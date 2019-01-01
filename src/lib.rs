@@ -16,7 +16,9 @@ pub fn compile(source: &str) {
 
     if parser.err_count == 0 {
         let mut resolver = Resolver::new(source);
-        resolver.resolve(prg);
+        let errors = resolver.resolve(prg);
+
+        println!("{}", errors.join("\n\n"));
     } else {
         println!("{} errors found in Program", parser.err_count);
         report_errors(&prg);
@@ -35,52 +37,58 @@ fn report_errors(prg: &Program) {
     }
 }
 
-fn format_error(source: &str, span: Span, msg: &str) -> String {
-    let (line_nr, index) = find_line(source, span.start);
+fn format_error(source: &str, expr_span: Span, err_tok_span: Span, msg: &str) -> String {
+    let (line_nr, index) = find_line_index(source, err_tok_span.start);
+
     format!(
         "error: {}\n--> {}:{}\n{}",
         msg,
         line_nr,
         index,
-        err_to_string(source, span, line_nr, index)
+        err_to_string(source, expr_span, err_tok_span, line_nr, index)
     )
 }
 
-/// Returns the line number and the char index of the first char in the line
-fn find_line(source: &str, start: usize) -> (usize, usize) {
-    let mut iter = source
-        .char_indices()
-        .rev()
-        .skip(source.len() - start)
-        .filter(|(_, c)| *c == '\n');
-
-    let line_nr = iter.clone().count() + 1;
-    let index = start - iter.next().map(|(i, _)| i).unwrap_or(0);
+fn find_line_index(source: &str, start: usize) -> (usize, usize) {
+    let iter = source.char_indices().rev().skip(source.len() - start);
+    let line_nr = iter.clone().filter(|(_, c)| *c == '\n').count() + 1;
+    let index = iter.take_while(|(_, c)| *c != '\n').count() + 1;
 
     (line_nr, index)
 }
 
-fn err_to_string(source: &str, span: Span, line_nr: usize, index: usize) -> String {
-    let mut counter = 1;
-    let iter = source.char_indices().skip_while(|(_, c)| {
-        if *c == '\n' {
-            counter += 1;
-        }
-        counter < line_nr
-    });
+fn err_to_string(
+    source: &str,
+    expr_span: Span,
+    err_tok_span: Span,
+    line_nr: usize,
+    index: usize,
+) -> String {
+    let (start_line, _) = find_line_index(source, expr_span.start);
+    let (end_line, _) = find_line_index(source, expr_span.end);
 
-    let s: String = iter
-        .skip(1)
-        .take_while(|(i, _)| *i <= span.end)
-        .map(|(_, c)| c)
+    let start_line = start_line - 1;
+
+    // the number of digits in the number displayed as string
+    let len_line_nr = (line_nr / 10) + 1;
+    let filler = " ".repeat(len_line_nr + 1);
+
+    let len = err_tok_span.end - err_tok_span.start + 1;
+    let marker = format!("{}{}", " ".repeat(index - 1), "^".repeat(len));
+
+    let lines: Vec<String> = source
+        .lines()
+        .enumerate()
+        .skip(start_line)
+        .take(end_line - start_line)
+        .map(|(nr, l)| {
+            if nr + 1 == line_nr {
+                format!("{} |{}\n{}|{}", line_nr, l, filler, marker)
+            } else {
+                format!("{}|{}", filler, l)
+            }
+        })
         .collect();
 
-    let len = span.end - span.start + 1;
-    let marker = "^".repeat(len);
-    // 1 comes from "|"
-    let dist = " ".repeat(1 + index);
-
-    s.lines()
-        .map(|l| format!(" |{}\n{}{}", l, dist, marker))
-        .collect()
+    lines.join("\n")
 }

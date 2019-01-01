@@ -17,7 +17,7 @@ pub struct Span {
 }
 
 impl Span {
-    fn new(start: CharPos, end: CharPos) -> Self {
+    pub fn new(start: CharPos, end: CharPos) -> Self {
         Span { start, end }
     }
 }
@@ -50,6 +50,17 @@ impl<'a> From<Spanned<LexError>> for Spanned<ParseError<'a>> {
         }
     }
 }
+
+impl<T: Copy> Clone for Spanned<T> {
+    fn clone(&self) -> Self {
+        Spanned {
+            span: self.span,
+            node: self.node,
+        }
+    }
+}
+
+impl<T: Copy> Copy for Spanned<T> {}
 
 pub trait Scanner<'input>: Iterator<Item = Scanned<'input>> {
     fn source(&self) -> &'input str;

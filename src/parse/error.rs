@@ -1,5 +1,4 @@
 use super::token::Token;
-use super::Spanned;
 use std::error;
 use std::fmt;
 
@@ -24,13 +23,6 @@ impl<'input> fmt::Display for ParseError<'input> {
                 write!(f, "Expected {}, but got {}", expected, actual)
             }
         }
-    }
-}
-
-impl<'input> fmt::Display for Spanned<ParseError<'input>> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = self.node.to_string();
-        write!(f, "[Error {}:{}] {}", self.span.start, self.span.end, s)
     }
 }
 

@@ -23,39 +23,42 @@ impl<'input> Resolver<'input> {
 }
 
 impl<'input> Resolver<'input> {
-    pub fn resolve(&mut self, prg: Program<'input>) {
+    pub fn resolve(&mut self, prg: Program<'input>) -> Vec<String> {
+        let mut errors: Vec<String> = vec![];
         for stmt in prg.0 {
-            if let Err(msg) = self.resolve_stmt(&stmt) {
-                println!("{}", msg);
-            }
+            self.resolve_stmt(&stmt, &mut errors);
         }
+        errors
     }
 
-    fn resolve_stmt(&mut self, stmt: &Stmt<'input>) -> Result<(), String> {
+    fn resolve_stmt(&mut self, stmt: &Stmt<'input>, errors: &mut Vec<String>) {
         match stmt {
             Stmt::VarDecl { name, ref value } => {
-                let expr = self.resolve_expr(&Spanned::from_span(value.span, &value.node))?;
-                self.sym_table.bind(name, expr, false);
+                match self.resolve_expr(&Spanned::from_span(value.span, &value.node)) {
+                    Err(msg) => errors.push(msg),
+                    Ok(expr) => self.sym_table.bind(name, expr, false),
+                };
             }
             Stmt::FnDecl { params, body, .. } => {
                 self.sym_table.scope_enter();
-
-                for stmt in &body.0 {
-                    self.resolve_stmt(&stmt)?;
-                }
 
                 for p in &params.0 {
                     self.sym_table.bind(p.0, p.1, true);
                 }
 
+                for stmt in &body.0 {
+                    self.resolve_stmt(&stmt, errors);
+                }
+
                 self.sym_table.scope_exit();
             }
             Stmt::Expr(ref expr) => {
-                self.resolve_expr(&Spanned::from_span(expr.span, &expr.node))?;
+                match self.resolve_expr(&Spanned::from_span(expr.span, &expr.node)) {
+                    Err(msg) => errors.push(msg),
+                    _ => {}
+                }
             }
         };
-
-        Ok(())
     }
 
     fn resolve_expr(&mut self, expr: &Spanned<&Expr<'input>>) -> Result<Type, String> {
@@ -78,6 +81,7 @@ impl<'input> Resolver<'input> {
                     format_error(
                         self.source,
                         span,
+                        Span::new(span.start, span.start + name.len() - 1),
                         &format!("'{}' not defined in scope", name),
                     )
                 })
@@ -89,7 +93,7 @@ impl<'input> Resolver<'input> {
 impl<'input> Resolver<'input> {
     fn compare_types(
         &self,
-        op: &Token<'input>,
+        op: &Spanned<Token<'input>>,
         span: Span,
         first: Type,
         second: Type,
@@ -98,9 +102,10 @@ impl<'input> Resolver<'input> {
             Err(format_error(
                 self.source,
                 span,
+                op.span,
                 &format!(
                     "Binary operation '{}' cannot be applied to '{}' and '{}'",
-                    op, first, second,
+                    op.node, first, second,
                 ),
             ))
         } else {

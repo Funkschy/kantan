@@ -185,7 +185,7 @@ where
                 Ok(Spanned::new(
                     left.span.start,
                     right.span.end,
-                    Expr::Binary(Box::new(left.node), tok, Box::new(right.node)),
+                    Expr::Binary(Box::new(left.node), *token, Box::new(right.node)),
                 ))
             }
             _ => self.make_infix_err(token),
