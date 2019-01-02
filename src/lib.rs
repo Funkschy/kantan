@@ -11,7 +11,14 @@ use self::{
 
 pub fn compile(source: &str) {
     #[cfg(windows)]
-    ansi_term::enable_ansi_support();
+    {
+        if let Err(code) = ansi_term::enable_ansi_support() {
+            eprintln!(
+                "Could not initialise windows ansi support. Error code: {}",
+                code
+            );
+        }
+    }
 
     let lexer = Lexer::new(source);
     let mut parser = Parser::new(lexer);
@@ -59,7 +66,21 @@ fn format_error(source: &str, expr_span: Span, err_tok_span: Span, msg: &str) ->
 fn find_line_index(source: &str, start: usize) -> (usize, usize) {
     let iter = source.char_indices().rev().skip(source.len() - start);
     let line_nr = iter.clone().filter(|(_, c)| *c == '\n').count() + 1;
-    let index = iter.take_while(|(_, c)| *c != '\n').count() + 1;
+
+    // For some reason, the index on windows is exactly 4 units shorter, than it should be
+    let index = {
+        let value = iter.take_while(|(_, c)| *c != '\n').count() + 1;
+
+        #[cfg(windows)]
+        {
+            value + 4
+        }
+
+        #[cfg(not(windows))]
+        {
+            value
+        }
+    };
 
     (line_nr, index)
 }

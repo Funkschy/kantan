@@ -140,7 +140,7 @@ impl<'input> Resolver<'input> {
     ) -> Result<Type, String> {
         if first != second {
             Err(format!(
-                "{} - incompatible types",
+                "{} - not allowed",
                 format_error(
                     self.source,
                     span,
