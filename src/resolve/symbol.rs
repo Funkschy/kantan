@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::types::Type;
+use crate::{Span, Spanned};
 
 #[derive(Debug, Eq, PartialEq)]
 enum SymbolKind {
@@ -23,7 +24,7 @@ impl<'input> Symbol<'input> {
 }
 
 pub struct SymbolTable<'input> {
-    scopes: Vec<HashMap<&'input str, Symbol<'input>>>,
+    scopes: Vec<HashMap<&'input str, Spanned<Symbol<'input>>>>,
 }
 
 impl<'input> SymbolTable<'input> {
@@ -46,7 +47,7 @@ impl<'input> SymbolTable<'input> {
         self.scopes.pop();
     }
 
-    pub fn bind(&mut self, name: &'input str, ty: Type, is_param: bool) {
+    pub fn bind(&mut self, name: &'input str, span: Span, ty: Type, is_param: bool) {
         let global = self.in_global_scope();
         let scope = self.scopes.last_mut().unwrap();
 
@@ -58,7 +59,7 @@ impl<'input> SymbolTable<'input> {
             SymbolKind::Local
         };
 
-        let symbol = Symbol::new(name, ty, kind);
+        let symbol = Spanned::from_span(span, Symbol::new(name, ty, kind));
         scope.insert(name, symbol);
     }
 }
@@ -68,7 +69,7 @@ impl<'input> SymbolTable<'input> {
         self.scopes.len() == 1
     }
 
-    pub fn lookup(&self, name: &'input str) -> Option<&Symbol> {
+    pub fn lookup(&self, name: &'input str) -> Option<&Spanned<Symbol>> {
         for scope in self.scopes.iter().rev() {
             let symbol = scope.get(name);
             if symbol.is_some() {
@@ -79,7 +80,7 @@ impl<'input> SymbolTable<'input> {
         None
     }
 
-    pub fn lookup_current(&self, name: &'input str) -> Option<&Symbol> {
+    pub fn lookup_current(&self, name: &'input str) -> Option<&Spanned<Symbol>> {
         let last_scope = self.scopes.last().unwrap();
         last_scope.get(name)
     }
@@ -94,22 +95,34 @@ mod tests {
         let mut sym_table = SymbolTable::new();
         assert_eq!(1, sym_table.scopes.len());
 
-        sym_table.bind("x", Type::I32, false);
+        sym_table.bind("x", Span::new(1, 1), Type::I32, false);
         sym_table.scope_enter();
 
         assert_eq!(
-            Some(&Symbol::new("x", Type::I32, SymbolKind::Global)),
+            Some(&Spanned::new(
+                1,
+                1,
+                Symbol::new("x", Type::I32, SymbolKind::Global),
+            )),
             sym_table.lookup("x")
         );
         assert_eq!(None, sym_table.lookup_current("x"));
 
         sym_table.scope_exit();
         assert_eq!(
-            Some(&Symbol::new("x", Type::I32, SymbolKind::Global)),
+            Some(&Spanned::new(
+                1,
+                1,
+                Symbol::new("x", Type::I32, SymbolKind::Global),
+            )),
             sym_table.lookup("x")
         );
         assert_eq!(
-            Some(&Symbol::new("x", Type::I32, SymbolKind::Global)),
+            Some(&Spanned::new(
+                1,
+                1,
+                Symbol::new("x", Type::I32, SymbolKind::Global),
+            )),
             sym_table.lookup_current("x")
         );
     }

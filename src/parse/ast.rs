@@ -11,12 +11,12 @@ pub struct Program<'input>(pub Vec<Stmt<'input>>);
 #[derive(Debug, Eq, PartialEq)]
 pub enum Stmt<'input> {
     FnDecl {
-        name: &'input str,
+        name: Spanned<&'input str>,
         params: ParamList<'input>,
         body: Block<'input>,
     },
     VarDecl {
-        name: &'input str,
+        name: Spanned<&'input str>,
         value: Spanned<Expr<'input>>,
     },
     Expr(Spanned<Expr<'input>>),
@@ -29,7 +29,7 @@ pub struct Block<'input>(pub Vec<Stmt<'input>>);
 pub struct ParamList<'input>(pub Vec<Param<'input>>);
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Param<'input>(pub &'input str, pub Type);
+pub struct Param<'input>(pub Spanned<&'input str>, pub Type);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Expr<'input> {
@@ -39,6 +39,11 @@ pub enum Expr<'input> {
     Negate(Box<Expr<'input>>),
     Binary(Box<Expr<'input>>, Spanned<Token<'input>>, Box<Expr<'input>>),
     Ident(&'input str),
+    Assign {
+        name: &'input str,
+        eq: Spanned<Token<'input>>,
+        value: Box<Spanned<Expr<'input>>>,
+    },
 }
 
 impl<'input> fmt::Display for Expr<'input> {
@@ -50,6 +55,7 @@ impl<'input> fmt::Display for Expr<'input> {
             Expr::Negate(expr) => write!(f, "{}", expr),
             Expr::Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op.node, r)),
             Expr::Ident(name) => write!(f, "{}", name),
+            Expr::Assign { name, value, .. } => write!(f, "{} = {}", name, value.node),
         }
     }
 }

@@ -22,13 +22,11 @@ decl_stmt           = "let" IDENTIFIER "=" expr
 
 simple_stmt         = assign_stmt | expr_stmt
 
-assign_stmt         = expr assign_op expr
+expr_stmt           = expr
 
-assign_op           = "="
+expr                = logic_or | assign_expr
 
-expr_stmt           = expr 
-
-expr                = logic_or
+assign_expr         = logic_and "=" expr
 
 logic_or            = logic_and ( "or" logic_and )*
 

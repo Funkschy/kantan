@@ -33,13 +33,15 @@ pub enum Token<'input> {
 #[derive(Copy, Clone, PartialOrd, PartialEq, Ord, Eq, Debug)]
 pub enum Precedence {
     None = 0,
-    Sum = 1,
-    Product = 2,
+    Assign = 1,
+    Sum = 2,
+    Product = 3,
 }
 
 impl<'input> Token<'input> {
     pub fn precedence(&self) -> Precedence {
         match self {
+            Token::Equals => Precedence::Assign,
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
             _ => Precedence::None,

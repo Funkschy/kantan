@@ -1,3 +1,5 @@
+use ansi_term::Colour::{Red, Yellow};
+
 mod parse;
 mod resolve;
 mod types;
@@ -8,6 +10,9 @@ use self::{
 };
 
 pub fn compile(source: &str) {
+    #[cfg(windows)]
+    ansi_term::enable_ansi_support();
+
     let lexer = Lexer::new(source);
     let mut parser = Parser::new(lexer);
 
@@ -17,21 +22,24 @@ pub fn compile(source: &str) {
         let mut resolver = Resolver::new(source);
         let errors = resolver.resolve(prg);
 
-        println!("{}", errors.join("\n\n"));
+        print_error(&errors.join("\n\n"));
     } else {
-        println!("{} errors found in Program", parser.err_count);
-        report_errors(&prg);
+        report_errors(&source, &prg);
     }
 }
 
-fn report_errors(prg: &Program) {
+fn print_error(msg: &str) {
+    eprintln!("{}", msg);
+}
+
+fn report_errors(source: &str, prg: &Program) {
     for stmt in &prg.0 {
         if let Stmt::Expr(Spanned {
             node: Expr::Error(err),
-            ..
+            span,
         }) = stmt
         {
-            println!("{}", err)
+            print_error(&format_error(&source, *span, *span, &err.to_string()));
         }
     }
 }
@@ -44,7 +52,7 @@ fn format_error(source: &str, expr_span: Span, err_tok_span: Span, msg: &str) ->
         msg,
         line_nr,
         index,
-        err_to_string(source, expr_span, err_tok_span, line_nr, index)
+        err_to_string(source, expr_span, err_tok_span, line_nr, index, false)
     )
 }
 
@@ -62,6 +70,7 @@ fn err_to_string(
     err_tok_span: Span,
     line_nr: usize,
     index: usize,
+    warning: bool,
 ) -> String {
     let (start_line, _) = find_line_index(source, expr_span.start);
     let (end_line, _) = find_line_index(source, expr_span.end);
@@ -74,6 +83,11 @@ fn err_to_string(
 
     let len = err_tok_span.end - err_tok_span.start + 1;
     let marker = format!("{}{}", " ".repeat(index - 1), "^".repeat(len));
+    let marker = if warning {
+        Yellow.paint(marker)
+    } else {
+        Red.paint(marker)
+    };
 
     let lines: Vec<String> = source
         .lines()

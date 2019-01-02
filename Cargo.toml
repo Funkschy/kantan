@@ -7,3 +7,4 @@ description = "A compiler for a small subset of the Rust programming language"
 keywords = ["compiler", "rust", "parser"]
 
 [dependencies]
+ansi_term = "0.11"

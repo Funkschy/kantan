@@ -145,10 +145,14 @@ where
         })
     }
 
-    fn consume_ident(&mut self) -> Result<&'input str, Spanned<ParseError<'input>>> {
+    fn consume_ident(&mut self) -> Result<Spanned<&'input str>, Spanned<ParseError<'input>>> {
         let next = self.advance()?;
-        if let Token::Ident(ident) = next.node {
-            Ok(ident)
+        if let Spanned {
+            span,
+            node: Token::Ident(ident),
+        } = next
+        {
+            Ok(Spanned::from_span(span, ident))
         } else {
             Err(self.make_consume_err(&next, Token::Ident("")).unwrap_err())
         }
@@ -187,6 +191,22 @@ where
                     right.span.end,
                     Expr::Binary(Box::new(left.node), *token, Box::new(right.node)),
                 ))
+            }
+            Token::Equals => {
+                if let Expr::Ident(name) = left.node {
+                    let value = Box::new(self.expression());
+                    Ok(Spanned::new(
+                        left.span.start,
+                        (*value).span.end,
+                        Expr::Assign {
+                            name,
+                            eq: *token,
+                            value,
+                        },
+                    ))
+                } else {
+                    self.make_infix_err(token)
+                }
             }
             _ => self.make_infix_err(token),
         }
@@ -274,7 +294,7 @@ mod tests {
         let prg = parser.parse();
         assert_eq!(
             Program(vec![Stmt::FnDecl {
-                name: "err",
+                name: Spanned::new(3, 5, "err"),
                 params: ParamList(vec![]),
                 body: Block(vec![
                     Stmt::Expr(Spanned {
@@ -306,10 +326,10 @@ mod tests {
         let prg = parser.parse();
         assert_eq!(
             Program(vec![Stmt::FnDecl {
-                name: "main",
+                name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::VarDecl {
-                    name: "var",
+                    name: Spanned::new(16, 18, "var"),
                     value: Spanned::new(22, 22, Expr::DecLit(5))
                 }])
             }]),
@@ -328,7 +348,7 @@ mod tests {
         let prg = parser.parse();
         assert_eq!(
             Program(vec![Stmt::FnDecl {
-                name: "main",
+                name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![])
             }]),
@@ -345,7 +365,7 @@ mod tests {
         let prg = parser.parse();
         assert_eq!(
             Program(vec![Stmt::FnDecl {
-                name: "main",
+                name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     11,
