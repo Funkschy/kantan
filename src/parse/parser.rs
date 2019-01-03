@@ -4,14 +4,23 @@ use super::{ast::*, error::LexError, token::*, *};
 
 type ExprResult<'input> = Result<Spanned<Expr<'input>>, Spanned<ParseError<'input>>>;
 type StmtResult<'input> = Result<Stmt<'input>, Spanned<ParseError<'input>>>;
+type Errors<'input> = Vec<Spanned<ParseError<'input>>>;
+
+fn as_err_stmt<'input>(err: Spanned<ParseError<'input>>) -> Stmt<'input> {
+    Stmt::Expr(Spanned::new(
+        err.span.start,
+        err.span.end,
+        Expr::Error(err.node),
+    ))
+}
 
 pub struct Parser<'input, I>
 where
     I: Scanner<'input>,
 {
     pub(crate) source: &'input str,
-    scanner: Peekable<I>,
     pub(crate) err_count: usize,
+    scanner: Peekable<I>,
 }
 
 impl<'input, I> Parser<'input, I>
@@ -36,26 +45,26 @@ where
 {
     pub fn parse(&mut self) -> Program<'input> {
         let mut top_lvl_decls = vec![];
-        let as_err = |err: Spanned<ParseError<'input>>| {
-            Stmt::Expr(Spanned::new(
-                err.span.start,
-                err.span.end,
-                Expr::Error(err.node),
-            ))
-        };
-
         while self.scanner.peek().is_some() {
-            top_lvl_decls.push(self.top_lvl_decl().unwrap_or_else(as_err));
+            let decl = self.top_lvl_decl();
+            if let Ok(decl) = decl {
+                top_lvl_decls.push(decl);
+            } else if let Err(errors) = decl {
+                for err in errors {
+                    top_lvl_decls.push(as_err_stmt(err));
+                }
+            }
         }
 
         Program(top_lvl_decls)
     }
 
-    fn top_lvl_decl(&mut self) -> StmtResult<'input> {
-        self.consume(Token::Fn)?;
-        let name = self.consume_ident()?;
-        let params = self.param_list()?;
-        let body = self.block()?;
+    fn top_lvl_decl(&mut self) -> Result<Stmt<'input>, Errors<'input>> {
+        // TODO: error collection
+        self.consume(Token::Fn).map_err(|err| vec![err])?;
+        let name = self.consume_ident().map_err(|err| vec![err])?;
+        let params = self.param_list().map_err(|err| vec![err])?;
+        let body = self.block().map_err(|err| vec![err])?;
         Ok(Stmt::FnDecl { name, params, body })
     }
 
@@ -64,6 +73,23 @@ where
         self.consume(Token::LParen)?;
         self.consume(Token::RParen)?;
         Ok(ParamList(vec![]))
+    }
+
+    fn block(&mut self) -> Result<Block<'input>, Spanned<ParseError<'input>>> {
+        self.consume(Token::LBrace)?;
+        let mut stmts = vec![];
+
+        while !self.at_end() && !self.peek_eq(Token::RBrace) {
+            let stmt = self.statement();
+            if let Ok(stmt) = stmt {
+                stmts.push(stmt);
+            } else if let Err(err) = stmt {
+                stmts.push(as_err_stmt(err));
+            }
+        }
+
+        self.consume(Token::RBrace)?;
+        Ok(Block(stmts))
     }
 
     fn statement(&mut self) -> StmtResult<'input> {
@@ -82,40 +108,18 @@ where
         Ok(stmt)
     }
 
-    fn block(&mut self) -> Result<Block<'input>, Spanned<ParseError<'input>>> {
-        self.consume(Token::LBrace)?;
-        let mut stmts = vec![];
-
-        while !self.peek_eq(Token::RBrace) {
-            stmts.push(self.statement()?);
-        }
-        self.consume(Token::RBrace)?;
-
-        Ok(Block(stmts))
-    }
-
-    fn advance_until(&mut self, token: Token<'input>) {
-        while let Some(Ok(peek)) = self.scanner.peek() {
-            if peek.node == token {
-                break;
-            }
-
-            self.advance().unwrap();
-        }
-    }
-
     pub fn expression(&mut self) -> Spanned<Expr<'input>> {
-        let as_err = |err: Spanned<ParseError<'input>>| {
+        let as_err_stmt = |err: Spanned<ParseError<'input>>| {
             Spanned::new(err.span.start, err.span.end, Expr::Error(err.node))
         };
 
         let expr = self.parse_expression(Precedence::None);
 
         if expr.is_err() {
-            self.advance_until(Token::Semi);
+            self.sync();
         }
 
-        expr.unwrap_or_else(as_err)
+        expr.unwrap_or_else(as_err_stmt)
     }
 
     fn parse_expression(&mut self, precedence: Precedence) -> ExprResult<'input> {
@@ -248,7 +252,7 @@ where
 
     fn make_prefix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
         self.err_count += 1;
-        let s = format!("Invalid token in prefix rule: {}", token.node);
+        let s = format!("Invalid token in prefix rule: '{}'", token.node);
         Err(Spanned {
             span: token.span,
             node: ParseError::PrefixError(s),
@@ -257,7 +261,7 @@ where
 
     fn make_infix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
         self.err_count += 1;
-        let s = format!("Invalid token in infix rule: {}", token.node);
+        let s = format!("Invalid token in infix rule: '{}'", token.node);
         Err(Spanned {
             span: token.span,
             node: ParseError::InfixError(s),
@@ -277,6 +281,30 @@ where
                 expected,
             },
         })
+    }
+
+    fn sync(&mut self) {
+        self.scanner.next();
+
+        'outer: while let Some(next) = self.scanner.peek() {
+            match next {
+                Ok(Spanned { node, .. }) if *node == Token::Semi => {
+                    break 'outer;
+                }
+                _ => {}
+            }
+
+            if let Some(Ok(Spanned { node, .. })) = self.scanner.next() {
+                match node {
+                    Token::Let => break 'outer,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn at_end(&mut self) -> bool {
+        self.scanner.peek().is_none()
     }
 }
 

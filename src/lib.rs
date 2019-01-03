@@ -1,4 +1,7 @@
+use std::io::{self, Write};
+
 use ansi_term::Colour::{Red, Yellow};
+use unicode_width::UnicodeWidthStr;
 
 mod parse;
 mod resolve;
@@ -9,7 +12,7 @@ use self::{
     resolve::Resolver,
 };
 
-pub fn compile(source: &str) {
+pub fn compile<W: Write>(source: &str, writer: &mut W) -> io::Result<()> {
     #[cfg(windows)]
     {
         if let Err(code) = ansi_term::enable_ansi_support() {
@@ -29,26 +32,63 @@ pub fn compile(source: &str) {
         let mut resolver = Resolver::new(source);
         let errors = resolver.resolve(prg);
 
-        print_error(&errors.join("\n\n"));
+        print_error(&errors.join("\n\n"), writer)?;
     } else {
-        report_errors(&source, &prg);
+        print_error(
+            &format!("{} error(s) while parsing", parser.err_count),
+            writer,
+        )?;
+        report_errors(&source, &prg, writer)?;
     }
+
+    Ok(())
 }
 
-fn print_error(msg: &str) {
-    eprintln!("{}", msg);
+fn print_error<W: Write>(msg: &str, writer: &mut W) -> io::Result<()> {
+    writer.write_all(msg.as_bytes())?;
+    writer.write(b"\n")?;
+    writer.flush()?;
+    Ok(())
 }
 
-fn report_errors(source: &str, prg: &Program) {
-    for stmt in &prg.0 {
-        if let Stmt::Expr(Spanned {
-            node: Expr::Error(err),
-            span,
-        }) = stmt
-        {
-            print_error(&format_error(&source, *span, *span, &err.to_string()));
+fn report_errors<W: Write>(source: &str, prg: &Program, writer: &mut W) -> io::Result<()> {
+    for (span, msg) in find_errors(prg) {
+        print_error(&format_error(&source, span, span, &msg), writer)?;
+    }
+
+    Ok(())
+}
+
+fn find_errors(prg: &Program) -> Vec<(Span, String)> {
+    fn find_errors_rec(stmt: &Stmt, errors: &mut Vec<(Span, String)>) {
+        match stmt {
+            Stmt::VarDecl { value, .. } => {
+                if let Spanned {
+                    node: Expr::Error(err),
+                    span,
+                } = value
+                {
+                    errors.push((*span, err.to_string()))
+                }
+            }
+            Stmt::FnDecl { body, .. } => {
+                for s in &body.0 {
+                    find_errors_rec(s, errors);
+                }
+            }
+            Stmt::Expr(Spanned { node: expr, span }) => {
+                if let Expr::Error(err) = expr {
+                    errors.push((*span, err.to_string()));
+                }
+            }
         }
     }
+
+    let mut errors = vec![];
+    for s in &prg.0 {
+        find_errors_rec(s, &mut errors);
+    }
+    errors
 }
 
 fn format_error(source: &str, expr_span: Span, err_tok_span: Span, msg: &str) -> String {
@@ -59,30 +99,30 @@ fn format_error(source: &str, expr_span: Span, err_tok_span: Span, msg: &str) ->
         msg,
         line_nr,
         index,
-        err_to_string(source, expr_span, err_tok_span, line_nr, index, false)
+        err_to_string(source, expr_span, err_tok_span, line_nr, false)
     )
 }
 
 fn find_line_index(source: &str, start: usize) -> (usize, usize) {
-    let iter = source.char_indices().rev().skip(source.len() - start);
-    let line_nr = iter.clone().filter(|(_, c)| *c == '\n').count() + 1;
+    let slice = &source[..start];
 
-    // For some reason, the index on windows is exactly 4 units shorter, than it should be
-    let index = {
-        let value = iter.take_while(|(_, c)| *c != '\n').count() + 1;
-
-        #[cfg(windows)]
-        {
-            value + 4
-        }
-
-        #[cfg(not(windows))]
-        {
-            value
-        }
-    };
+    let line_nr = slice.chars().filter(|c| *c == '\n').count() + 1;
+    let index = slice.chars().rev().take_while(|c| *c != '\n').count() + 1;
 
     (line_nr, index)
+}
+
+fn find_dist(source: &str, start: usize) -> usize {
+    let slice = &source[..start];
+
+    UnicodeWidthStr::width(
+        slice
+            .chars()
+            .rev()
+            .take_while(|c| *c != '\n')
+            .collect::<String>()
+            .as_str(),
+    )
 }
 
 fn err_to_string(
@@ -90,7 +130,6 @@ fn err_to_string(
     expr_span: Span,
     err_tok_span: Span,
     line_nr: usize,
-    index: usize,
     warning: bool,
 ) -> String {
     let (start_line, _) = find_line_index(source, expr_span.start);
@@ -102,8 +141,11 @@ fn err_to_string(
     let len_line_nr = (line_nr / 10) + 1;
     let filler = " ".repeat(len_line_nr + 1);
 
-    let len = err_tok_span.end - err_tok_span.start + 1;
-    let marker = format!("{}{}", " ".repeat(index - 1), "^".repeat(len));
+    // let len = err_tok_span.end - err_tok_span.start + 1;
+    let len = UnicodeWidthStr::width(&source[err_tok_span.start..err_tok_span.end]) + 1;
+    let dist = find_dist(source, err_tok_span.start);
+
+    let marker = format!("{}{}", " ".repeat(dist), "^".repeat(len));
     let marker = if warning {
         Yellow.paint(marker)
     } else {

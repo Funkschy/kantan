@@ -122,10 +122,10 @@ impl<'input> Resolver<'input> {
     }
 
     fn defined_with_other_type_error(&self, name_span: Span, name: &str, ty: Type) -> String {
-        let (line_nr, index) = find_line_index(self.source, name_span.start);
+        let (line_nr, _) = find_line_index(self.source, name_span.start);
         format!(
             "{} - {} was defined as {} here",
-            err_to_string(self.source, name_span, name_span, line_nr, index, true),
+            err_to_string(self.source, name_span, name_span, line_nr, true),
             name,
             ty
         )

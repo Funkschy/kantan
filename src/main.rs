@@ -1,17 +1,20 @@
-use std::env;
-use std::fs;
+use std::{env, fs, io};
 
 use mini_rust::compile;
 
-fn main() {
+fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
         print_help();
-        return;
+        return Ok(());
     }
 
+    let stderr = io::stderr();
+    let mut err_writer = stderr.lock();
+
     let source = fs::read_to_string(&args[1]).unwrap();
-    compile(&source);
+    compile(&source, &mut err_writer)?;
+    Ok(())
 }
 
 fn print_help() {

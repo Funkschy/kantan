@@ -23,6 +23,7 @@ pub struct Lexer<'input> {
     src: &'input str,
     chars: CharIndices<'input>,
     current: Option<InputPos>,
+    prev: Option<char>,
 }
 
 impl<'input> Lexer<'input> {
@@ -32,7 +33,8 @@ impl<'input> Lexer<'input> {
         Lexer {
             src,
             current: InputPos::new_opt(chars.next()),
-            chars,
+            chars: chars,
+            prev: None,
         }
     }
 }
@@ -57,7 +59,7 @@ impl<'input> Lexer<'input> {
     }
 
     fn spanned<T>(&self, start: CharPos, t: T) -> Spanned<T> {
-        Spanned::new(start, self.pos() - 1, t)
+        Spanned::new(start, self.pos() - self.prev.map_or(0, |p| p.len_utf8()), t)
     }
 }
 
@@ -77,6 +79,12 @@ macro_rules! consume_single {
 impl<'input> Lexer<'input> {
     fn advance(&mut self) -> Option<InputPos> {
         let curr = self.current?;
+        if self.pos() > 0 {
+            self.prev = Some({
+                let InputPos { value: prev, .. } = curr;
+                prev
+            });
+        }
         self.current = InputPos::new_opt(self.chars.next());
         Some(curr)
     }
@@ -108,7 +116,17 @@ impl<'input> Lexer<'input> {
         if let Some(keyword) = self.check_keyword(start, slice) {
             return Ok(keyword);
         }
-        Ok(self.spanned(start, Token::Ident(slice)))
+
+        if !slice.is_ascii() {
+            Err(self.spanned(
+                start,
+                ParseError::LexError(LexError::with_cause(
+                    "Non ascii identifiers are currently not supported",
+                )),
+            ))
+        } else {
+            Ok(self.spanned(start, Token::Ident(slice)))
+        }
     }
 
     fn check_keyword(
@@ -322,12 +340,34 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_unicode_identifier() {
-        let source = "こんにちは";
+    fn test_scan_non_ascii_identifier_should_return_error() {
+        let source = "let こんにちは";
+        let mut lexer = Lexer::new(source);
+
+        lexer.scan_ident().unwrap();
+        let ident = lexer.scan_token().unwrap();
+
+        assert_eq!(
+            Err(Spanned::new(
+                4,
+                source.len() - 'は'.len_utf8(),
+                ParseError::LexError(LexError::with_cause(
+                    "Non ascii identifiers are currently not supported"
+                ))
+            )),
+            ident
+        );
+
+        assert_eq!(None, lexer.scan_token());
+    }
+
+    #[test]
+    fn test_scan_unicode_string_literal() {
+        let source = r#""こんにちは""#;
         let mut lexer = Lexer::new(source);
 
         let ident = lexer.scan_token().unwrap().unwrap();
-        let expected = Spanned::new(0, source.len() - 1, Token::Ident("こんにちは"));
+        let expected = Spanned::new(1, source.len() - 1, Token::StringLit("こんにちは"));
 
         assert_eq!(expected, ident);
     }
