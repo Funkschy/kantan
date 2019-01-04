@@ -1,6 +1,6 @@
 use std::{env, fs, io};
 
-use mini_rust::compile;
+use mini_rust::{compile, Source};
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -12,7 +12,9 @@ fn main() -> io::Result<()> {
     let stderr = io::stderr();
     let mut err_writer = stderr.lock();
 
-    let source = fs::read_to_string(&args[1]).unwrap();
+    let code = fs::read_to_string(&args[1]).unwrap();
+    let source = Source::new(&args[1], &code);
+
     compile(&source, &mut err_writer)?;
     Ok(())
 }

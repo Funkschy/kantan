@@ -4,7 +4,6 @@ use super::{ast::*, error::LexError, token::*, *};
 
 type ExprResult<'input> = Result<Spanned<Expr<'input>>, Spanned<ParseError<'input>>>;
 type StmtResult<'input> = Result<Stmt<'input>, Spanned<ParseError<'input>>>;
-type Errors<'input> = Vec<Spanned<ParseError<'input>>>;
 
 fn as_err_stmt<'input>(err: Spanned<ParseError<'input>>) -> Stmt<'input> {
     Stmt::Expr(Spanned::new(
@@ -49,22 +48,20 @@ where
             let decl = self.top_lvl_decl();
             if let Ok(decl) = decl {
                 top_lvl_decls.push(decl);
-            } else if let Err(errors) = decl {
-                for err in errors {
-                    top_lvl_decls.push(as_err_stmt(err));
-                }
+            } else if let Err(err) = decl {
+                top_lvl_decls.push(as_err_stmt(err));
             }
         }
 
         Program(top_lvl_decls)
     }
 
-    fn top_lvl_decl(&mut self) -> Result<Stmt<'input>, Errors<'input>> {
+    fn top_lvl_decl(&mut self) -> StmtResult<'input> {
         // TODO: error collection
-        self.consume(Token::Fn).map_err(|err| vec![err])?;
-        let name = self.consume_ident().map_err(|err| vec![err])?;
-        let params = self.param_list().map_err(|err| vec![err])?;
-        let body = self.block().map_err(|err| vec![err])?;
+        self.consume(Token::Fn)?;
+        let name = self.consume_ident()?;
+        let params = self.param_list()?;
+        let body = self.block()?;
         Ok(Stmt::FnDecl { name, params, body })
     }
 
@@ -86,6 +83,7 @@ where
             } else if let Err(err) = stmt {
                 stmts.push(as_err_stmt(err));
             }
+            self.consume(Token::Semi)?;
         }
 
         self.consume(Token::RBrace)?;
@@ -94,18 +92,28 @@ where
 
     fn statement(&mut self) -> StmtResult<'input> {
         let stmt = if self.peek_eq(Token::Let) {
-            self.consume(Token::Let)?;
-            let name = self.consume_ident()?;
-            self.consume(Token::Equals)?;
-            let value = self.expression();
-            Stmt::VarDecl { name, value }
+            self.let_decl()?
         } else {
             let expr = self.expression();
             Stmt::Expr(expr)
         };
 
-        self.consume(Token::Semi)?;
         Ok(stmt)
+    }
+
+    fn let_decl(&mut self) -> StmtResult<'input> {
+        self.consume(Token::Let)?;
+
+        let ident = self.consume_ident();
+        if ident.is_err() {
+            self.err_count += 1;
+            self.sync();
+        }
+        let name = ident?;
+
+        self.consume(Token::Equals)?;
+        let value = self.expression();
+        Ok(Stmt::VarDecl { name, value })
     }
 
     pub fn expression(&mut self) -> Spanned<Expr<'input>> {
@@ -113,13 +121,12 @@ where
             Spanned::new(err.span.start, err.span.end, Expr::Error(err.node))
         };
 
-        let expr = self.parse_expression(Precedence::None);
-
-        if expr.is_err() {
-            self.sync();
-        }
-
-        expr.unwrap_or_else(as_err_stmt)
+        self.parse_expression(Precedence::None)
+            .unwrap_or_else(|err| {
+                self.sync();
+                self.err_count += 1;
+                as_err_stmt(err)
+            })
     }
 
     fn parse_expression(&mut self, precedence: Precedence) -> ExprResult<'input> {
@@ -327,7 +334,7 @@ mod tests {
                 body: Block(vec![
                     Stmt::Expr(Spanned {
                         node: Expr::Error(ParseError::PrefixError(
-                            "Invalid token in prefix rule: +".to_owned()
+                            "Invalid token in prefix rule: '+'".to_owned()
                         ),),
                         span: Span::new(14, 14)
                     }),

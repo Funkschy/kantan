@@ -12,7 +12,21 @@ use self::{
     resolve::Resolver,
 };
 
-pub fn compile<W: Write>(source: &str, writer: &mut W) -> io::Result<()> {
+pub struct Source<'input> {
+    name: String,
+    code: &'input str,
+}
+
+impl<'input> Source<'input> {
+    pub fn new(name: &str, code: &'input str) -> Self {
+        Source {
+            name: name.to_owned(),
+            code,
+        }
+    }
+}
+
+pub fn compile<W: Write>(source: &Source, writer: &mut W) -> io::Result<()> {
     #[cfg(windows)]
     {
         if let Err(code) = ansi_term::enable_ansi_support() {
@@ -23,7 +37,7 @@ pub fn compile<W: Write>(source: &str, writer: &mut W) -> io::Result<()> {
         }
     }
 
-    let lexer = Lexer::new(source);
+    let lexer = Lexer::new(source.code);
     let mut parser = Parser::new(lexer);
 
     let prg = parser.parse();
@@ -34,10 +48,6 @@ pub fn compile<W: Write>(source: &str, writer: &mut W) -> io::Result<()> {
 
         print_error(&errors.join("\n\n"), writer)?;
     } else {
-        print_error(
-            &format!("{} error(s) while parsing", parser.err_count),
-            writer,
-        )?;
         report_errors(&source, &prg, writer)?;
     }
 
@@ -51,9 +61,9 @@ fn print_error<W: Write>(msg: &str, writer: &mut W) -> io::Result<()> {
     Ok(())
 }
 
-fn report_errors<W: Write>(source: &str, prg: &Program, writer: &mut W) -> io::Result<()> {
+fn report_errors<W: Write>(source: &Source, prg: &Program, writer: &mut W) -> io::Result<()> {
     for (span, msg) in find_errors(prg) {
-        print_error(&format_error(&source, span, span, &msg), writer)?;
+        print_error(&format_error(source, span, span, &msg), writer)?;
     }
 
     Ok(())
@@ -91,20 +101,21 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
     errors
 }
 
-fn format_error(source: &str, expr_span: Span, err_tok_span: Span, msg: &str) -> String {
+fn format_error(source: &Source, expr_span: Span, err_tok_span: Span, msg: &str) -> String {
     let (line_nr, index) = find_line_index(source, err_tok_span.start);
 
     format!(
-        "error: {}\n--> {}:{}\n{}",
+        "error: {}\n--> {}:{}:{}\n{}",
         msg,
+        source.name,
         line_nr,
         index,
         err_to_string(source, expr_span, err_tok_span, line_nr, false)
     )
 }
 
-fn find_line_index(source: &str, start: usize) -> (usize, usize) {
-    let slice = &source[..start];
+fn find_line_index(source: &Source, start: usize) -> (usize, usize) {
+    let slice = &source.code[..start];
 
     let line_nr = slice.chars().filter(|c| *c == '\n').count() + 1;
     let index = slice.chars().rev().take_while(|c| *c != '\n').count() + 1;
@@ -112,8 +123,8 @@ fn find_line_index(source: &str, start: usize) -> (usize, usize) {
     (line_nr, index)
 }
 
-fn find_dist(source: &str, start: usize) -> usize {
-    let slice = &source[..start];
+fn find_dist(source: &Source, start: usize) -> usize {
+    let slice = &source.code[..start];
 
     UnicodeWidthStr::width(
         slice
@@ -126,7 +137,7 @@ fn find_dist(source: &str, start: usize) -> usize {
 }
 
 fn err_to_string(
-    source: &str,
+    source: &Source,
     expr_span: Span,
     err_tok_span: Span,
     line_nr: usize,
@@ -142,7 +153,7 @@ fn err_to_string(
     let filler = " ".repeat(len_line_nr + 1);
 
     // let len = err_tok_span.end - err_tok_span.start + 1;
-    let len = UnicodeWidthStr::width(&source[err_tok_span.start..err_tok_span.end]) + 1;
+    let len = UnicodeWidthStr::width(&source.code[err_tok_span.start..err_tok_span.end]) + 1;
     let dist = find_dist(source, err_tok_span.start);
 
     let marker = format!("{}{}", " ".repeat(dist), "^".repeat(len));
@@ -153,13 +164,14 @@ fn err_to_string(
     };
 
     let lines: Vec<String> = source
+        .code
         .lines()
         .enumerate()
         .skip(start_line)
         .take(end_line - start_line)
         .map(|(nr, l)| {
             if nr + 1 == line_nr {
-                format!("{} |{}\n{}|{}", line_nr, l, filler, marker)
+                format!("{}|\n{} |{}\n{}|{}", filler, line_nr, l, filler, marker)
             } else {
                 format!("{}|{}", filler, l)
             }

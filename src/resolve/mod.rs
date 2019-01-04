@@ -3,18 +3,19 @@ use super::*;
 use crate::{
     parse::{ast::*, token::Token, Span, Spanned},
     types::Type,
+    Source,
 };
 
 #[allow(dead_code)]
 mod symbol;
 
 pub(crate) struct Resolver<'input> {
-    source: &'input str,
+    source: &'input Source<'input>,
     sym_table: SymbolTable<'input>,
 }
 
 impl<'input> Resolver<'input> {
-    pub fn new(source: &'input str) -> Self {
+    pub fn new(source: &'input Source<'input>) -> Self {
         Resolver {
             source,
             sym_table: SymbolTable::new(),
@@ -163,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_resolve_without_errors_should_return_empty_vec() {
-        let source = "fn main() { let x = 10; }";
+        let source = Source::new("test", "fn main() { let x = 10; }");
 
         let ast = Program(vec![Stmt::FnDecl {
             name: Spanned::new(3, 6, "main"),
