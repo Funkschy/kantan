@@ -296,7 +296,7 @@ where
 
             if let Some(Ok(Spanned { node, .. })) = self.scanner.next() {
                 match node {
-                    Token::Let => break 'outer,
+                    Token::Let | Token::Fn => break 'outer,
                     _ => {}
                 }
             }

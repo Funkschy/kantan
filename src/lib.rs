@@ -46,7 +46,7 @@ pub fn compile<W: Write>(source: &str, writer: &mut W) -> io::Result<()> {
 
 fn print_error<W: Write>(msg: &str, writer: &mut W) -> io::Result<()> {
     writer.write_all(msg.as_bytes())?;
-    writer.write(b"\n")?;
+    writer.write_all(b"\n")?;
     writer.flush()?;
     Ok(())
 }

@@ -33,7 +33,7 @@ impl<'input> Lexer<'input> {
         Lexer {
             src,
             current: InputPos::new_opt(chars.next()),
-            chars: chars,
+            chars,
             prev: None,
         }
     }
