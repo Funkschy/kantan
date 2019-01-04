@@ -125,7 +125,7 @@ impl<'input> Resolver<'input> {
     fn defined_with_other_type_error(&self, name_span: Span, name: &str, ty: Type) -> String {
         let (line_nr, _) = find_line_index(self.source, name_span.start);
         format!(
-            "{} - {} was defined as {} here",
+            "'{}' - '{}' was defined as '{}' here",
             err_to_string(self.source, name_span, name_span, line_nr, true),
             name,
             ty
@@ -180,5 +180,42 @@ mod tests {
 
         let expected: Vec<String> = vec![];
         assert_eq!(expected, errors);
+    }
+
+    #[test]
+    fn test_resolve_with_assign_error_should_return_correct_error() {
+        let source = Source::new("test", r#"fn main() { let x = 10; x = ""; }"#);
+
+        let ast = Program(vec![Stmt::FnDecl {
+            name: Spanned::new(3, 6, "main"),
+            params: ParamList(vec![]),
+            body: Block(vec![
+                Stmt::VarDecl {
+                    name: Spanned::new(16, 16, "x"),
+                    value: Spanned::new(20, 22, Expr::DecLit(10)),
+                },
+                Stmt::Expr(Spanned::new(
+                    24,
+                    29,
+                    Expr::Assign {
+                        name: "x",
+                        eq: Spanned::new(24, 24, Token::Equals),
+                        value: Box::new(Spanned::new(29, 29, Expr::StringLit(""))),
+                    },
+                )),
+            ]),
+        }]);
+
+        let mut resolver = Resolver::new(&source);
+        let errors = resolver.resolve(ast);
+
+        assert_eq!(1, errors.len());
+
+        if let [err] = errors.as_slice() {
+            assert!(err.contains("operation '=' cannot be applied to 'i32' and 'string'"));
+            assert!(err.contains("'x' was defined as 'i32' here"));
+        } else {
+            panic!("Expected one error");
+        }
     }
 }
