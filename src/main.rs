@@ -12,7 +12,7 @@ fn main() -> io::Result<()> {
     let stderr = io::stderr();
     let mut err_writer = stderr.lock();
 
-    let code = fs::read_to_string(&args[1]).unwrap();
+    let code = fs::read_to_string(&args[1]).unwrap().replace("\t", "    ");
     let source = Source::new(&args[1], &code);
 
     compile(&source, &mut err_writer)?;

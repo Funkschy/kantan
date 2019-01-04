@@ -6,8 +6,11 @@ use crate::{
     Source,
 };
 
+mod error;
 #[allow(dead_code)]
 mod symbol;
+
+use self::error::*;
 
 pub(crate) struct Resolver<'input> {
     source: &'input Source<'input>,
@@ -24,15 +27,15 @@ impl<'input> Resolver<'input> {
 }
 
 impl<'input> Resolver<'input> {
-    pub fn resolve(&mut self, prg: Program<'input>) -> Vec<String> {
-        let mut errors: Vec<String> = vec![];
+    pub fn resolve(&mut self, prg: Program<'input>) -> Vec<ResolveError<'input>> {
+        let mut errors = vec![];
         for stmt in prg.0 {
             self.resolve_stmt(&stmt, &mut errors);
         }
         errors
     }
 
-    fn resolve_stmt(&mut self, stmt: &Stmt<'input>, errors: &mut Vec<String>) {
+    fn resolve_stmt(&mut self, stmt: &Stmt<'input>, errors: &mut Vec<ResolveError<'input>>) {
         match stmt {
             Stmt::VarDecl {
                 name: Spanned { node: name, span },
@@ -64,11 +67,16 @@ impl<'input> Resolver<'input> {
         };
     }
 
-    fn resolve_expr(&mut self, expr: &Spanned<&Expr<'input>>) -> Result<Type, String> {
+    fn resolve_expr(
+        &mut self,
+        expr: &Spanned<&Expr<'input>>,
+    ) -> Result<Type, ResolveError<'input>> {
         let span = expr.span;
 
         match &expr.node {
-            Expr::Error(ref err) => Err(err.to_string()),
+            Expr::Error(_) => {
+                unreachable!("If errors occur during parsing, the program should not be resolved")
+            }
             Expr::DecLit(_) => Ok(Type::I32),
             Expr::StringLit(_) => Ok(Type::String),
             Expr::Negate(expr) => self.resolve_expr(&Spanned::from_span(span, expr)),
@@ -90,18 +98,28 @@ impl<'input> Resolver<'input> {
                     (*ty, *span)
                 };
 
-                let &Spanned { span, ref node } = &**value;
+                let &Spanned {
+                    span: value_span,
+                    ref node,
+                } = &**value;
+
                 // get type of right expression
-                let val_type = self.resolve_expr(&Spanned::from_span(span, node))?;
+                let val_type = self.resolve_expr(&Spanned::from_span(value_span, node))?;
                 // check if type of right expression is the same as that of
                 // the declared variable
-                self.compare_types(eq, span, ty, val_type).map_err(|err| {
-                    format!(
-                        "{}\n\nreason:\n{}",
-                        err,
-                        self.defined_with_other_type_error(sym_span, name, ty)
-                    )
-                })
+                self.compare_types(eq, span, ty, val_type).map_err(
+                    |ResolveError { error, .. }| {
+                        if let ResolveErrorType::IllegalOperation(err) = error {
+                            self.error(ResolveErrorType::IllegalAssignment(AssignmentError {
+                                name,
+                                definition_span: sym_span,
+                                bin_op_err: err,
+                            }))
+                        } else {
+                            panic!("Invalid Error Type");
+                        }
+                    },
+                )
             }
             Expr::Ident(name) => self
                 .sym_table
@@ -113,23 +131,17 @@ impl<'input> Resolver<'input> {
 }
 
 impl<'input> Resolver<'input> {
-    fn not_defined_error(&self, span: Span, name: &'input str) -> String {
-        format_error(
-            self.source,
-            span,
-            Span::new(span.start, span.start + name.len() - 1),
-            &format!("'{}' not in scope", name),
-        )
+    fn error(&self, err: ResolveErrorType<'input>) -> ResolveError<'input> {
+        ResolveError {
+            source: self.source,
+            error: err,
+        }
     }
 
-    fn defined_with_other_type_error(&self, name_span: Span, name: &str, ty: Type) -> String {
-        let (line_nr, _) = find_line_index(self.source, name_span.start);
-        format!(
-            "'{}' - '{}' was defined as '{}' here",
-            err_to_string(self.source, name_span, name_span, line_nr, true),
-            name,
-            ty
-        )
+    fn not_defined_error(&self, span: Span, name: &'input str) -> ResolveError<'input> {
+        self.error(ResolveErrorType::NotDefined(DefinitionError::new(
+            name, span,
+        )))
     }
 
     fn compare_types(
@@ -138,20 +150,16 @@ impl<'input> Resolver<'input> {
         span: Span,
         first: Type,
         second: Type,
-    ) -> Result<Type, String> {
+    ) -> Result<Type, ResolveError<'input>> {
         if first != second {
-            Err(format!(
-                "{} - not allowed",
-                format_error(
-                    self.source,
-                    span,
-                    op.span,
-                    &format!(
-                        "Binary operation '{}' cannot be applied to '{}' and '{}'",
-                        op.node, first, second,
-                    ),
-                )
-            ))
+            Err(
+                self.error(ResolveErrorType::IllegalOperation(BinaryOperationError {
+                    token: *op,
+                    expr_span: span,
+                    left_type: first,
+                    right_type: second,
+                })),
+            )
         } else {
             Ok(first)
         }
@@ -178,7 +186,7 @@ mod tests {
         let mut resolver = Resolver::new(&source);
         let errors = resolver.resolve(ast);
 
-        let expected: Vec<String> = vec![];
+        let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
     }
 
@@ -199,7 +207,7 @@ mod tests {
                     29,
                     Expr::Assign {
                         name: "x",
-                        eq: Spanned::new(24, 24, Token::Equals),
+                        eq: Spanned::new(26, 26, Token::Equals),
                         value: Box::new(Spanned::new(29, 29, Expr::StringLit(""))),
                     },
                 )),
@@ -212,6 +220,7 @@ mod tests {
         assert_eq!(1, errors.len());
 
         if let [err] = errors.as_slice() {
+            let err = err.to_string();
             assert!(err.contains("operation '=' cannot be applied to 'i32' and 'string'"));
             assert!(err.contains("'x' was defined as 'i32' here"));
         } else {

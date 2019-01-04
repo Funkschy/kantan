@@ -117,9 +117,8 @@ where
     }
 
     pub fn expression(&mut self) -> Spanned<Expr<'input>> {
-        let as_err_stmt = |err: Spanned<ParseError<'input>>| {
-            Spanned::new(err.span.start, err.span.end, Expr::Error(err.node))
-        };
+        let as_err_stmt =
+            |err: Spanned<ParseError<'input>>| Spanned::from_span(err.span, Expr::Error(err.node));
 
         self.parse_expression(Precedence::None)
             .unwrap_or_else(|err| {
@@ -165,6 +164,7 @@ where
         {
             Ok(Spanned::from_span(span, ident))
         } else {
+            // TODO: better error
             Err(self.make_consume_err(&next, Token::Ident("")).unwrap_err())
         }
     }

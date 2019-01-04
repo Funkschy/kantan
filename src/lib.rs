@@ -12,6 +12,7 @@ use self::{
     resolve::Resolver,
 };
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct Source<'input> {
     name: String,
     code: &'input str,
@@ -44,7 +45,11 @@ pub fn compile<W: Write>(source: &Source, writer: &mut W) -> io::Result<()> {
 
     if parser.err_count == 0 {
         let mut resolver = Resolver::new(source);
-        let errors = resolver.resolve(prg);
+        let errors: Vec<String> = resolver
+            .resolve(prg)
+            .iter()
+            .map(|err| err.to_string())
+            .collect();
 
         print_error(&errors.join("\n\n"), writer)?;
     } else {
@@ -152,7 +157,6 @@ fn err_to_string(
     let len_line_nr = (line_nr / 10) + 1;
     let filler = " ".repeat(len_line_nr + 1);
 
-    // let len = err_tok_span.end - err_tok_span.start + 1;
     let len = UnicodeWidthStr::width(&source.code[err_tok_span.start..err_tok_span.end]) + 1;
     let dist = find_dist(source, err_tok_span.start);
 
