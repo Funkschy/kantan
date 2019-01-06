@@ -27,6 +27,9 @@ pub enum Token<'input> {
     RParen, // )
     LBrace, // {
     RBrace, // }
+
+    // double Operators
+    EqualsEquals, // ==
 }
 
 #[repr(u8)]
@@ -34,14 +37,16 @@ pub enum Token<'input> {
 pub enum Precedence {
     None = 0,
     Assign = 1,
-    Sum = 2,
-    Product = 3,
+    Equality = 2,
+    Sum = 3,
+    Product = 4,
 }
 
 impl<'input> Token<'input> {
     pub fn precedence(&self) -> Precedence {
         match self {
             Token::Equals => Precedence::Assign,
+            Token::EqualsEquals => Precedence::Equality,
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
             _ => Precedence::None,
@@ -73,6 +78,9 @@ impl<'input> fmt::Display for Token<'input> {
             Token::RParen => write!(f, ")"),
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),
+
+            // double Operators
+            Token::EqualsEquals => write!(f, "=="),
         }
     }
 }

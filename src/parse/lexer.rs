@@ -76,6 +76,23 @@ macro_rules! consume_single {
     }};
 }
 
+macro_rules! consume_double {
+    ($self:ident, $start:ident, $single_tok:expr, $double_tok:expr) => {{
+        let InputPos { value: tok, .. } = $self.current.unwrap();
+        $self.advance();
+        if let Some(InputPos { value: new, .. }) = $self.current {
+            if new == tok {
+                $self.advance();
+                Ok($self.spanned($start, $double_tok))
+            } else {
+                Ok($self.spanned($start, $single_tok))
+            }
+        } else {
+            Ok($self.spanned($start, $single_tok))
+        }
+    }};
+}
+
 impl<'input> Lexer<'input> {
     fn advance(&mut self) -> Option<InputPos> {
         let curr = self.current?;
@@ -178,7 +195,7 @@ impl<'input> Lexer<'input> {
         let ch = self.current.map(|InputPos { value, .. }| value)?;
 
         let scanned: Scanned = match ch {
-            '=' => consume_single!(self, start, Token::Equals),
+            '=' => consume_double!(self, start, Token::Equals, Token::EqualsEquals),
             '+' => consume_single!(self, start, Token::Plus),
             '-' => consume_single!(self, start, Token::Minus),
             '*' => consume_single!(self, start, Token::Star),
@@ -388,6 +405,21 @@ mod tests {
             Spanned::new(17, 18, Token::DecLit(42)),
             Spanned::new(19, 19, Token::RParen),
             Spanned::new(20, 20, Token::Semi),
+        ];
+
+        assert_eq!(expected, tokens);
+    }
+
+    #[test]
+    fn test_scan_double_equals() {
+        let source = "= == =";
+        let lexer = Lexer::new(source);
+
+        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        let expected = vec![
+            Spanned::new(0, 1, Token::Equals),
+            Spanned::new(2, 3, Token::EqualsEquals),
+            Spanned::new(5, 5, Token::Equals),
         ];
 
         assert_eq!(expected, tokens);

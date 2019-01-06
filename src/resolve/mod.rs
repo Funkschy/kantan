@@ -85,6 +85,12 @@ impl<'input> Resolver<'input> {
                 let right = self.resolve_expr(&Spanned::from_span(span, r))?;
                 self.compare_types(op, expr.span, left, right)
             }
+            Expr::BoolBinary(l, op, r) => {
+                let left = self.resolve_expr(&Spanned::from_span(span, l))?;
+                let right = self.resolve_expr(&Spanned::from_span(span, r))?;
+                self.compare_types(op, expr.span, left, right)?;
+                Ok(Type::Bool)
+            }
             Expr::Assign { name, eq, value } => {
                 // Lookup variable in defined scopes
                 let (ty, sym_span) = {

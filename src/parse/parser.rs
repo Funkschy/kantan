@@ -195,13 +195,15 @@ where
     ) -> ExprResult<'input> {
         let tok = token.node;
         match tok {
-            Token::Plus | Token::Minus | Token::Star | Token::Slash => {
+            Token::EqualsEquals | Token::Plus | Token::Minus | Token::Star | Token::Slash => {
                 let right = self.parse_expression(tok.precedence())?;
-                Ok(Spanned::new(
-                    left.span.start,
-                    right.span.end,
-                    Expr::Binary(Box::new(left.node), *token, Box::new(right.node)),
-                ))
+                let expr = match tok {
+                    Token::EqualsEquals => {
+                        Expr::BoolBinary(Box::new(left.node), *token, Box::new(right.node))
+                    }
+                    _ => Expr::Binary(Box::new(left.node), *token, Box::new(right.node)),
+                };
+                Ok(Spanned::new(left.span.start, right.span.end, expr))
             }
             Token::Equals => {
                 if let Expr::Ident(name) = left.node {
