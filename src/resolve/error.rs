@@ -59,6 +59,20 @@ impl<'input> fmt::Display for ResolveError<'input> {
                 &format!("'{}' not in scope", name),
             ),
             ResolveErrorType::IllegalOperation(ref err) => binoperr_to_string(err),
+            ResolveErrorType::IllegalType(IllegalTypeError {
+                expr_span,
+                expected_type,
+                actual_type,
+                name,
+            }) => format_error(
+                self.source,
+                expr_span,
+                expr_span,
+                &format!(
+                    "{} must be of type '{}', but the supplied type was '{}'",
+                    name, expected_type, actual_type
+                ),
+            ),
         };
 
         write!(f, "{}", s)
@@ -70,6 +84,16 @@ pub enum ResolveErrorType<'input> {
     IllegalAssignment(AssignmentError<'input>),
     NotDefined(DefinitionError<'input>),
     IllegalOperation(BinaryOperationError<'input>),
+    IllegalType(IllegalTypeError),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct IllegalTypeError {
+    pub expr_span: Span,
+    pub expected_type: Type,
+    pub actual_type: Type,
+    // e.g. "If condition" or "while condition"
+    pub name: &'static str,
 }
 
 #[derive(Debug, Eq, PartialEq)]

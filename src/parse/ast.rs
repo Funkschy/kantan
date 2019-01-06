@@ -19,6 +19,11 @@ pub enum Stmt<'input> {
         name: Spanned<&'input str>,
         value: Spanned<Expr<'input>>,
     },
+    If {
+        condition: Spanned<Expr<'input>>,
+        then_block: Block<'input>,
+        else_branch: Option<Box<Stmt<'input>>>,
+    },
     Expr(Spanned<Expr<'input>>),
 }
 
@@ -37,8 +42,16 @@ pub enum Expr<'input> {
     DecLit(i64),
     StringLit(&'input str),
     Negate(Box<Expr<'input>>),
-    Binary(Box<Expr<'input>>, Spanned<Token<'input>>, Box<Expr<'input>>),
-    BoolBinary(Box<Expr<'input>>, Spanned<Token<'input>>, Box<Expr<'input>>),
+    Binary(
+        Box<Expr<'input>>,
+        Spanned<Token<'input>>,
+        Box<Spanned<Expr<'input>>>,
+    ),
+    BoolBinary(
+        Box<Expr<'input>>,
+        Spanned<Token<'input>>,
+        Box<Spanned<Expr<'input>>>,
+    ),
     Ident(&'input str),
     Assign {
         name: &'input str,
@@ -54,8 +67,8 @@ impl<'input> fmt::Display for Expr<'input> {
             Expr::DecLit(lit) => write!(f, "{}", lit),
             Expr::StringLit(lit) => write!(f, "{}", lit),
             Expr::Negate(expr) => write!(f, "{}", expr),
-            Expr::Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op.node, r)),
-            Expr::BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op.node, r)),
+            Expr::Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op.node, r.node)),
+            Expr::BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op.node, r.node)),
             Expr::Ident(name) => write!(f, "{}", name),
             Expr::Assign { name, value, .. } => write!(f, "{} = {}", name, value.node),
         }

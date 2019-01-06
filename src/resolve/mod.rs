@@ -43,7 +43,7 @@ impl<'input> Resolver<'input> {
             } => {
                 match self.resolve_expr(&Spanned::from_span(value.span, &value.node)) {
                     Err(msg) => errors.push(msg),
-                    Ok(expr) => self.sym_table.bind(name, *span, expr, false),
+                    Ok(ty) => self.sym_table.bind(name, *span, ty, false),
                 };
             }
             Stmt::FnDecl { params, body, .. } => {
@@ -58,6 +58,29 @@ impl<'input> Resolver<'input> {
                 }
 
                 self.sym_table.scope_exit();
+            }
+            // TODO: else_branch
+            Stmt::If {
+                condition:
+                    Spanned {
+                        span,
+                        node: condition,
+                    },
+                then_block,
+                ..
+            } => {
+                match self.resolve_expr(&Spanned::from_span(*span, &condition)) {
+                    Err(msg) => errors.push(msg),
+                    Ok(ty) => {
+                        if ty != Type::Bool {
+                            errors.push(self.type_error(*span, "if condition", Type::Bool, ty))
+                        }
+                    }
+                }
+
+                for stmt in &then_block.0 {
+                    self.resolve_stmt(&stmt, errors);
+                }
             }
             Stmt::Expr(ref expr) => {
                 if let Err(msg) = self.resolve_expr(&Spanned::from_span(expr.span, &expr.node)) {
@@ -82,12 +105,16 @@ impl<'input> Resolver<'input> {
             Expr::Negate(expr) => self.resolve_expr(&Spanned::from_span(span, expr)),
             Expr::Binary(l, op, r) => {
                 let left = self.resolve_expr(&Spanned::from_span(span, l))?;
-                let right = self.resolve_expr(&Spanned::from_span(span, r))?;
+                let right_span = r.span;
+                let right_expr = &r.node;
+                let right = self.resolve_expr(&Spanned::from_span(right_span, right_expr))?;
                 self.compare_types(op, expr.span, left, right)
             }
             Expr::BoolBinary(l, op, r) => {
                 let left = self.resolve_expr(&Spanned::from_span(span, l))?;
-                let right = self.resolve_expr(&Spanned::from_span(span, r))?;
+                let right_span = r.span;
+                let right_expr = &r.node;
+                let right = self.resolve_expr(&Spanned::from_span(right_span, right_expr))?;
                 self.compare_types(op, expr.span, left, right)?;
                 Ok(Type::Bool)
             }
@@ -142,6 +169,21 @@ impl<'input> Resolver<'input> {
             source: self.source,
             error: err,
         }
+    }
+
+    fn type_error(
+        &self,
+        expr_span: Span,
+        name: &'static str,
+        expected_type: Type,
+        actual_type: Type,
+    ) -> ResolveError<'input> {
+        self.error(ResolveErrorType::IllegalType(IllegalTypeError {
+            expr_span,
+            expected_type,
+            actual_type,
+            name,
+        }))
     }
 
     fn not_defined_error(&self, span: Span, name: &'input str) -> ResolveError<'input> {

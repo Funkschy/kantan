@@ -83,7 +83,6 @@ where
             } else if let Err(err) = stmt {
                 stmts.push(as_err_stmt(err));
             }
-            self.consume(Token::Semi)?;
         }
 
         self.consume(Token::RBrace)?;
@@ -92,13 +91,32 @@ where
 
     fn statement(&mut self) -> StmtResult<'input> {
         let stmt = if self.peek_eq(Token::Let) {
-            self.let_decl()?
+            let decl = self.let_decl();
+            self.consume(Token::Semi)?;
+            decl?
+        } else if self.peek_eq(Token::If) {
+            self.if_stmt()?
         } else {
             let expr = self.expression();
+            self.consume(Token::Semi)?;
             Stmt::Expr(expr)
         };
 
         Ok(stmt)
+    }
+
+    fn if_stmt(&mut self) -> StmtResult<'input> {
+        self.consume(Token::If)?;
+
+        let condition = self.expression();
+        let then_block = self.block()?;
+
+        // TODO: else branch
+        Ok(Stmt::If {
+            condition,
+            then_block,
+            else_branch: None,
+        })
     }
 
     fn let_decl(&mut self) -> StmtResult<'input> {
@@ -197,13 +215,18 @@ where
         match tok {
             Token::EqualsEquals | Token::Plus | Token::Minus | Token::Star | Token::Slash => {
                 let right = self.parse_expression(tok.precedence())?;
+                let right_span = right.span;
                 let expr = match tok {
                     Token::EqualsEquals => {
-                        Expr::BoolBinary(Box::new(left.node), *token, Box::new(right.node))
+                        Expr::BoolBinary(Box::new(left.node), *token, Box::new(right))
                     }
-                    _ => Expr::Binary(Box::new(left.node), *token, Box::new(right.node)),
+                    _ => Expr::Binary(
+                        Box::new(left.node),
+                        *token,
+                        Box::new(Spanned::from_span(right.span, right.node)),
+                    ),
                 };
-                Ok(Spanned::new(left.span.start, right.span.end, expr))
+                Ok(Spanned::new(left.span.start, right_span.end, expr))
             }
             Token::Equals => {
                 if let Expr::Ident(name) = left.node {
@@ -344,7 +367,7 @@ mod tests {
                         node: Expr::Binary(
                             Box::new(Expr::DecLit(3)),
                             Spanned::new(21, 21, Token::Plus),
-                            Box::new(Expr::DecLit(4))
+                            Box::new(Spanned::new(23, 23, Expr::DecLit(4)))
                         ),
                         span: Span::new(19, 23)
                     })
@@ -410,7 +433,7 @@ mod tests {
                     Expr::Binary(
                         Box::new(Expr::DecLit(1)),
                         Spanned::new(13, 13, Token::Plus),
-                        Box::new(Expr::DecLit(1))
+                        Box::new(Spanned::new(15, 15, Expr::DecLit(1)))
                     )
                 ))])
             }]),
@@ -442,10 +465,14 @@ mod tests {
                 node: Expr::Binary(
                     Box::new(Expr::DecLit(1)),
                     Spanned::new(2, 2, Token::Plus),
-                    Box::new(Expr::Binary(
-                        Box::new(Expr::DecLit(2)),
-                        Spanned::new(6, 6, Token::Star),
-                        Box::new(Expr::DecLit(3))
+                    Box::new(Spanned::new(
+                        4,
+                        8,
+                        Expr::Binary(
+                            Box::new(Expr::DecLit(2)),
+                            Spanned::new(6, 6, Token::Star),
+                            Box::new(Spanned::new(8, 8, Expr::DecLit(3)))
+                        )
                     ))
                 ),
                 span: Span::new(0, 8)
@@ -464,10 +491,10 @@ mod tests {
                     Box::new(Expr::Binary(
                         Box::new(Expr::DecLit(2)),
                         Spanned::new(2, 2, Token::Star),
-                        Box::new(Expr::DecLit(3))
+                        Box::new(Spanned::new(4, 4, Expr::DecLit(3)))
                     )),
                     Spanned::new(6, 6, Token::Plus),
-                    Box::new(Expr::DecLit(1)),
+                    Box::new(Spanned::new(8, 8, Expr::DecLit(1))),
                 ),
                 span: Span::new(0, 8)
             },
@@ -485,10 +512,10 @@ mod tests {
                     Box::new(Expr::Binary(
                         Box::new(Expr::DecLit(2)),
                         Spanned::new(3, 3, Token::Plus),
-                        Box::new(Expr::DecLit(3))
+                        Box::new(Spanned::new(5, 5, Expr::DecLit(3)))
                     )),
                     Spanned::new(8, 8, Token::Star),
-                    Box::new(Expr::DecLit(1)),
+                    Box::new(Spanned::new(10, 10, Expr::DecLit(1))),
                 ),
                 span: Span::new(0, 10)
             },
@@ -505,10 +532,14 @@ mod tests {
                 node: Expr::Binary(
                     Box::new(Expr::DecLit(1)),
                     Spanned::new(2, 2, Token::Plus),
-                    Box::new(Expr::Binary(
-                        Box::new(Expr::DecLit(2)),
-                        Spanned::new(7, 7, Token::Star),
-                        Box::new(Expr::DecLit(3))
+                    Box::new(Spanned::new(
+                        4,
+                        10,
+                        Expr::Binary(
+                            Box::new(Expr::DecLit(2)),
+                            Spanned::new(7, 7, Token::Star),
+                            Box::new(Spanned::new(9, 9, Expr::DecLit(3)))
+                        )
                     ))
                 ),
                 span: Span::new(0, 10)

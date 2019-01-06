@@ -32,3 +32,27 @@ reason:
         output
     );
 }
+
+#[test]
+fn test_non_bool_in_if_condition() {
+    let mut cursor = Cursor::new(Vec::new());
+
+    let source = Source::new(
+        "test",
+        r#"fn main() {
+    if "hello" {
+
+    }
+}"#,
+    );
+
+    mini_rust::compile(&source, &mut cursor).unwrap();
+    let output = String::from_utf8(cursor.into_inner()).unwrap();
+    let expected = "error: if condition must be of type 'bool', but the supplied type was 'string'
+--> test:2:9
+  |
+2 |    if \"hello\" {
+  |\u{1b}[31m        ^^^^^\u{1b}[0m
+";
+    assert_eq!(expected, output);
+}

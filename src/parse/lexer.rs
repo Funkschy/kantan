@@ -155,6 +155,7 @@ impl<'input> Lexer<'input> {
             "i32" => Some(self.spanned(start, Token::TypeIdent(Type::I32))),
             "let" => Some(self.spanned(start, Token::Let)),
             "fn" => Some(self.spanned(start, Token::Fn)),
+            "if" => Some(self.spanned(start, Token::If)),
             _ => None,
         }
     }
@@ -185,7 +186,12 @@ impl<'input> Lexer<'input> {
             ))?;
         }
 
-        Ok(self.spanned(start, Token::StringLit(slice)))
+        let mut spanned = self.spanned(start, Token::StringLit(slice));
+        // remove trailing "
+        if spanned.span.end - spanned.span.start > 0 {
+            spanned.span.end -= 1;
+        }
+        Ok(spanned)
     }
 
     fn scan_token(&mut self) -> Option<Scanned<'input>> {
@@ -242,7 +248,7 @@ mod tests {
 
         let s = lexer.scan_token();
         assert_eq!(
-            Some(Ok(Spanned::new(1, 12, Token::StringLit("hello world")))),
+            Some(Ok(Spanned::new(1, 11, Token::StringLit("hello world")))),
             s
         );
 
@@ -384,7 +390,7 @@ mod tests {
         let mut lexer = Lexer::new(source);
 
         let ident = lexer.scan_token().unwrap().unwrap();
-        let expected = Spanned::new(1, source.len() - 1, Token::StringLit("こんにちは"));
+        let expected = Spanned::new(1, source.len() - 2, Token::StringLit("こんにちは"));
 
         assert_eq!(expected, ident);
     }

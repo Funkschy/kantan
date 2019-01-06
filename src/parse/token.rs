@@ -11,6 +11,7 @@ pub enum Token<'input> {
     // Keywords
     Let,
     Fn,
+    If,
     TypeIdent(Type),
 
     // Operators
@@ -64,6 +65,7 @@ impl<'input> fmt::Display for Token<'input> {
             // Keywords
             Token::Let => write!(f, "let"),
             Token::Fn => write!(f, "fn"),
+            Token::If => write!(f, "if"),
             // Operators
             Token::Equals => write!(f, "="),
             Token::Plus => write!(f, "+"),

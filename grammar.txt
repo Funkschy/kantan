@@ -16,11 +16,13 @@ block               = "{" stmt_list "}"
 
 stmt_list           = stmt*
 
-stmt                = (decl_stmt | simple_stmt) ";"
+stmt                = (decl_stmt | simple_stmt) ";" | if_stmt
 
 decl_stmt           = "let" IDENTIFIER "=" expr
 
 simple_stmt         = assign_stmt | expr_stmt
+
+if_stmt             = "if" expr block ( "else" ( if_stmt | block) )?
 
 expr_stmt           = expr
 
