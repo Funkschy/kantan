@@ -51,11 +51,11 @@ impl<'a> From<Spanned<LexError>> for Spanned<ParseError<'a>> {
     }
 }
 
-impl<T: Copy> Clone for Spanned<T> {
+impl<T: Clone> Clone for Spanned<T> {
     fn clone(&self) -> Self {
         Spanned {
             span: self.span,
-            node: self.node,
+            node: self.node.clone(),
         }
     }
 }

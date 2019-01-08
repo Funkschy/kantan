@@ -1,6 +1,7 @@
 use std::iter::Peekable;
 
 use super::{ast::*, error::LexError, token::*, *};
+use crate::types::Type;
 
 type ExprResult<'input> = Result<Spanned<Expr<'input>>, Spanned<ParseError<'input>>>;
 type StmtResult<'input> = Result<Stmt<'input>, Spanned<ParseError<'input>>>;
@@ -129,9 +130,21 @@ where
         }
         let name = ident?;
 
-        self.consume(Token::Equals)?;
+        let ty = if let Ok(true) = self.match_tok(Token::Colon) {
+            Some(self.consume_type()?)
+        } else {
+            None
+        };
+
+        let eq = self.consume(Token::Equals)?;
+
         let value = self.expression();
-        Ok(Stmt::VarDecl { name, value })
+        Ok(Stmt::VarDecl {
+            name,
+            value,
+            eq,
+            ty,
+        })
     }
 
     pub fn expression(&mut self) -> Spanned<Expr<'input>> {
@@ -158,12 +171,23 @@ where
         Ok(left)
     }
 
+    fn eof(&mut self) -> Scanned<'input> {
+        let len = self.source.len();
+        let span = Span::new(len, len);
+        self.make_lex_err(span, "Unexpected end of file")
+    }
+
     fn advance(&mut self) -> Scanned<'input> {
-        self.scanner.next().unwrap_or_else(|| {
-            let len = self.source.len();
-            let span = Span::new(len, len);
-            self.make_lex_err(span, "Unexpected end of file")
-        })
+        self.scanner.next().unwrap_or_else(|| self.eof())
+    }
+
+    fn match_tok(&mut self, expected: Token<'input>) -> Result<bool, Spanned<ParseError<'input>>> {
+        if self.peek_eq(expected) {
+            self.consume(expected)?;
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     fn peek_eq(&mut self, expected: Token<'input>) -> bool {
@@ -182,18 +206,38 @@ where
         {
             Ok(Spanned::from_span(span, ident))
         } else {
-            // TODO: better error
-            Err(self.make_consume_err(&next, Token::Ident("")).unwrap_err())
+            Err(self
+                .make_consume_err(&next, "Identifier".to_owned())
+                .unwrap_err())
+        }
+    }
+
+    // TODO: rewrite special consume methods to work like consume(...)
+    fn consume_type(&mut self) -> Result<Spanned<Type>, Spanned<ParseError<'input>>> {
+        let next = self.advance()?;
+        if let Spanned {
+            span,
+            node: Token::TypeIdent(ty),
+        } = next
+        {
+            Ok(Spanned::from_span(span, ty))
+        } else {
+            Err(self.make_consume_err(&next, "Type".to_owned()).unwrap_err())
         }
     }
 
     fn consume(&mut self, expected: Token<'input>) -> Scanned<'input> {
-        let next = self.advance()?;
-        if next.node == expected {
-            Ok(next)
-        } else {
-            self.make_consume_err(&next, expected)
+        if let Some(Ok(peek)) = self.scanner.peek() {
+            if peek.node == expected {
+                let next = self.advance()?;
+                return Ok(next);
+            } else {
+                let tok = Spanned::clone(peek);
+                return self.make_consume_err(&tok, expected.to_string());
+            }
         }
+
+        self.eof()
     }
 
     fn next_higher_precedence(&mut self, precedence: Precedence) -> bool {
@@ -303,9 +347,10 @@ where
     fn make_consume_err(
         &mut self,
         actual: &Spanned<Token<'input>>,
-        expected: Token<'input>,
+        expected: String,
     ) -> Scanned<'input> {
         self.err_count += 1;
+        self.sync();
         Err(Spanned {
             span: actual.span,
             node: ParseError::ConsumeError {
@@ -318,8 +363,8 @@ where
     fn sync(&mut self) {
         self.scanner.next();
 
-        'outer: while let Some(next) = self.scanner.peek() {
-            match next {
+        'outer: while let Some(peek) = self.scanner.peek() {
+            match peek {
                 Ok(Spanned { node, .. }) if *node == Token::Semi => {
                     break 'outer;
                 }
@@ -390,7 +435,9 @@ mod tests {
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::VarDecl {
                     name: Spanned::new(16, 18, "var"),
-                    value: Spanned::new(22, 22, Expr::DecLit(5))
+                    value: Spanned::new(22, 22, Expr::DecLit(5)),
+                    eq: Spanned::new(20, 20, Token::Equals),
+                    ty: None
                 }])
             }]),
             prg

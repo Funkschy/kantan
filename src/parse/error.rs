@@ -9,7 +9,7 @@ pub enum ParseError<'input> {
     InfixError(String),
     ConsumeError {
         actual: Token<'input>,
-        expected: Token<'input>,
+        expected: String,
     },
 }
 

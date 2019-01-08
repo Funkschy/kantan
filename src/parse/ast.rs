@@ -18,6 +18,8 @@ pub enum Stmt<'input> {
     VarDecl {
         name: Spanned<&'input str>,
         value: Spanned<Expr<'input>>,
+        eq: Spanned<Token<'input>>,
+        ty: Option<Spanned<Type>>,
     },
     If {
         condition: Spanned<Expr<'input>>,

@@ -34,6 +34,36 @@ reason:
 }
 
 #[test]
+fn test_invalid_assignment_explicit_type() {
+    let mut cursor = Cursor::new(Vec::new());
+
+    let source = Source::new(
+        "test",
+        r#"fn main() {
+    let mystr: string = 2;
+}"#,
+    );
+
+    mini_rust::compile(&source, &mut cursor).unwrap();
+    let output = String::from_utf8(cursor.into_inner()).unwrap();
+
+    assert_eq!(
+        "error: binary operation '=' cannot be applied to 'string' and 'i32'
+--> test:2:23
+  |
+2 |    let mystr: string = 2;
+  |\u{1b}[31m                      ^\u{1b}[0m - not allowed
+
+reason:
+  |
+2 |    let mystr: string = 2;
+  |\u{1b}[33m        ^^^^^\u{1b}[0m - 'mystr' was defined as 'string' here
+",
+        output
+    );
+}
+
+#[test]
 fn test_non_bool_in_if_condition() {
     let mut cursor = Cursor::new(Vec::new());
 

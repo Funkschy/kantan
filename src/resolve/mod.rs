@@ -40,10 +40,28 @@ impl<'input> Resolver<'input> {
             Stmt::VarDecl {
                 name: Spanned { node: name, span },
                 ref value,
+                eq,
+                ty: var_type,
             } => {
                 match self.resolve_expr(&Spanned::from_span(value.span, &value.node)) {
                     Err(msg) => errors.push(msg),
-                    Ok(ty) => self.sym_table.bind(name, *span, ty, false),
+                    Ok(ty) => {
+                        if let Some(var_type) = var_type {
+                            let expr_span = Span::new(span.start, value.span.end);
+                            // If a type was provided, check if it's one of the builtin types
+                            if let Err(err) = self
+                                .compare_types(eq, expr_span, var_type.node, ty)
+                                .map(|_| self.sym_table.bind(name, *span, ty, false))
+                                .map_err(|ResolveError { error, .. }| {
+                                    self.illegal_op_to_illegal_assignment(name, error, *span)
+                                })
+                            {
+                                errors.push(err);
+                            }
+                        } else {
+                            self.sym_table.bind(name, *span, ty, false)
+                        }
+                    }
                 };
             }
             Stmt::FnDecl { params, body, .. } => {
@@ -142,15 +160,7 @@ impl<'input> Resolver<'input> {
                 // the declared variable
                 self.compare_types(eq, span, ty, val_type).map_err(
                     |ResolveError { error, .. }| {
-                        if let ResolveErrorType::IllegalOperation(err) = error {
-                            self.error(ResolveErrorType::IllegalAssignment(AssignmentError {
-                                name,
-                                definition_span: sym_span,
-                                bin_op_err: err,
-                            }))
-                        } else {
-                            panic!("Invalid Error Type");
-                        }
+                        self.illegal_op_to_illegal_assignment(name, error, sym_span)
                     },
                 )
             }
@@ -168,6 +178,23 @@ impl<'input> Resolver<'input> {
         ResolveError {
             source: self.source,
             error: err,
+        }
+    }
+
+    fn illegal_op_to_illegal_assignment(
+        &self,
+        name: &'input str,
+        error: ResolveErrorType<'input>,
+        def_span: Span,
+    ) -> ResolveError<'input> {
+        if let ResolveErrorType::IllegalOperation(err) = error {
+            self.error(ResolveErrorType::IllegalAssignment(AssignmentError {
+                name,
+                definition_span: def_span,
+                bin_op_err: err,
+            }))
+        } else {
+            panic!("Invalid Error Type");
         }
     }
 
@@ -195,7 +222,7 @@ impl<'input> Resolver<'input> {
     fn compare_types(
         &self,
         op: &Spanned<Token<'input>>,
-        span: Span,
+        expr_span: Span,
         first: Type,
         second: Type,
     ) -> Result<Type, ResolveError<'input>> {
@@ -203,7 +230,7 @@ impl<'input> Resolver<'input> {
             Err(
                 self.error(ResolveErrorType::IllegalOperation(BinaryOperationError {
                     token: *op,
-                    expr_span: span,
+                    expr_span,
                     left_type: first,
                     right_type: second,
                 })),
@@ -228,6 +255,8 @@ mod tests {
             body: Block(vec![Stmt::VarDecl {
                 name: Spanned::new(16, 16, "x"),
                 value: Spanned::new(20, 22, Expr::DecLit(10)),
+                eq: Spanned::new(18, 18, Token::Equals),
+                ty: None,
             }]),
         }]);
 
@@ -249,6 +278,8 @@ mod tests {
                 Stmt::VarDecl {
                     name: Spanned::new(16, 16, "x"),
                     value: Spanned::new(20, 22, Expr::DecLit(10)),
+                    eq: Spanned::new(18, 18, Token::Equals),
+                    ty: None,
                 },
                 Stmt::Expr(Spanned::new(
                     24,
