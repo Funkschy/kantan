@@ -28,7 +28,7 @@ impl<'input> Resolver<'input> {
 }
 
 impl<'input> Resolver<'input> {
-    pub fn resolve(&mut self, prg: Program<'input>) -> Vec<ResolveError<'input>> {
+    pub fn resolve(&mut self, prg: &Program<'input>) -> Vec<ResolveError<'input>> {
         let mut errors = vec![];
 
         for stmt in &prg.0 {
@@ -50,7 +50,7 @@ impl<'input> Resolver<'input> {
             } => {
                 self.sym_table.bind_global_function(name, *span, Type::Void);
             }
-            Stmt::Import { name: _ } => {
+            Stmt::Import { .. } => {
                 // TODO: implement import resolving
             }
             _ => panic!("Invalid top level declaration"),
@@ -142,7 +142,7 @@ impl<'input> Resolver<'input> {
                     errors.push(msg);
                 }
             }
-            Stmt::Import { name: _ } => { /*Imports are handled in resolve_top_lvl()*/ }
+            Stmt::Import { .. } => { /*Imports are handled in resolve_top_lvl()*/ }
         };
     }
 
@@ -357,7 +357,7 @@ mod tests {
         ]);
 
         let mut resolver = Resolver::new(&source);
-        let errors = resolver.resolve(ast);
+        let errors = resolver.resolve(&ast);
 
         let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
@@ -379,7 +379,7 @@ mod tests {
         }]);
 
         let mut resolver = Resolver::new(&source);
-        let errors = resolver.resolve(ast);
+        let errors = resolver.resolve(&ast);
 
         let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
@@ -412,7 +412,7 @@ mod tests {
         }]);
 
         let mut resolver = Resolver::new(&source);
-        let errors = resolver.resolve(ast);
+        let errors = resolver.resolve(&ast);
 
         assert_eq!(1, errors.len());
 

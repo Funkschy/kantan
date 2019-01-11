@@ -2,7 +2,7 @@ source_file         = top_level_decl*
 
 top_level_decl      = import | fn_decl
 
-import              = "import" PACKAGE
+import              = "import" STRING
 
 fn_decl             = fn IDENTIFIER "(" param_list? ")" fn_body
 
@@ -65,7 +65,5 @@ DIGIT               = "0" ... "9"
 STRING              = """ <any char expect """>* """
 
 IDENTIFIER          = ALPHA ( ALPHA | DIGIT )*
-
-PACKAGE             = IDENTIFIER
 
 ALPHA               = "a" ... "z" | "A" ... "Z" | "_"

@@ -42,11 +42,22 @@ pub fn compile<W: Write>(source: &Source, writer: &mut W) -> io::Result<()> {
     let mut parser = Parser::new(lexer);
 
     let prg = parser.parse();
+    // let imports: Vec<Spanned<&str>> = prg
+    //     .0
+    //     .iter()
+    //     .filter_map(|top_lvl| {
+    //         if let Stmt::Import { name } = top_lvl {
+    //             Some(*name)
+    //         } else {
+    //             None
+    //         }
+    //     })
+    //     .collect();
 
     if parser.err_count == 0 {
         let mut resolver = Resolver::new(source);
         let errors: Vec<String> = resolver
-            .resolve(prg)
+            .resolve(&prg)
             .iter()
             .map(|err| err.to_string())
             .collect();
@@ -113,7 +124,7 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     find_errors_rec(s, errors);
                 }
             }
-            Stmt::Import { name: _ } => {}
+            Stmt::Import { .. } => {}
         }
     }
 

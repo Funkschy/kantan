@@ -73,7 +73,7 @@ where
 
     fn import(&mut self) -> StmtResult<'input> {
         self.consume(Token::Import)?;
-        let name = self.consume_ident()?;
+        let name = self.consume_string()?;
 
         Ok(Stmt::Import { name })
     }
@@ -209,33 +209,78 @@ where
         })
     }
 
-    fn consume_ident(&mut self) -> Result<Spanned<&'input str>, Spanned<ParseError<'input>>> {
-        let next = self.advance()?;
-        if let Spanned {
-            span,
-            node: Token::Ident(ident),
-        } = next
-        {
-            Ok(Spanned::from_span(span, ident))
-        } else {
-            Err(self
-                .make_consume_err(&next, "Identifier".to_owned())
-                .unwrap_err())
+    // TODO: remove copy paste
+    fn consume_string(&mut self) -> Result<Spanned<&'input str>, Spanned<ParseError<'input>>> {
+        if let Some(peek) = self.scanner.peek().cloned() {
+            return match peek {
+                Ok(peek) => {
+                    if let Spanned {
+                        node: Token::StringLit(string),
+                        span,
+                    } = peek
+                    {
+                        self.advance()?;
+                        return Ok(Spanned::from_span(span, string));
+                    } else {
+                        let tok = Spanned::clone(&peek);
+                        return Err(self
+                            .make_consume_err(&tok, "Identifier".to_owned())
+                            .unwrap_err());
+                    }
+                }
+                Err(err) => Err(err),
+            };
         }
+
+        Err(self.eof().unwrap_err())
     }
 
-    // TODO: rewrite special consume methods to work like consume(...)
-    fn consume_type(&mut self) -> Result<Spanned<Type>, Spanned<ParseError<'input>>> {
-        let next = self.advance()?;
-        if let Spanned {
-            span,
-            node: Token::TypeIdent(ty),
-        } = next
-        {
-            Ok(Spanned::from_span(span, ty))
-        } else {
-            Err(self.make_consume_err(&next, "Type".to_owned()).unwrap_err())
+    fn consume_ident(&mut self) -> Result<Spanned<&'input str>, Spanned<ParseError<'input>>> {
+        if let Some(peek) = self.scanner.peek().cloned() {
+            return match peek {
+                Ok(peek) => {
+                    if let Spanned {
+                        node: Token::Ident(ident),
+                        span,
+                    } = peek
+                    {
+                        self.advance()?;
+                        return Ok(Spanned::from_span(span, ident));
+                    } else {
+                        let tok = Spanned::clone(&peek);
+                        return Err(self
+                            .make_consume_err(&tok, "Identifier".to_owned())
+                            .unwrap_err());
+                    }
+                }
+                Err(err) => Err(err),
+            };
         }
+
+        Err(self.eof().unwrap_err())
+    }
+
+    fn consume_type(&mut self) -> Result<Spanned<Type>, Spanned<ParseError<'input>>> {
+        if let Some(peek) = self.scanner.peek().cloned() {
+            return match peek {
+                Ok(peek) => {
+                    if let Spanned {
+                        node: Token::TypeIdent(ty),
+                        span,
+                    } = peek
+                    {
+                        self.advance()?;
+                        return Ok(Spanned::from_span(span, ty));
+                    } else {
+                        let tok = Spanned::clone(&peek);
+                        return Err(self.make_consume_err(&tok, "Type".to_owned()).unwrap_err());
+                    }
+                }
+                Err(err) => Err(err),
+            };
+        }
+
+        Err(self.eof().unwrap_err())
     }
 
     fn consume(&mut self, expected: Token<'input>) -> Scanned<'input> {
