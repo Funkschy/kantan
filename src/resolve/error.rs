@@ -1,33 +1,36 @@
 use std::fmt;
 
 use super::types::Type;
-use crate::{
-    err_to_string, find_line_index, format_error, parse::token::Token, Source, Span, Spanned,
-};
+use crate::{err_to_string, find_line_index, format_error, Source, Span};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ResolveError<'input> {
     pub source: &'input Source<'input>,
     pub error: ResolveErrorType<'input>,
+    pub err_span: Span,
+    pub expr_span: Span,
+}
+
+impl<'input> ResolveError<'input> {
+    fn err_token(&self) -> &'input str {
+        &self.source.code[self.err_span.start..=self.err_span.end]
+    }
 }
 
 impl<'input> fmt::Display for ResolveError<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let binoperr_to_string = |&BinaryOperationError {
-                                      expr_span,
-                                      token,
-                                      left_type,
-                                      right_type,
-                                  }| {
+        let binoperr_to_string = |err: &BinaryOperationError| {
             format!(
                 "{} - not allowed",
                 format_error(
                     self.source,
-                    expr_span,
-                    token.span,
+                    self.expr_span,
+                    self.err_span,
                     &format!(
                         "binary operation '{}' cannot be applied to '{}' and '{}'",
-                        token.node, left_type, right_type
+                        self.err_token(),
+                        err.left_type,
+                        err.right_type
                     )
                 )
             )
@@ -48,26 +51,21 @@ impl<'input> fmt::Display for ResolveError<'input> {
                 );
                 format!("{}\n\nreason:\n{}", binoperr_to_string(bin_op_err), reason)
             }
-            ResolveErrorType::NotDefined(DefinitionError {
-                expr_span,
-                name,
-                name_span,
-            }) => format_error(
+            ResolveErrorType::NotDefined(DefinitionError { name }) => format_error(
                 self.source,
-                expr_span,
-                name_span,
+                self.expr_span,
+                self.err_span,
                 &format!("'{}' not in scope", name),
             ),
             ResolveErrorType::IllegalOperation(ref err) => binoperr_to_string(err),
             ResolveErrorType::IllegalType(IllegalTypeError {
-                expr_span,
                 expected_type,
                 actual_type,
                 name,
             }) => format_error(
                 self.source,
-                expr_span,
-                expr_span,
+                self.expr_span,
+                self.expr_span,
                 &format!(
                     "{} must be of type '{}', but the supplied type was '{}'",
                     name, expected_type, actual_type
@@ -83,13 +81,12 @@ impl<'input> fmt::Display for ResolveError<'input> {
 pub enum ResolveErrorType<'input> {
     IllegalAssignment(AssignmentError<'input>),
     NotDefined(DefinitionError<'input>),
-    IllegalOperation(BinaryOperationError<'input>),
+    IllegalOperation(BinaryOperationError),
     IllegalType(IllegalTypeError),
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IllegalTypeError {
-    pub expr_span: Span,
     pub expected_type: Type,
     pub actual_type: Type,
     // e.g. "If condition" or "while condition"
@@ -100,30 +97,16 @@ pub struct IllegalTypeError {
 pub struct AssignmentError<'input> {
     pub name: &'input str,
     pub definition_span: Span,
-    pub bin_op_err: BinaryOperationError<'input>,
+    pub bin_op_err: BinaryOperationError,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct BinaryOperationError<'input> {
-    pub token: Spanned<Token<'input>>,
-    pub expr_span: Span,
+pub struct BinaryOperationError {
     pub left_type: Type,
     pub right_type: Type,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DefinitionError<'input> {
-    pub expr_span: Span,
     pub name: &'input str,
-    pub name_span: Span,
-}
-
-impl<'input> DefinitionError<'input> {
-    pub fn new(name: &'input str, expr_span: Span) -> Self {
-        DefinitionError {
-            name,
-            expr_span,
-            name_span: Span::new(expr_span.start, expr_span.start + name.len() - 1),
-        }
-    }
 }
