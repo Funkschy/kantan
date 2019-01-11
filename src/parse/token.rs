@@ -41,6 +41,7 @@ pub enum Precedence {
     Equality = 2,
     Sum = 3,
     Product = 4,
+    Call = 5,
 }
 
 impl<'input> Token<'input> {
@@ -50,6 +51,7 @@ impl<'input> Token<'input> {
             Token::EqualsEquals => Precedence::Equality,
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
+            Token::LParen => Precedence::Call,
             _ => Precedence::None,
         }
     }

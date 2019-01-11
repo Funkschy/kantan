@@ -1,16 +1,17 @@
-use self::symbol::*;
-use super::*;
 use crate::{
     parse::{ast::*, token::Token, Span, Spanned},
     types::Type,
     Source,
 };
 
+use self::error::*;
+use self::symbol::*;
+
+use super::*;
+
 mod error;
 #[allow(dead_code)]
 mod symbol;
-
-use self::error::*;
 
 pub(crate) struct Resolver<'input> {
     source: &'input Source<'input>,
@@ -28,6 +29,7 @@ impl<'input> Resolver<'input> {
 
 impl<'input> Resolver<'input> {
     pub fn resolve(&mut self, prg: Program<'input>) -> Vec<ResolveError<'input>> {
+        // TODO: scan all top level decls first
         let mut errors = vec![];
         for stmt in prg.0 {
             self.resolve_stmt(&stmt, &mut errors);
@@ -64,7 +66,13 @@ impl<'input> Resolver<'input> {
                     }
                 };
             }
-            Stmt::FnDecl { params, body, .. } => {
+            Stmt::FnDecl {
+                params,
+                body,
+                name: Spanned { node: name, span },
+            } => {
+                self.sym_table.bind_function(name, *span, Type::Void);
+
                 self.sym_table.scope_enter();
 
                 for p in &params.0 {
@@ -169,6 +177,22 @@ impl<'input> Resolver<'input> {
                 .lookup(name)
                 .ok_or_else(|| self.not_defined_error(span, name))
                 .map(|sym| sym.node.ty),
+            Expr::Call { callee, args } => {
+                for Spanned { node: expr, span } in &args.0 {
+                    self.resolve_expr(&Spanned::from_span(*span, &expr))?;
+                }
+
+                let sym = self
+                    .sym_table
+                    .lookup(callee.node)
+                    .ok_or_else(|| self.not_defined_error(callee.span, callee.node))?;
+
+                if sym.node.kind != SymbolKind::Function {
+                    unimplemented!("Insert meaningful error");
+                }
+
+                Ok(sym.node.ty)
+            }
         }
     }
 }

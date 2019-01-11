@@ -227,13 +227,17 @@ where
     }
 
     fn consume(&mut self, expected: Token<'input>) -> Scanned<'input> {
-        if let Some(Ok(peek)) = self.scanner.peek() {
-            if peek.node == expected {
-                let next = self.advance()?;
-                return Ok(next);
+        if let Some(peek) = self.scanner.peek() {
+            if let Ok(peek) = peek {
+                if peek.node == expected {
+                    let next = self.advance()?;
+                    return Ok(next);
+                } else {
+                    let tok = Spanned::clone(peek);
+                    return self.make_consume_err(&tok, expected.to_string());
+                }
             } else {
-                let tok = Spanned::clone(peek);
-                return self.make_consume_err(&tok, expected.to_string());
+                return peek.clone();
             }
         }
 
@@ -288,6 +292,27 @@ where
                     self.make_infix_err(token)
                 }
             }
+            Token::LParen => {
+                if let Spanned {
+                    node: Expr::Ident(name),
+                    span,
+                } = left
+                {
+                    let arg_list = self.arg_list()?;
+                    let end = self.consume(Token::RParen)?.span.end;
+
+                    Ok(Spanned::new(
+                        span.start,
+                        end,
+                        Expr::Call {
+                            callee: Box::new(Spanned::from_span(span, name)),
+                            args: arg_list,
+                        },
+                    ))
+                } else {
+                    self.make_infix_err(token)
+                }
+            }
             _ => self.make_infix_err(token),
         }
     }
@@ -316,6 +341,16 @@ where
             Token::Ident(ref name) => ok_spanned(Expr::Ident(name)),
             _ => self.make_prefix_err(token),
         }
+    }
+
+    fn arg_list(&mut self) -> Result<ArgList<'input>, Spanned<ParseError<'input>>> {
+        let mut args = vec![];
+
+        while !self.at_end() && !self.peek_eq(Token::RParen) {
+            args.push(self.expression());
+        }
+
+        Ok(ArgList(args))
     }
 
     fn make_lex_err(&mut self, span: Span, cause: &str) -> Scanned<'input> {
@@ -389,6 +424,30 @@ where
 mod tests {
     use super::lexer::Lexer;
     use super::*;
+
+    #[test]
+    fn test_parse_call_without_args_should_return_call_expr_with_empty_args() {
+        let source = "fn main() { test(); }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![Stmt::FnDecl {
+                name: Spanned::new(3, 6, "main"),
+                params: ParamList(vec![]),
+                body: Block(vec![Stmt::Expr(Spanned::new(
+                    12,
+                    17,
+                    Expr::Call {
+                        callee: Box::new(Spanned::new(12, 15, "test")),
+                        args: ArgList(vec![])
+                    }
+                ))])
+            }]),
+            prg
+        );
+    }
 
     #[test]
     fn test_parse_with_one_error_should_have_err_count_of_one() {
