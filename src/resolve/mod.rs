@@ -1,5 +1,5 @@
 use crate::{
-    parse::{ast::*, token::Token, Span, Spanned},
+    parse::{ast::*, Span, Spanned},
     types::Type,
     Source,
 };
@@ -52,11 +52,20 @@ impl<'input> Resolver<'input> {
                             let expr_span = Span::new(span.start, value.span.end);
                             // If a type was provided, check if it's one of the builtin types
                             if let Err(err) = self
-                                .compare_types(eq, expr_span, var_type.node, ty)
+                                .compare_types(eq.span, expr_span, var_type.node, ty)
                                 .map(|_| self.sym_table.bind(name, *span, ty, false))
-                                .map_err(|ResolveError { error, .. }| {
-                                    self.illegal_op_to_illegal_assignment(name, error, *span)
-                                })
+                                .map_err(
+                                    |ResolveError {
+                                         error,
+                                         err_span,
+                                         expr_span,
+                                         ..
+                                     }| {
+                                        self.illegal_op_to_illegal_assignment(
+                                            err_span, expr_span, name, error, *span,
+                                        )
+                                    },
+                                )
                             {
                                 errors.push(err);
                             }
@@ -99,7 +108,13 @@ impl<'input> Resolver<'input> {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => {
                         if ty != Type::Bool {
-                            errors.push(self.type_error(*span, "if condition", Type::Bool, ty))
+                            errors.push(self.type_error(
+                                *span,
+                                *span,
+                                "if condition",
+                                Type::Bool,
+                                ty,
+                            ))
                         }
                     }
                 }
@@ -134,14 +149,14 @@ impl<'input> Resolver<'input> {
                 let right_span = r.span;
                 let right_expr = &r.node;
                 let right = self.resolve_expr(&Spanned::from_span(right_span, right_expr))?;
-                self.compare_types(op, expr.span, left, right)
+                self.compare_types(op.span, expr.span, left, right)
             }
             Expr::BoolBinary(l, op, r) => {
                 let left = self.resolve_expr(&Spanned::from_span(span, l))?;
                 let right_span = r.span;
                 let right_expr = &r.node;
                 let right = self.resolve_expr(&Spanned::from_span(right_span, right_expr))?;
-                self.compare_types(op, expr.span, left, right)?;
+                self.compare_types(op.span, expr.span, left, right)?;
                 Ok(Type::Bool)
             }
             Expr::Assign { name, eq, value } => {
@@ -153,7 +168,7 @@ impl<'input> Resolver<'input> {
                     } = self
                         .sym_table
                         .lookup(name)
-                        .ok_or_else(|| self.not_defined_error(span, name))?;
+                        .ok_or_else(|| self.not_defined_error(span, span, name))?;
                     (*ty, *span)
                 };
 
@@ -166,17 +181,25 @@ impl<'input> Resolver<'input> {
                 let val_type = self.resolve_expr(&Spanned::from_span(value_span, node))?;
                 // check if type of right expression is the same as that of
                 // the declared variable
-                self.compare_types(eq, span, ty, val_type).map_err(
-                    |ResolveError { error, .. }| {
-                        self.illegal_op_to_illegal_assignment(name, error, sym_span)
+                self.compare_types(eq.span, span, ty, val_type).map_err(
+                    |ResolveError {
+                         error,
+                         err_span,
+                         expr_span,
+                         ..
+                     }| {
+                        self.illegal_op_to_illegal_assignment(
+                            err_span, expr_span, name, error, sym_span,
+                        )
                     },
                 )
             }
             Expr::Ident(name) => self
                 .sym_table
                 .lookup(name)
-                .ok_or_else(|| self.not_defined_error(span, name))
+                .ok_or_else(|| self.not_defined_error(span, span, name))
                 .map(|sym| sym.node.ty),
+
             Expr::Call { callee, args } => {
                 for Spanned { node: expr, span } in &args.0 {
                     self.resolve_expr(&Spanned::from_span(*span, &expr))?;
@@ -185,7 +208,7 @@ impl<'input> Resolver<'input> {
                 let sym = self
                     .sym_table
                     .lookup(callee.node)
-                    .ok_or_else(|| self.not_defined_error(callee.span, callee.node))?;
+                    .ok_or_else(|| self.not_defined_error(callee.span, span, callee.node))?;
 
                 if sym.node.kind != SymbolKind::Function {
                     unimplemented!("Insert meaningful error");
@@ -198,25 +221,38 @@ impl<'input> Resolver<'input> {
 }
 
 impl<'input> Resolver<'input> {
-    fn error(&self, err: ResolveErrorType<'input>) -> ResolveError<'input> {
+    fn error(
+        &self,
+        err_span: Span,
+        expr_span: Span,
+        err: ResolveErrorType<'input>,
+    ) -> ResolveError<'input> {
         ResolveError {
             source: self.source,
             error: err,
+            err_span,
+            expr_span,
         }
     }
 
     fn illegal_op_to_illegal_assignment(
         &self,
+        err_span: Span,
+        expr_span: Span,
         name: &'input str,
         error: ResolveErrorType<'input>,
         def_span: Span,
     ) -> ResolveError<'input> {
         if let ResolveErrorType::IllegalOperation(err) = error {
-            self.error(ResolveErrorType::IllegalAssignment(AssignmentError {
-                name,
-                definition_span: def_span,
-                bin_op_err: err,
-            }))
+            self.error(
+                err_span,
+                expr_span,
+                ResolveErrorType::IllegalAssignment(AssignmentError {
+                    name,
+                    definition_span: def_span,
+                    bin_op_err: err,
+                }),
+            )
         } else {
             panic!("Invalid Error Type");
         }
@@ -224,41 +260,52 @@ impl<'input> Resolver<'input> {
 
     fn type_error(
         &self,
+        err_span: Span,
         expr_span: Span,
         name: &'static str,
         expected_type: Type,
         actual_type: Type,
     ) -> ResolveError<'input> {
-        self.error(ResolveErrorType::IllegalType(IllegalTypeError {
+        self.error(
+            err_span,
             expr_span,
-            expected_type,
-            actual_type,
-            name,
-        }))
+            ResolveErrorType::IllegalType(IllegalTypeError {
+                expected_type,
+                actual_type,
+                name,
+            }),
+        )
     }
 
-    fn not_defined_error(&self, span: Span, name: &'input str) -> ResolveError<'input> {
-        self.error(ResolveErrorType::NotDefined(DefinitionError::new(
-            name, span,
-        )))
+    fn not_defined_error(
+        &self,
+        err_span: Span,
+        expr_span: Span,
+        name: &'input str,
+    ) -> ResolveError<'input> {
+        self.error(
+            err_span,
+            expr_span,
+            ResolveErrorType::NotDefined(DefinitionError { name }),
+        )
     }
 
     fn compare_types(
         &self,
-        op: &Spanned<Token<'input>>,
+        err_span: Span,
         expr_span: Span,
         first: Type,
         second: Type,
     ) -> Result<Type, ResolveError<'input>> {
         if first != second {
-            Err(
-                self.error(ResolveErrorType::IllegalOperation(BinaryOperationError {
-                    token: *op,
-                    expr_span,
+            Err(self.error(
+                err_span,
+                expr_span,
+                ResolveErrorType::IllegalOperation(BinaryOperationError {
                     left_type: first,
                     right_type: second,
-                })),
-            )
+                }),
+            ))
         } else {
             Ok(first)
         }
@@ -268,6 +315,7 @@ impl<'input> Resolver<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse::token::Token;
 
     #[test]
     fn test_resolve_without_errors_should_return_empty_vec() {

@@ -16,9 +16,9 @@ block               = "{" stmt_list "}"
 
 stmt_list           = stmt*
 
-stmt                = (decl_stmt | simple_stmt) ";" | if_stmt
+stmt                = ( decl_stmt | simple_stmt ) ";" | if_stmt
 
-decl_stmt           = "let" IDENTIFIER "=" expr
+decl_stmt           = "let" IDENTIFIER ( ":" TYPE )? "=" expr
 
 simple_stmt         = assign_stmt | expr_stmt
 
@@ -44,7 +44,7 @@ term                = factor (( "*" | "/" | "%") factor)*
 
 factor              = ( "!" | "-" ) primary_expr
 
-primary_expr        = primary call
+primary_expr        = primary call?
 
 primary             = literal | "(" expr ")"
 
