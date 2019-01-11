@@ -158,6 +158,7 @@ impl<'input> Lexer<'input> {
             "let" => Some(self.spanned(start, Token::Let)),
             "fn" => Some(self.spanned(start, Token::Fn)),
             "if" => Some(self.spanned(start, Token::If)),
+            "import" => Some(self.spanned(start, Token::Import)),
             _ => None,
         }
     }

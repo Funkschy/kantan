@@ -113,6 +113,7 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     find_errors_rec(s, errors);
                 }
             }
+            Stmt::Import { name: _ } => {}
         }
     }
 

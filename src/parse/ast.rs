@@ -15,6 +15,9 @@ pub enum Stmt<'input> {
         params: ParamList<'input>,
         body: Block<'input>,
     },
+    Import {
+        name: Spanned<&'input str>,
+    },
     VarDecl {
         name: Spanned<&'input str>,
         value: Spanned<Expr<'input>>,

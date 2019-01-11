@@ -50,6 +50,9 @@ impl<'input> Resolver<'input> {
             } => {
                 self.sym_table.bind_global_function(name, *span, Type::Void);
             }
+            Stmt::Import { name: _ } => {
+                // TODO: implement import resolving
+            }
             _ => panic!("Invalid top level declaration"),
         }
     }
@@ -139,6 +142,7 @@ impl<'input> Resolver<'input> {
                     errors.push(msg);
                 }
             }
+            Stmt::Import { name: _ } => { /*Imports are handled in resolve_top_lvl()*/ }
         };
     }
 

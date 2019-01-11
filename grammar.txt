@@ -1,6 +1,8 @@
 source_file         = top_level_decl*
 
-top_level_decl      = fn_decl
+top_level_decl      = import | fn_decl
+
+import              = "import" PACKAGE
 
 fn_decl             = fn IDENTIFIER "(" param_list? ")" fn_body
 
@@ -18,7 +20,7 @@ stmt_list           = stmt*
 
 stmt                = ( decl_stmt | simple_stmt ) ";" | if_stmt
 
-decl_stmt           = "let" IDENTIFIER ( ":" TYPE )? "=" expr
+decl_stmt           = "let" IDENTIFIER ( ":" type )? "=" expr
 
 simple_stmt         = assign_stmt | expr_stmt
 
@@ -54,7 +56,7 @@ arg_list            = expr ( "," expr )*
 
 literal             = "true" | "false" | STRING | NUMBER;
 
---------------------------------------------------------------------------------
+--------------------------------------------------------------------------
 
 NUMBER              = DIGIT DIGIT* ( "." DIGIT* )?
 
@@ -63,5 +65,7 @@ DIGIT               = "0" ... "9"
 STRING              = """ <any char expect """>* """
 
 IDENTIFIER          = ALPHA ( ALPHA | DIGIT )*
+
+PACKAGE             = IDENTIFIER
 
 ALPHA               = "a" ... "z" | "A" ... "Z" | "_"

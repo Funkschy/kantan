@@ -59,11 +59,23 @@ where
 
     fn top_lvl_decl(&mut self) -> StmtResult<'input> {
         // TODO: error collection
+
+        if self.peek_eq(Token::Import) {
+            return self.import();
+        }
+
         self.consume(Token::Fn)?;
         let name = self.consume_ident()?;
         let params = self.param_list()?;
         let body = self.block()?;
         Ok(Stmt::FnDecl { name, params, body })
+    }
+
+    fn import(&mut self) -> StmtResult<'input> {
+        self.consume(Token::Import)?;
+        let name = self.consume_ident()?;
+
+        Ok(Stmt::Import { name })
     }
 
     // TODO parse parameters
