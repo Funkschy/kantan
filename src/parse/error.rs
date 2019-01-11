@@ -2,7 +2,7 @@ use super::token::Token;
 use std::error;
 use std::fmt;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum ParseError<'input> {
     LexError(LexError),
     PrefixError(String),
@@ -32,7 +32,7 @@ impl<'input> From<LexError> for ParseError<'input> {
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Clone)]
 pub struct LexError {
     cause: Option<String>,
 }

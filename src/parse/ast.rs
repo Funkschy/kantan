@@ -39,6 +39,21 @@ pub struct ParamList<'input>(pub Vec<Param<'input>>);
 pub struct Param<'input>(pub Spanned<&'input str>, pub Type);
 
 #[derive(Debug, Eq, PartialEq)]
+pub struct ArgList<'input>(pub Vec<Spanned<Expr<'input>>>);
+
+impl<'input> fmt::Display for ArgList<'input> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let strings: Vec<String> = self
+            .0
+            .iter()
+            .map(|Spanned { node, .. }| node.to_string())
+            .collect();
+
+        write!(f, "{}", strings.join(", "))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub enum Expr<'input> {
     Error(ParseError<'input>),
     DecLit(i64),
@@ -60,6 +75,10 @@ pub enum Expr<'input> {
         eq: Spanned<Token<'input>>,
         value: Box<Spanned<Expr<'input>>>,
     },
+    Call {
+        callee: Box<Spanned<&'input str>>,
+        args: ArgList<'input>,
+    },
 }
 
 impl<'input> fmt::Display for Expr<'input> {
@@ -73,6 +92,7 @@ impl<'input> fmt::Display for Expr<'input> {
             Expr::BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op.node, r.node)),
             Expr::Ident(name) => write!(f, "{}", name),
             Expr::Assign { name, value, .. } => write!(f, "{} = {}", name, value.node),
+            Expr::Call { callee, args } => write!(f, "{}({})", callee.node, args),
         }
     }
 }

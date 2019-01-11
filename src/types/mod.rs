@@ -5,6 +5,7 @@ pub enum Type {
     I32,
     Bool,
     String,
+    Void,
 }
 
 impl fmt::Display for Type {
@@ -13,6 +14,7 @@ impl fmt::Display for Type {
             Type::I32 => "i32",
             Type::String => "string",
             Type::Bool => "bool",
+            Type::Void => "void",
         };
 
         write!(f, "{}", s)
