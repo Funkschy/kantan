@@ -29,12 +29,29 @@ impl<'input> Resolver<'input> {
 
 impl<'input> Resolver<'input> {
     pub fn resolve(&mut self, prg: Program<'input>) -> Vec<ResolveError<'input>> {
-        // TODO: scan all top level decls first
         let mut errors = vec![];
-        for stmt in prg.0 {
+
+        for stmt in &prg.0 {
+            self.resolve_top_lvl(&stmt, &mut errors);
+        }
+
+        for stmt in &prg.0 {
             self.resolve_stmt(&stmt, &mut errors);
         }
+
         errors
+    }
+
+    fn resolve_top_lvl(&mut self, stmt: &Stmt<'input>, _errors: &mut Vec<ResolveError<'input>>) {
+        match stmt {
+            Stmt::FnDecl {
+                name: Spanned { node: name, span },
+                ..
+            } => {
+                self.sym_table.bind_global_function(name, *span, Type::Void);
+            }
+            _ => panic!("Invalid top level declaration"),
+        }
     }
 
     fn resolve_stmt(&mut self, stmt: &Stmt<'input>, errors: &mut Vec<ResolveError<'input>>) {
@@ -75,13 +92,7 @@ impl<'input> Resolver<'input> {
                     }
                 };
             }
-            Stmt::FnDecl {
-                params,
-                body,
-                name: Spanned { node: name, span },
-            } => {
-                self.sym_table.bind_function(name, *span, Type::Void);
-
+            Stmt::FnDecl { params, body, .. } => {
                 self.sym_table.scope_enter();
 
                 for p in &params.0 {
@@ -316,6 +327,37 @@ impl<'input> Resolver<'input> {
 mod tests {
     use super::*;
     use crate::parse::token::Token;
+
+    #[test]
+    fn test_functions_are_found_without_forward_decl() {
+        let source = Source::new("test", "fn main() { test(); } fn test() {}");
+
+        let ast = Program(vec![
+            Stmt::FnDecl {
+                name: Spanned::new(3, 6, "main"),
+                params: ParamList(vec![]),
+                body: Block(vec![Stmt::Expr(Spanned::new(
+                    12,
+                    17,
+                    Expr::Call {
+                        callee: Box::new(Spanned::new(12, 15, "test")),
+                        args: ArgList(vec![]),
+                    },
+                ))]),
+            },
+            Stmt::FnDecl {
+                name: Spanned::new(25, 28, "test"),
+                params: ParamList(vec![]),
+                body: Block(vec![]),
+            },
+        ]);
+
+        let mut resolver = Resolver::new(&source);
+        let errors = resolver.resolve(ast);
+
+        let expected: Vec<ResolveError> = vec![];
+        assert_eq!(expected, errors);
+    }
 
     #[test]
     fn test_resolve_without_errors_should_return_empty_vec() {

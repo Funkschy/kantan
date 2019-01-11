@@ -86,3 +86,26 @@ fn test_non_bool_in_if_condition() {
 ";
     assert_eq!(expected, output);
 }
+
+#[test]
+fn test_call_of_undefined_function() {
+    let mut cursor = Cursor::new(Vec::new());
+
+    let source = Source::new(
+        "test",
+        r#"fn main() {
+    test();
+}
+"#,
+    );
+
+    mini_rust::compile(&source, &mut cursor).unwrap();
+    let output = String::from_utf8(cursor.into_inner()).unwrap();
+    let expected = "error: 'test' not in scope
+--> test:2:5
+  |
+2 |    test();
+  |\u{1b}[31m    ^^^^\u{1b}[0m
+";
+    assert_eq!(expected, output);
+}

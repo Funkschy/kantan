@@ -48,8 +48,8 @@ impl<'input> SymbolTable<'input> {
         self.scopes.pop();
     }
 
-    pub fn bind_function(&mut self, name: &'input str, span: Span, ty: Type) {
-        let scope = self.scopes.last_mut().unwrap();
+    pub fn bind_global_function(&mut self, name: &'input str, span: Span, ty: Type) {
+        let scope = self.scopes.first_mut().unwrap();
         let kind = SymbolKind::Function;
         let symbol = Spanned::from_span(span, Symbol::new(name, ty, kind));
 
