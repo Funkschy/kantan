@@ -19,7 +19,7 @@ fn test_multiple_plus_and_star_operator() {
 }"#,
     );
 
-    mini_rust::compile(&source, &mut cursor).unwrap();
+    mini_rust::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -49,7 +49,7 @@ fn test_hiragana_identifier() {
 }"#,
     );
 
-    mini_rust::compile(&source, &mut cursor).unwrap();
+    mini_rust::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -76,7 +76,7 @@ fn test_kanji_identifier() {
 }"#,
     );
 
-    mini_rust::compile(&source, &mut cursor).unwrap();
+    mini_rust::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -113,7 +113,7 @@ fn test_valid_equality_operation_should_return_new_line() {
  }"#,
     );
 
-    mini_rust::compile(&source, &mut cursor).unwrap();
+    mini_rust::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!("\n", output);
@@ -132,7 +132,7 @@ fn test_invalid_equality_operation_should_return_error_message() {
  }"#,
     );
 
-    mini_rust::compile(&source, &mut cursor).unwrap();
+    mini_rust::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     let expected = "error: binary operation '==' cannot be applied to 'string' and 'i32'

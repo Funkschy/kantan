@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     parse::{ast::*, Span, Spanned},
     types::Type,
@@ -14,15 +16,17 @@ mod error;
 mod symbol;
 
 pub(crate) struct Resolver<'input> {
-    source: &'input Source<'input>,
+    source: &'input Source,
     sym_table: SymbolTable<'input>,
+    functions: HashMap<String, Type>,
 }
 
 impl<'input> Resolver<'input> {
-    pub fn new(source: &'input Source<'input>) -> Self {
+    pub fn new(source: &'input Source) -> Self {
         Resolver {
             source,
             sym_table: SymbolTable::new(),
+            functions: HashMap::new(),
         }
     }
 }
@@ -44,11 +48,8 @@ impl<'input> Resolver<'input> {
 
     fn resolve_top_lvl(&mut self, stmt: &Stmt<'input>, _errors: &mut Vec<ResolveError<'input>>) {
         match stmt {
-            Stmt::FnDecl {
-                name: Spanned { node: name, span },
-                ..
-            } => {
-                self.sym_table.bind_global_function(name, *span, Type::Void);
+            Stmt::FnDecl { name, .. } => {
+                self.functions.insert(name.node.to_owned(), Type::Void);
             }
             Stmt::Import { .. } => {
                 // TODO: implement import resolving
@@ -146,6 +147,7 @@ impl<'input> Resolver<'input> {
         };
     }
 
+    // TODO: change to &Spanned<Expr<'input>>
     fn resolve_expr(
         &mut self,
         expr: &Spanned<&Expr<'input>>,
@@ -173,6 +175,12 @@ impl<'input> Resolver<'input> {
                 let right = self.resolve_expr(&Spanned::from_span(right_span, right_expr))?;
                 self.compare_types(op.span, expr.span, left, right)?;
                 Ok(Type::Bool)
+            }
+            Expr::Access { left, .. } => {
+                // TODO: check if ident is package name -> import
+                self.resolve_expr(&Spanned::from_span(left.span, &left.node))?;
+                // TODO: check type of field/import
+                Ok(Type::Void)
             }
             Expr::Assign { name, eq, value } => {
                 // Lookup variable in defined scopes
@@ -220,16 +228,14 @@ impl<'input> Resolver<'input> {
                     self.resolve_expr(&Spanned::from_span(*span, &expr))?;
                 }
 
-                let sym = self
-                    .sym_table
-                    .lookup(callee.node)
-                    .ok_or_else(|| self.not_defined_error(callee.span, span, callee.node))?;
+                let callee_name = self.source.slice(callee.span);
 
-                if sym.node.kind != SymbolKind::Function {
-                    unimplemented!("Insert meaningful error");
-                }
+                let func_type = self
+                    .functions
+                    .get(callee_name)
+                    .ok_or_else(|| self.not_defined_error(callee.span, span, callee_name))?;
 
-                Ok(sym.node.ty)
+                Ok(*func_type)
             }
         }
     }
@@ -344,7 +350,7 @@ mod tests {
                     12,
                     17,
                     Expr::Call {
-                        callee: Box::new(Spanned::new(12, 15, "test")),
+                        callee: Box::new(Spanned::new(12, 15, Expr::Ident("test"))),
                         args: ArgList(vec![]),
                     },
                 ))]),

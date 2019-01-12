@@ -6,28 +6,32 @@ mod resolve;
 mod types;
 
 use self::{
-    parse::{lexer::Lexer, parser::Parser, Span, Spanned},
+    parse::{ast::Program, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::Resolver,
 };
 
 pub(crate) use self::cli::*;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Source<'input> {
-    name: String,
-    code: &'input str,
+pub struct Source {
+    pub name: String,
+    pub code: String,
 }
 
-impl<'input> Source<'input> {
-    pub fn new(name: &str, code: &'input str) -> Self {
+impl Source {
+    pub fn new(name: &str, code: &str) -> Self {
         Source {
             name: name.to_owned(),
-            code,
+            code: code.to_owned(),
         }
+    }
+
+    pub fn slice(&self, span: Span) -> &str {
+        &self.code[span.start..=span.end]
     }
 }
 
-pub fn compile<W: Write>(source: &Source, writer: &mut W) -> io::Result<()> {
+pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> io::Result<()> {
     #[cfg(windows)]
     {
         if let Err(code) = ansi_term::enable_ansi_support() {
@@ -38,10 +42,22 @@ pub fn compile<W: Write>(source: &Source, writer: &mut W) -> io::Result<()> {
         }
     }
 
-    let lexer = Lexer::new(source.code);
-    let mut parser = Parser::new(lexer);
+    let (parse_trees, err_count) =
+        sources
+            .iter()
+            .fold((vec![], 0), |(mut asts, err_count), source| {
+                let lexer = Lexer::new(&source.code);
+                let mut parser = Parser::new(lexer);
+                let prg = parser.parse();
+                asts.push(prg);
+                (asts, err_count + parser.err_count)
+            });
 
-    let prg = parser.parse();
+    let ast_sources = parse_trees
+        .iter()
+        .zip(sources.iter())
+        .collect::<Vec<(&Program, &Source)>>();
+
     // let imports: Vec<Spanned<&str>> = prg
     //     .0
     //     .iter()
@@ -54,17 +70,21 @@ pub fn compile<W: Write>(source: &Source, writer: &mut W) -> io::Result<()> {
     //     })
     //     .collect();
 
-    if parser.err_count == 0 {
-        let mut resolver = Resolver::new(source);
-        let errors: Vec<String> = resolver
-            .resolve(&prg)
-            .iter()
-            .map(|err| err.to_string())
-            .collect();
+    if err_count == 0 {
+        for (ast, source) in &ast_sources {
+            let mut resolver = Resolver::new(source);
+            let errors: Vec<String> = resolver
+                .resolve(ast)
+                .iter()
+                .map(|err| err.to_string())
+                .collect();
 
-        print_error(&errors.join("\n\n"), writer)?;
+            print_error(&errors.join("\n\n"), writer)?;
+        }
     } else {
-        report_errors(&source, &prg, writer)?;
+        for (ast, source) in &ast_sources {
+            report_errors(source, ast, writer)?;
+        }
     }
 
     Ok(())

@@ -5,7 +5,7 @@ use crate::{err_to_string, find_line_index, format_error, Source, Span};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ResolveError<'input> {
-    pub source: &'input Source<'input>,
+    pub source: &'input Source,
     pub error: ResolveErrorType<'input>,
     pub err_span: Span,
     pub expr_span: Span,

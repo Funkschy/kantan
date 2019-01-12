@@ -1,3 +1,5 @@
+use std::hash;
+
 pub(crate) mod ast;
 mod error;
 pub(crate) mod lexer;
@@ -22,7 +24,7 @@ impl Span {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct Spanned<T> {
     pub span: Span,
     pub node: T,
@@ -61,6 +63,20 @@ impl<T: Clone> Clone for Spanned<T> {
 }
 
 impl<T: Copy> Copy for Spanned<T> {}
+
+impl<T: hash::Hash> hash::Hash for Spanned<T> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.node.hash(state);
+    }
+}
+
+impl<T: PartialEq> PartialEq for Spanned<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+    }
+}
+
+impl<T: PartialEq> Eq for Spanned<T> {}
 
 pub trait Scanner<'input>: Iterator<Item = Scanned<'input>> {
     fn source(&self) -> &'input str;

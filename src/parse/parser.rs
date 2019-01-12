@@ -224,7 +224,7 @@ where
                     } else {
                         let tok = Spanned::clone(&peek);
                         return Err(self
-                            .make_consume_err(&tok, "Identifier".to_owned())
+                            .make_consume_err(&tok, "string".to_owned())
                             .unwrap_err());
                     }
                 }
@@ -349,25 +349,38 @@ where
                     self.make_infix_err(token)
                 }
             }
+            Token::Dot => {
+                let ident = self.consume_ident()?;
+                Ok(Spanned::new(
+                    left.span.start,
+                    ident.span.end,
+                    Expr::Access {
+                        left: Box::new(left),
+                        identifier: ident,
+                    },
+                ))
+            }
             Token::LParen => {
-                if let Spanned {
-                    node: Expr::Ident(name),
-                    span,
-                } = left
-                {
+                let valid = match left.node {
+                    Expr::Ident(_) | Expr::Access { .. } => true,
+                    _ => false,
+                };
+
+                if valid {
                     let arg_list = self.arg_list()?;
                     let end = self.consume(Token::RParen)?.span.end;
 
                     Ok(Spanned::new(
-                        span.start,
+                        left.span.start,
                         end,
                         Expr::Call {
-                            callee: Box::new(Spanned::from_span(span, name)),
+                            callee: Box::new(left),
                             args: arg_list,
                         },
                     ))
                 } else {
-                    self.make_infix_err(token)
+                    // TODO: Implement meaningful error
+                    unimplemented!("Implement meaningful error");
                 }
             }
             _ => self.make_infix_err(token),
@@ -442,7 +455,6 @@ where
         expected: String,
     ) -> Scanned<'input> {
         self.err_count += 1;
-        self.sync();
         Err(Spanned {
             span: actual.span,
             node: ParseError::ConsumeError {
@@ -483,6 +495,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse_access_through_identifier() {
+        let source = "fn main() { test.fun(); }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![Stmt::FnDecl {
+                name: Spanned::new(3, 6, "main"),
+                params: ParamList(vec![]),
+                body: Block(vec![Stmt::Expr(Spanned::new(
+                    12,
+                    17,
+                    Expr::Call {
+                        callee: Box::new(Spanned::new(
+                            12,
+                            19,
+                            Expr::Access {
+                                left: Box::new(Spanned::new(12, 15, Expr::Ident("test"))),
+                                identifier: Spanned::new(17, 19, "fun")
+                            }
+                        )),
+                        args: ArgList(vec![])
+                    }
+                ))])
+            }]),
+            prg
+        );
+    }
+
+    #[test]
     fn test_parse_call_without_args_should_return_call_expr_with_empty_args() {
         let source = "fn main() { test(); }";
         let lexer = Lexer::new(&source);
@@ -497,7 +540,7 @@ mod tests {
                     12,
                     17,
                     Expr::Call {
-                        callee: Box::new(Spanned::new(12, 15, "test")),
+                        callee: Box::new(Spanned::new(12, 15, Expr::Ident("test"))),
                         args: ArgList(vec![])
                     }
                 ))])
