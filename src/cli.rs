@@ -118,7 +118,7 @@ pub fn err_to_string(
     let start_line = start_line - 1;
 
     // the number of digits in the number displayed as string
-    let len_line_nr = (line_nr / 10) + 1;
+    let len_line_nr = line_nr.to_string().len();
     let filler = " ".repeat(len_line_nr + 1);
 
     let len = UnicodeWidthStr::width(&source.code[err_tok_span.start..err_tok_span.end]) + 1;
