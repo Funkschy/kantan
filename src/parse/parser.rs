@@ -73,7 +73,7 @@ where
 
     fn import(&mut self) -> StmtResult<'input> {
         self.consume(Token::Import)?;
-        let name = self.consume_string()?;
+        let name = self.consume_ident()?;
 
         Ok(Stmt::Import { name })
     }
@@ -207,32 +207,6 @@ where
             Ok(Spanned { node, .. }) => *node == expected,
             _ => false,
         })
-    }
-
-    // TODO: remove copy paste
-    fn consume_string(&mut self) -> Result<Spanned<&'input str>, Spanned<ParseError<'input>>> {
-        if let Some(peek) = self.scanner.peek().cloned() {
-            return match peek {
-                Ok(peek) => {
-                    if let Spanned {
-                        node: Token::StringLit(string),
-                        span,
-                    } = peek
-                    {
-                        self.advance()?;
-                        return Ok(Spanned::from_span(span, string));
-                    } else {
-                        let tok = Spanned::clone(&peek);
-                        return Err(self
-                            .make_consume_err(&tok, "string".to_owned())
-                            .unwrap_err());
-                    }
-                }
-                Err(err) => Err(err),
-            };
-        }
-
-        Err(self.eof().unwrap_err())
     }
 
     fn consume_ident(&mut self) -> Result<Spanned<&'input str>, Spanned<ParseError<'input>>> {
@@ -493,6 +467,28 @@ where
 mod tests {
     use super::lexer::Lexer;
     use super::*;
+
+    #[test]
+    fn test_parse_import() {
+        let source = "import test\nfn main() {}";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![
+                Stmt::Import {
+                    name: Spanned::new(7, 10, "test")
+                },
+                Stmt::FnDecl {
+                    name: Spanned::new(16, 19, "main"),
+                    params: ParamList(vec![]),
+                    body: Block(vec![])
+                }
+            ]),
+            prg
+        );
+    }
 
     #[test]
     fn test_parse_access_through_identifier() {

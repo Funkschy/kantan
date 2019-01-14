@@ -8,6 +8,7 @@ use crate::types::Type;
 #[derive(Debug, Eq, PartialEq)]
 pub struct Program<'input>(pub Vec<Stmt<'input>>);
 
+// TODO: refactor Spanned<&'input str> to identifier
 #[derive(Debug, Eq, PartialEq)]
 pub enum Stmt<'input> {
     FnDecl {

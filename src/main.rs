@@ -1,8 +1,8 @@
-use std::{env, fs, io};
+use std::{env, error, fs, io};
 
 use mini_rust::{compile, Source};
 
-fn main() -> io::Result<()> {
+fn main() -> Result<(), Box<dyn error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         print_help();

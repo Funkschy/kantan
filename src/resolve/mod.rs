@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     parse::{ast::*, Span, Spanned},
@@ -15,16 +15,22 @@ mod error;
 #[allow(dead_code)]
 mod symbol;
 
+type PrgMap<'input> = HashMap<&'input str, (&'input Source, &'input Program<'input>)>;
+
 pub(crate) struct Resolver<'input> {
-    source: &'input Source,
+    current_name: &'input str,
+    programs: PrgMap<'input>,
+    resolved: HashSet<&'input str>,
     sym_table: SymbolTable<'input>,
     functions: HashMap<String, Type>,
 }
 
 impl<'input> Resolver<'input> {
-    pub fn new(source: &'input Source) -> Self {
+    pub fn new(main_file: &'input str, programs: PrgMap<'input>) -> Self {
         Resolver {
-            source,
+            current_name: main_file,
+            programs,
+            resolved: HashSet::new(),
             sym_table: SymbolTable::new(),
             functions: HashMap::new(),
         }
@@ -32,7 +38,12 @@ impl<'input> Resolver<'input> {
 }
 
 impl<'input> Resolver<'input> {
-    pub fn resolve(&mut self, prg: &Program<'input>) -> Vec<ResolveError<'input>> {
+    pub fn resolve(&mut self) -> Vec<ResolveError<'input>> {
+        let (_, prg) = self.programs[self.current_name];
+        self.resolve_prg(prg)
+    }
+
+    fn resolve_prg(&mut self, prg: &Program<'input>) -> Vec<ResolveError<'input>> {
         let mut errors = vec![];
 
         for stmt in &prg.0 {
@@ -46,13 +57,30 @@ impl<'input> Resolver<'input> {
         errors
     }
 
-    fn resolve_top_lvl(&mut self, stmt: &Stmt<'input>, _errors: &mut Vec<ResolveError<'input>>) {
+    fn resolve_top_lvl(&mut self, stmt: &Stmt<'input>, errors: &mut Vec<ResolveError<'input>>) {
         match stmt {
             Stmt::FnDecl { name, .. } => {
                 self.functions.insert(name.node.to_owned(), Type::Void);
             }
-            Stmt::Import { .. } => {
-                // TODO: implement import resolving
+            Stmt::Import { name, .. } => {
+                if name.node == self.current_name {
+                    errors.push(ResolveError {
+                        source: self.current_source(),
+                        error: ResolveErrorType::SelfImport(SelfImportError),
+                        err_span: name.span,
+                        expr_span: name.span,
+                    });
+                } else if !self.resolved.contains(name.node) {
+                    if let Some((_, prg)) = self.programs.get(name.node) {
+                        let current_name = self.current_name;
+                        self.current_name = name.node;
+                        self.resolved.insert(name.node);
+                        self.resolve_prg(prg);
+                        self.current_name = current_name;
+                    }
+                } else {
+                    errors.push(self.not_defined_error(name.span, name.span, name.node));
+                }
             }
             _ => panic!("Invalid top level declaration"),
         }
@@ -228,7 +256,7 @@ impl<'input> Resolver<'input> {
                     self.resolve_expr(&Spanned::from_span(*span, &expr))?;
                 }
 
-                let callee_name = self.source.slice(callee.span);
+                let callee_name = self.current_source().slice(callee.span);
 
                 let func_type = self
                     .functions
@@ -242,6 +270,11 @@ impl<'input> Resolver<'input> {
 }
 
 impl<'input> Resolver<'input> {
+    fn current_source(&self) -> &'input Source {
+        let (src, _) = self.programs[self.current_name];
+        src
+    }
+
     fn error(
         &self,
         err_span: Span,
@@ -249,7 +282,7 @@ impl<'input> Resolver<'input> {
         err: ResolveErrorType<'input>,
     ) -> ResolveError<'input> {
         ResolveError {
-            source: self.source,
+            source: self.current_source(),
             error: err,
             err_span,
             expr_span,
@@ -339,6 +372,46 @@ mod tests {
     use crate::parse::token::Token;
 
     #[test]
+    fn test_resolve_should_find_imported_fn() {
+        let main_src = Source::new("main", "import test\nfn main() {test()}");
+        let test_src = Source::new("test", "fn test() {}");
+
+        let main_ast = Program(vec![
+            Stmt::Import {
+                name: Spanned::new(7, 10, "test"),
+            },
+            Stmt::FnDecl {
+                name: Spanned::new(16, 19, "main"),
+                params: ParamList(vec![]),
+                body: Block(vec![Stmt::Expr(Spanned::new(
+                    23,
+                    28,
+                    Expr::Call {
+                        callee: Box::new(Spanned::new(23, 26, Expr::Ident("test"))),
+                        args: ArgList(vec![]),
+                    },
+                ))]),
+            },
+        ]);
+
+        let test_ast = Program(vec![Stmt::FnDecl {
+            name: Spanned::new(3, 6, "test"),
+            params: ParamList(vec![]),
+            body: Block(vec![]),
+        }]);
+
+        let mut map = HashMap::new();
+        map.insert("main", (&main_src, &main_ast));
+        map.insert("test", (&test_src, &test_ast));
+
+        let mut resolver = Resolver::new("main", map);
+        let errors = resolver.resolve();
+
+        let expected: Vec<ResolveError> = vec![];
+        assert_eq!(expected, errors);
+    }
+
+    #[test]
     fn test_functions_are_found_without_forward_decl() {
         let source = Source::new("test", "fn main() { test(); } fn test() {}");
 
@@ -362,8 +435,11 @@ mod tests {
             },
         ]);
 
-        let mut resolver = Resolver::new(&source);
-        let errors = resolver.resolve(&ast);
+        let mut map = HashMap::new();
+        map.insert("test", (&source, &ast));
+
+        let mut resolver = Resolver::new("test", map);
+        let errors = resolver.resolve();
 
         let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
@@ -384,8 +460,11 @@ mod tests {
             }]),
         }]);
 
-        let mut resolver = Resolver::new(&source);
-        let errors = resolver.resolve(&ast);
+        let mut map = HashMap::new();
+        map.insert("test", (&source, &ast));
+
+        let mut resolver = Resolver::new("test", map);
+        let errors = resolver.resolve();
 
         let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
@@ -417,8 +496,11 @@ mod tests {
             ]),
         }]);
 
-        let mut resolver = Resolver::new(&source);
-        let errors = resolver.resolve(&ast);
+        let mut map = HashMap::new();
+        map.insert("test", (&source, &ast));
+
+        let mut resolver = Resolver::new("test", map);
+        let errors = resolver.resolve();
 
         assert_eq!(1, errors.len());
 

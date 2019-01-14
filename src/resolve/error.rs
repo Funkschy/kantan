@@ -71,6 +71,12 @@ impl<'input> fmt::Display for ResolveError<'input> {
                     name, expected_type, actual_type
                 ),
             ),
+            ResolveErrorType::SelfImport(_) => format_error(
+                self.source,
+                self.expr_span,
+                self.err_span,
+                "cannot import self",
+            ),
         };
 
         write!(f, "{}", s)
@@ -83,7 +89,11 @@ pub enum ResolveErrorType<'input> {
     NotDefined(DefinitionError<'input>),
     IllegalOperation(BinaryOperationError),
     IllegalType(IllegalTypeError),
+    SelfImport(SelfImportError),
 }
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct SelfImportError;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IllegalTypeError {

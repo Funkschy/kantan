@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io::Write};
 
 mod cli;
 mod parse;
@@ -6,16 +6,41 @@ mod resolve;
 mod types;
 
 use self::{
-    parse::{ast::Program, lexer::Lexer, parser::Parser, Span, Spanned},
+    parse::{
+        ast::{Program, Stmt},
+        lexer::Lexer,
+        parser::Parser,
+        Span, Spanned,
+    },
     resolve::Resolver,
 };
 
 pub(crate) use self::cli::*;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct Source {
     pub name: String,
     pub code: String,
+}
+
+impl hash::Hash for Source {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+impl cmp::PartialEq for Source {
+    fn eq(&self, other: &Source) -> bool {
+        self.name == other.name
+    }
+}
+
+impl cmp::Eq for Source {}
+
+impl borrow::Borrow<str> for &Source {
+    fn borrow(&self) -> &str {
+        self.name.as_str()
+    }
 }
 
 impl Source {
@@ -31,7 +56,23 @@ impl Source {
     }
 }
 
-pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> io::Result<()> {
+pub struct NoMainFunctionError;
+
+impl fmt::Debug for NoMainFunctionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "No main function found")
+    }
+}
+
+impl fmt::Display for NoMainFunctionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "No main function found")
+    }
+}
+
+impl error::Error for NoMainFunctionError {}
+
+pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<dyn error::Error>> {
     #[cfg(windows)]
     {
         if let Err(code) = ansi_term::enable_ansi_support() {
@@ -53,36 +94,43 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> io::Result<()> {
                 (asts, err_count + parser.err_count)
             });
 
-    let ast_sources = parse_trees
+    let ast_sources = sources
         .iter()
-        .zip(sources.iter())
-        .collect::<Vec<(&Program, &Source)>>();
+        .zip(parse_trees.iter())
+        .map(|(src, prg)| (src.name.as_str(), (src, prg)))
+        .collect::<HashMap<&str, (&Source, &Program)>>();
 
-    // let imports: Vec<Spanned<&str>> = prg
-    //     .0
-    //     .iter()
-    //     .filter_map(|top_lvl| {
-    //         if let Stmt::Import { name } = top_lvl {
-    //             Some(*name)
-    //         } else {
-    //             None
-    //         }
-    //     })
-    //     .collect();
+    // Try to find the main function in one of the ASTs
+    let main = ast_sources
+        .iter()
+        .find(|(_, (_, prg))| {
+            prg.0.iter().any(|top_lvl| {
+                if let Stmt::FnDecl { name, .. } = top_lvl {
+                    name.node == "main"
+                } else {
+                    false
+                }
+            })
+        })
+        .map(|(src, _)| src);
+
+    if main.is_none() {
+        return Err(Box::new(NoMainFunctionError));
+    }
+
+    let main = main.unwrap();
 
     if err_count == 0 {
-        for (ast, source) in &ast_sources {
-            let mut resolver = Resolver::new(source);
-            let errors: Vec<String> = resolver
-                .resolve(ast)
-                .iter()
-                .map(|err| err.to_string())
-                .collect();
+        let mut resolver = Resolver::new(main, ast_sources);
+        let errors: Vec<String> = resolver
+            .resolve()
+            .iter()
+            .map(|err| err.to_string())
+            .collect();
 
-            print_error(&errors.join("\n\n"), writer)?;
-        }
+        print_error(&errors.join("\n\n"), writer)?;
     } else {
-        for (ast, source) in &ast_sources {
+        for (source, ast) in ast_sources.values() {
             report_errors(source, ast, writer)?;
         }
     }

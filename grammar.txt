@@ -2,7 +2,7 @@ source_file         = top_level_decl*
 
 top_level_decl      = import | fn_decl
 
-import              = "import" STRING
+import              = "import" IDENTIFIER
 
 fn_decl             = fn IDENTIFIER "(" param_list? ")" fn_body
 
