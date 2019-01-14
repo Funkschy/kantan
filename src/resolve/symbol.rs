@@ -8,7 +8,6 @@ pub enum SymbolKind {
     Global,
     Local,
     Param,
-    Function,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -46,14 +45,6 @@ impl<'input> SymbolTable<'input> {
             panic!("Cannot exit out of global scope");
         }
         self.scopes.pop();
-    }
-
-    pub fn bind_global_function(&mut self, name: &'input str, span: Span, ty: Type) {
-        let scope = self.scopes.first_mut().unwrap();
-        let kind = SymbolKind::Function;
-        let symbol = Spanned::from_span(span, Symbol::new(name, ty, kind));
-
-        scope.insert(name, symbol);
     }
 
     pub fn bind(&mut self, name: &'input str, span: Span, ty: Type, is_param: bool) {

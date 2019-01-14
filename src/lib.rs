@@ -1,33 +1,78 @@
-use std::io::{self, Write};
+use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io::Write};
 
-use ansi_term::Colour::{Red, Yellow};
-use unicode_width::UnicodeWidthStr;
-
+mod cli;
 mod parse;
 mod resolve;
 mod types;
 
 use self::{
-    parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
+    parse::{
+        ast::{Program, Stmt},
+        lexer::Lexer,
+        parser::Parser,
+        Span, Spanned,
+    },
     resolve::Resolver,
 };
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct Source<'input> {
-    name: String,
-    code: &'input str,
+pub(crate) use self::cli::*;
+
+#[derive(Debug)]
+pub struct Source {
+    pub name: String,
+    pub code: String,
 }
 
-impl<'input> Source<'input> {
-    pub fn new(name: &str, code: &'input str) -> Self {
-        Source {
-            name: name.to_owned(),
-            code,
-        }
+impl hash::Hash for Source {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
     }
 }
 
-pub fn compile<W: Write>(source: &Source, writer: &mut W) -> io::Result<()> {
+impl cmp::PartialEq for Source {
+    fn eq(&self, other: &Source) -> bool {
+        self.name == other.name
+    }
+}
+
+impl cmp::Eq for Source {}
+
+impl borrow::Borrow<str> for &Source {
+    fn borrow(&self) -> &str {
+        self.name.as_str()
+    }
+}
+
+impl Source {
+    pub fn new(name: &str, code: &str) -> Self {
+        Source {
+            name: name.to_owned(),
+            code: code.to_owned(),
+        }
+    }
+
+    pub fn slice(&self, span: Span) -> &str {
+        &self.code[span.start..=span.end]
+    }
+}
+
+pub struct NoMainFunctionError;
+
+impl fmt::Debug for NoMainFunctionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "No main function found")
+    }
+}
+
+impl fmt::Display for NoMainFunctionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "No main function found")
+    }
+}
+
+impl error::Error for NoMainFunctionError {}
+
+pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<dyn error::Error>> {
     #[cfg(windows)]
     {
         if let Err(code) = ansi_term::enable_ansi_support() {
@@ -38,166 +83,57 @@ pub fn compile<W: Write>(source: &Source, writer: &mut W) -> io::Result<()> {
         }
     }
 
-    let lexer = Lexer::new(source.code);
-    let mut parser = Parser::new(lexer);
+    let (parse_trees, err_count) =
+        sources
+            .iter()
+            .fold((vec![], 0), |(mut asts, err_count), source| {
+                let lexer = Lexer::new(&source.code);
+                let mut parser = Parser::new(lexer);
+                let prg = parser.parse();
+                asts.push(prg);
+                (asts, err_count + parser.err_count)
+            });
 
-    let prg = parser.parse();
+    let ast_sources = sources
+        .iter()
+        .zip(parse_trees.iter())
+        .map(|(src, prg)| (src.name.as_str(), (src, prg)))
+        .collect::<HashMap<&str, (&Source, &Program)>>();
 
-    if parser.err_count == 0 {
-        let mut resolver = Resolver::new(source);
+    // Try to find the main function in one of the ASTs
+    let main = ast_sources
+        .iter()
+        .find(|(_, (_, prg))| {
+            prg.0.iter().any(|top_lvl| {
+                if let Stmt::FnDecl { name, .. } = top_lvl {
+                    name.node == "main"
+                } else {
+                    false
+                }
+            })
+        })
+        .map(|(src, _)| src);
+
+    if main.is_none() {
+        return Err(Box::new(NoMainFunctionError));
+    }
+
+    let main = main.unwrap();
+
+    if err_count == 0 {
+        let mut resolver = Resolver::new(main, ast_sources);
         let errors: Vec<String> = resolver
-            .resolve(prg)
+            .resolve()
             .iter()
             .map(|err| err.to_string())
             .collect();
 
         print_error(&errors.join("\n\n"), writer)?;
     } else {
-        report_errors(&source, &prg, writer)?;
-    }
-
-    Ok(())
-}
-
-fn print_error<W: Write>(msg: &str, writer: &mut W) -> io::Result<()> {
-    writer.write_all(msg.as_bytes())?;
-    writer.write_all(b"\n")?;
-    writer.flush()?;
-    Ok(())
-}
-
-fn report_errors<W: Write>(source: &Source, prg: &Program, writer: &mut W) -> io::Result<()> {
-    for (span, msg) in find_errors(prg) {
-        print_error(&format_error(source, span, span, &msg), writer)?;
-    }
-
-    Ok(())
-}
-
-fn find_errors(prg: &Program) -> Vec<(Span, String)> {
-    fn find_errors_rec(stmt: &Stmt, errors: &mut Vec<(Span, String)>) {
-        match stmt {
-            Stmt::VarDecl { value, .. } => {
-                if let Spanned {
-                    node: Expr::Error(err),
-                    span,
-                } = value
-                {
-                    errors.push((*span, err.to_string()))
-                }
-            }
-            Stmt::FnDecl { body, .. } => {
-                for s in &body.0 {
-                    find_errors_rec(s, errors);
-                }
-            }
-            Stmt::Expr(Spanned { node: expr, span }) => {
-                if let Expr::Error(err) = expr {
-                    errors.push((*span, err.to_string()));
-                }
-            }
-            // TODO: else branch
-            Stmt::If {
-                condition:
-                    Spanned {
-                        node: condition,
-                        span,
-                    },
-                then_block,
-                ..
-            } => {
-                if let Expr::Error(err) = condition {
-                    errors.push((*span, err.to_string()));
-                }
-                for s in &then_block.0 {
-                    find_errors_rec(s, errors);
-                }
-            }
+        for (source, ast) in ast_sources.values() {
+            report_errors(source, ast, writer)?;
         }
     }
 
-    let mut errors = vec![];
-    for s in &prg.0 {
-        find_errors_rec(s, &mut errors);
-    }
-    errors
-}
-
-fn format_error(source: &Source, expr_span: Span, err_tok_span: Span, msg: &str) -> String {
-    let (line_nr, index) = find_line_index(source, err_tok_span.start);
-
-    format!(
-        "error: {}\n--> {}:{}:{}\n{}",
-        msg,
-        source.name,
-        line_nr,
-        index,
-        err_to_string(source, expr_span, err_tok_span, line_nr, false)
-    )
-}
-
-fn find_line_index(source: &Source, start: usize) -> (usize, usize) {
-    let slice = &source.code[..start];
-
-    let line_nr = slice.chars().filter(|c| *c == '\n').count() + 1;
-    let index = slice.chars().rev().take_while(|c| *c != '\n').count() + 1;
-
-    (line_nr, index)
-}
-
-fn find_dist(source: &Source, start: usize) -> usize {
-    let slice = &source.code[..start];
-
-    UnicodeWidthStr::width(
-        slice
-            .chars()
-            .rev()
-            .take_while(|c| *c != '\n')
-            .collect::<String>()
-            .as_str(),
-    )
-}
-
-fn err_to_string(
-    source: &Source,
-    expr_span: Span,
-    err_tok_span: Span,
-    line_nr: usize,
-    warning: bool,
-) -> String {
-    let (start_line, _) = find_line_index(source, expr_span.start);
-    let (end_line, _) = find_line_index(source, expr_span.end);
-
-    let start_line = start_line - 1;
-
-    // the number of digits in the number displayed as string
-    let len_line_nr = (line_nr / 10) + 1;
-    let filler = " ".repeat(len_line_nr + 1);
-
-    let len = UnicodeWidthStr::width(&source.code[err_tok_span.start..err_tok_span.end]) + 1;
-    let dist = find_dist(source, err_tok_span.start);
-
-    let marker = format!("{}{}", " ".repeat(dist), "^".repeat(len));
-    let marker = if warning {
-        Yellow.paint(marker)
-    } else {
-        Red.paint(marker)
-    };
-
-    let lines: Vec<String> = source
-        .code
-        .lines()
-        .enumerate()
-        .skip(start_line)
-        .take(end_line - start_line)
-        .map(|(nr, l)| {
-            if nr + 1 == line_nr {
-                format!("{}|\n{} |{}\n{}|{}", filler, line_nr, l, filler, marker)
-            } else {
-                format!("{}|{}", filler, l)
-            }
-        })
-        .collect();
-
-    lines.join("\n")
+    Ok(())
 }

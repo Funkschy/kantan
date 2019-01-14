@@ -59,11 +59,23 @@ where
 
     fn top_lvl_decl(&mut self) -> StmtResult<'input> {
         // TODO: error collection
+
+        if self.peek_eq(Token::Import) {
+            return self.import();
+        }
+
         self.consume(Token::Fn)?;
         let name = self.consume_ident()?;
         let params = self.param_list()?;
         let body = self.block()?;
         Ok(Stmt::FnDecl { name, params, body })
+    }
+
+    fn import(&mut self) -> StmtResult<'input> {
+        self.consume(Token::Import)?;
+        let name = self.consume_ident()?;
+
+        Ok(Stmt::Import { name })
     }
 
     // TODO parse parameters
@@ -198,32 +210,51 @@ where
     }
 
     fn consume_ident(&mut self) -> Result<Spanned<&'input str>, Spanned<ParseError<'input>>> {
-        let next = self.advance()?;
-        if let Spanned {
-            span,
-            node: Token::Ident(ident),
-        } = next
-        {
-            Ok(Spanned::from_span(span, ident))
-        } else {
-            Err(self
-                .make_consume_err(&next, "Identifier".to_owned())
-                .unwrap_err())
+        if let Some(peek) = self.scanner.peek().cloned() {
+            return match peek {
+                Ok(peek) => {
+                    if let Spanned {
+                        node: Token::Ident(ident),
+                        span,
+                    } = peek
+                    {
+                        self.advance()?;
+                        return Ok(Spanned::from_span(span, ident));
+                    } else {
+                        let tok = Spanned::clone(&peek);
+                        return Err(self
+                            .make_consume_err(&tok, "Identifier".to_owned())
+                            .unwrap_err());
+                    }
+                }
+                Err(err) => Err(err),
+            };
         }
+
+        Err(self.eof().unwrap_err())
     }
 
-    // TODO: rewrite special consume methods to work like consume(...)
     fn consume_type(&mut self) -> Result<Spanned<Type>, Spanned<ParseError<'input>>> {
-        let next = self.advance()?;
-        if let Spanned {
-            span,
-            node: Token::TypeIdent(ty),
-        } = next
-        {
-            Ok(Spanned::from_span(span, ty))
-        } else {
-            Err(self.make_consume_err(&next, "Type".to_owned()).unwrap_err())
+        if let Some(peek) = self.scanner.peek().cloned() {
+            return match peek {
+                Ok(peek) => {
+                    if let Spanned {
+                        node: Token::TypeIdent(ty),
+                        span,
+                    } = peek
+                    {
+                        self.advance()?;
+                        return Ok(Spanned::from_span(span, ty));
+                    } else {
+                        let tok = Spanned::clone(&peek);
+                        return Err(self.make_consume_err(&tok, "Type".to_owned()).unwrap_err());
+                    }
+                }
+                Err(err) => Err(err),
+            };
         }
+
+        Err(self.eof().unwrap_err())
     }
 
     fn consume(&mut self, expected: Token<'input>) -> Scanned<'input> {
@@ -292,25 +323,38 @@ where
                     self.make_infix_err(token)
                 }
             }
+            Token::Dot => {
+                let ident = self.consume_ident()?;
+                Ok(Spanned::new(
+                    left.span.start,
+                    ident.span.end,
+                    Expr::Access {
+                        left: Box::new(left),
+                        identifier: ident,
+                    },
+                ))
+            }
             Token::LParen => {
-                if let Spanned {
-                    node: Expr::Ident(name),
-                    span,
-                } = left
-                {
+                let valid = match left.node {
+                    Expr::Ident(_) | Expr::Access { .. } => true,
+                    _ => false,
+                };
+
+                if valid {
                     let arg_list = self.arg_list()?;
                     let end = self.consume(Token::RParen)?.span.end;
 
                     Ok(Spanned::new(
-                        span.start,
+                        left.span.start,
                         end,
                         Expr::Call {
-                            callee: Box::new(Spanned::from_span(span, name)),
+                            callee: Box::new(left),
                             args: arg_list,
                         },
                     ))
                 } else {
-                    self.make_infix_err(token)
+                    // TODO: Implement meaningful error
+                    unimplemented!("Implement meaningful error");
                 }
             }
             _ => self.make_infix_err(token),
@@ -385,7 +429,6 @@ where
         expected: String,
     ) -> Scanned<'input> {
         self.err_count += 1;
-        self.sync();
         Err(Spanned {
             span: actual.span,
             node: ParseError::ConsumeError {
@@ -426,6 +469,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse_import() {
+        let source = "import test\nfn main() {}";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![
+                Stmt::Import {
+                    name: Spanned::new(7, 10, "test")
+                },
+                Stmt::FnDecl {
+                    name: Spanned::new(16, 19, "main"),
+                    params: ParamList(vec![]),
+                    body: Block(vec![])
+                }
+            ]),
+            prg
+        );
+    }
+
+    #[test]
+    fn test_parse_access_through_identifier() {
+        let source = "fn main() { test.fun(); }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![Stmt::FnDecl {
+                name: Spanned::new(3, 6, "main"),
+                params: ParamList(vec![]),
+                body: Block(vec![Stmt::Expr(Spanned::new(
+                    12,
+                    17,
+                    Expr::Call {
+                        callee: Box::new(Spanned::new(
+                            12,
+                            19,
+                            Expr::Access {
+                                left: Box::new(Spanned::new(12, 15, Expr::Ident("test"))),
+                                identifier: Spanned::new(17, 19, "fun")
+                            }
+                        )),
+                        args: ArgList(vec![])
+                    }
+                ))])
+            }]),
+            prg
+        );
+    }
+
+    #[test]
     fn test_parse_call_without_args_should_return_call_expr_with_empty_args() {
         let source = "fn main() { test(); }";
         let lexer = Lexer::new(&source);
@@ -440,7 +536,7 @@ mod tests {
                     12,
                     17,
                     Expr::Call {
-                        callee: Box::new(Spanned::new(12, 15, "test")),
+                        callee: Box::new(Spanned::new(12, 15, Expr::Ident("test"))),
                         args: ArgList(vec![])
                     }
                 ))])

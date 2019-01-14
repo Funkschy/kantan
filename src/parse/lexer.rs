@@ -158,6 +158,7 @@ impl<'input> Lexer<'input> {
             "let" => Some(self.spanned(start, Token::Let)),
             "fn" => Some(self.spanned(start, Token::Fn)),
             "if" => Some(self.spanned(start, Token::If)),
+            "import" => Some(self.spanned(start, Token::Import)),
             _ => None,
         }
     }
@@ -214,6 +215,7 @@ impl<'input> Lexer<'input> {
             ')' => consume_single!(self, start, Token::RParen),
             '{' => consume_single!(self, start, Token::LBrace),
             '}' => consume_single!(self, start, Token::RBrace),
+            '.' => consume_single!(self, start, Token::Dot),
             '"' => self.scan_string(),
             c if c.is_alphabetic() => self.scan_ident(),
             c if c.is_digit(10) => self.scan_dec_num(),

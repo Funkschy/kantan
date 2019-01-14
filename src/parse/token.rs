@@ -12,6 +12,7 @@ pub enum Token<'input> {
     Let,
     Fn,
     If,
+    Import,
     TypeIdent(Type),
 
     // Operators
@@ -23,6 +24,7 @@ pub enum Token<'input> {
 
     Colon, // :
     Semi,  // ;
+    Dot,   // .
 
     LParen, // (
     RParen, // )
@@ -51,7 +53,7 @@ impl<'input> Token<'input> {
             Token::EqualsEquals => Precedence::Equality,
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
-            Token::LParen => Precedence::Call,
+            Token::LParen | Token::Dot => Precedence::Call,
             _ => Precedence::None,
         }
     }
@@ -68,6 +70,7 @@ impl<'input> fmt::Display for Token<'input> {
             Token::Let => write!(f, "let"),
             Token::Fn => write!(f, "fn"),
             Token::If => write!(f, "if"),
+            Token::Import => write!(f, "import"),
             // Operators
             Token::Equals => write!(f, "="),
             Token::Plus => write!(f, "+"),
@@ -77,6 +80,7 @@ impl<'input> fmt::Display for Token<'input> {
 
             Token::Colon => write!(f, ":"),
             Token::Semi => write!(f, ";"),
+            Token::Dot => write!(f, "."),
 
             Token::LParen => write!(f, "("),
             Token::RParen => write!(f, ")"),

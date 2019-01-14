@@ -8,12 +8,16 @@ use crate::types::Type;
 #[derive(Debug, Eq, PartialEq)]
 pub struct Program<'input>(pub Vec<Stmt<'input>>);
 
+// TODO: refactor Spanned<&'input str> to identifier
 #[derive(Debug, Eq, PartialEq)]
 pub enum Stmt<'input> {
     FnDecl {
         name: Spanned<&'input str>,
         params: ParamList<'input>,
         body: Block<'input>,
+    },
+    Import {
+        name: Spanned<&'input str>,
     },
     VarDecl {
         name: Spanned<&'input str>,
@@ -76,8 +80,12 @@ pub enum Expr<'input> {
         value: Box<Spanned<Expr<'input>>>,
     },
     Call {
-        callee: Box<Spanned<&'input str>>,
+        callee: Box<Spanned<Expr<'input>>>,
         args: ArgList<'input>,
+    },
+    Access {
+        left: Box<Spanned<Expr<'input>>>,
+        identifier: Spanned<&'input str>,
     },
 }
 
@@ -93,6 +101,7 @@ impl<'input> fmt::Display for Expr<'input> {
             Expr::Ident(name) => write!(f, "{}", name),
             Expr::Assign { name, value, .. } => write!(f, "{} = {}", name, value.node),
             Expr::Call { callee, args } => write!(f, "{}({})", callee.node, args),
+            Expr::Access { left, identifier } => write!(f, "{}.{}", left.node, identifier.node),
         }
     }
 }
