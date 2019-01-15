@@ -78,7 +78,7 @@ where
         Ok(Stmt::Import { name })
     }
 
-    // TODO parse parameters
+    // TODO: parse parameters
     fn param_list(&mut self) -> Result<ParamList<'input>, Spanned<ParseError<'input>>> {
         self.consume(Token::LParen)?;
         self.consume(Token::RParen)?;
@@ -469,6 +469,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse_import_access() {
+        let source = "fn main() { test.func(); }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![Stmt::FnDecl {
+                name: Spanned::new(3, 6, "main"),
+                params: ParamList(vec![]),
+                body: Block(vec![Stmt::Expr(Spanned::new(
+                    12,
+                    22,
+                    Expr::Call {
+                        callee: Box::new(Spanned::new(
+                            12,
+                            20,
+                            Expr::Access {
+                                left: Box::new(Spanned::new(12, 15, Expr::Ident("test"))),
+                                identifier: Spanned::new(17, 20, "func")
+                            }
+                        )),
+                        args: ArgList(vec![])
+                    }
+                ))])
+            }]),
+            prg
+        );
+    }
+
+    #[test]
     fn test_parse_import() {
         let source = "import test\nfn main() {}";
         let lexer = Lexer::new(&source);
@@ -481,7 +512,7 @@ mod tests {
                     name: Spanned::new(7, 10, "test")
                 },
                 Stmt::FnDecl {
-                    name: Spanned::new(16, 19, "main"),
+                    name: Spanned::new(15, 18, "main"),
                     params: ParamList(vec![]),
                     body: Block(vec![])
                 }
@@ -503,7 +534,7 @@ mod tests {
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     12,
-                    17,
+                    21,
                     Expr::Call {
                         callee: Box::new(Spanned::new(
                             12,

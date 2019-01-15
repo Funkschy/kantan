@@ -40,14 +40,18 @@ impl<'input> Resolver<'input> {
 impl<'input> Resolver<'input> {
     pub fn resolve(&mut self) -> Vec<ResolveError<'input>> {
         let (_, prg) = self.programs[self.current_name];
-        self.resolve_prg(prg)
+        self.resolve_prg(prg, None)
     }
 
-    fn resolve_prg(&mut self, prg: &Program<'input>) -> Vec<ResolveError<'input>> {
+    fn resolve_prg(
+        &mut self,
+        prg: &Program<'input>,
+        prefix: Option<&str>,
+    ) -> Vec<ResolveError<'input>> {
         let mut errors = vec![];
 
         for stmt in &prg.0 {
-            self.resolve_top_lvl(&stmt, &mut errors);
+            self.resolve_top_lvl(&stmt, &mut errors, prefix);
         }
 
         for stmt in &prg.0 {
@@ -57,10 +61,18 @@ impl<'input> Resolver<'input> {
         errors
     }
 
-    fn resolve_top_lvl(&mut self, stmt: &Stmt<'input>, errors: &mut Vec<ResolveError<'input>>) {
+    fn resolve_top_lvl(
+        &mut self,
+        stmt: &Stmt<'input>,
+        errors: &mut Vec<ResolveError<'input>>,
+        prefix: Option<&str>,
+    ) {
         match stmt {
             Stmt::FnDecl { name, .. } => {
-                self.functions.insert(name.node.to_owned(), Type::Void);
+                let name = prefix
+                    .map(|prefix| format!("{}.{}", prefix, name.node))
+                    .unwrap_or_else(|| name.node.to_owned());
+                self.functions.insert(name, Type::Void);
             }
             Stmt::Import { name, .. } => {
                 if name.node == self.current_name {
@@ -75,7 +87,7 @@ impl<'input> Resolver<'input> {
                         let current_name = self.current_name;
                         self.current_name = name.node;
                         self.resolved.insert(name.node);
-                        self.resolve_prg(prg);
+                        self.resolve_prg(prg, Some(name.node));
                         self.current_name = current_name;
                     }
                 } else {
@@ -373,8 +385,8 @@ mod tests {
 
     #[test]
     fn test_resolve_should_find_imported_fn() {
-        let main_src = Source::new("main", "import test\nfn main() {test()}");
-        let test_src = Source::new("test", "fn test() {}");
+        let main_src = Source::new("main", "import test\nfn main() {test.func()}");
+        let test_src = Source::new("test", "fn func() {}");
 
         let main_ast = Program(vec![
             Stmt::Import {
@@ -384,10 +396,17 @@ mod tests {
                 name: Spanned::new(16, 19, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
-                    23,
+                    25,
                     28,
                     Expr::Call {
-                        callee: Box::new(Spanned::new(23, 26, Expr::Ident("test"))),
+                        callee: Box::new(Spanned::new(
+                            23,
+                            31,
+                            Expr::Access {
+                                left: Box::new(Spanned::new(23, 26, Expr::Ident("test"))),
+                                identifier: Spanned::new(28, 31, "func"),
+                            },
+                        )),
                         args: ArgList(vec![]),
                     },
                 ))]),
@@ -395,7 +414,7 @@ mod tests {
         ]);
 
         let test_ast = Program(vec![Stmt::FnDecl {
-            name: Spanned::new(3, 6, "test"),
+            name: Spanned::new(3, 6, "func"),
             params: ParamList(vec![]),
             body: Block(vec![]),
         }]);

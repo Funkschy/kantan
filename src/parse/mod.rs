@@ -72,7 +72,7 @@ impl<T: hash::Hash> hash::Hash for Spanned<T> {
 
 impl<T: PartialEq> PartialEq for Spanned<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.node == other.node
+        self.node == other.node && self.span == other.span
     }
 }
 
