@@ -1,7 +1,5 @@
 use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io::Write};
 
-#[allow(dead_code)]
-mod cfg;
 mod cli;
 mod parse;
 mod resolve;
