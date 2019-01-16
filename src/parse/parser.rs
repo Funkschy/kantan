@@ -5,6 +5,7 @@ use crate::types::Type;
 
 type ExprResult<'input> = Result<Spanned<Expr<'input>>, Spanned<ParseError<'input>>>;
 type StmtResult<'input> = Result<Stmt<'input>, Spanned<ParseError<'input>>>;
+type TopLvlResult<'input> = Result<TopLvl<'input>, Spanned<ParseError<'input>>>;
 
 fn as_err_stmt<'input>(err: Spanned<ParseError<'input>>) -> Stmt<'input> {
     Stmt::Expr(Spanned::new(
@@ -45,19 +46,20 @@ where
 {
     pub fn parse(&mut self) -> Program<'input> {
         let mut top_lvl_decls = vec![];
+
         while self.scanner.peek().is_some() {
             let decl = self.top_lvl_decl();
             if let Ok(decl) = decl {
                 top_lvl_decls.push(decl);
             } else if let Err(err) = decl {
-                top_lvl_decls.push(as_err_stmt(err));
+                top_lvl_decls.push(TopLvl::Error(err));
             }
         }
 
         Program(top_lvl_decls)
     }
 
-    fn top_lvl_decl(&mut self) -> StmtResult<'input> {
+    fn top_lvl_decl(&mut self) -> TopLvlResult<'input> {
         // TODO: error collection
 
         if self.peek_eq(Token::Import) {
@@ -68,14 +70,14 @@ where
         let name = self.consume_ident()?;
         let params = self.param_list()?;
         let body = self.block()?;
-        Ok(Stmt::FnDecl { name, params, body })
+        Ok(TopLvl::FnDecl { name, params, body })
     }
 
-    fn import(&mut self) -> StmtResult<'input> {
+    fn import(&mut self) -> TopLvlResult<'input> {
         self.consume(Token::Import)?;
         let name = self.consume_ident()?;
 
-        Ok(Stmt::Import { name })
+        Ok(TopLvl::Import { name })
     }
 
     // TODO: parse parameters
@@ -476,7 +478,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![Stmt::FnDecl {
+            Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -508,10 +510,10 @@ mod tests {
         let prg = parser.parse();
         assert_eq!(
             Program(vec![
-                Stmt::Import {
+                TopLvl::Import {
                     name: Spanned::new(7, 10, "test")
                 },
-                Stmt::FnDecl {
+                TopLvl::FnDecl {
                     name: Spanned::new(15, 18, "main"),
                     params: ParamList(vec![]),
                     body: Block(vec![])
@@ -529,7 +531,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![Stmt::FnDecl {
+            Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -560,7 +562,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![Stmt::FnDecl {
+            Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -584,7 +586,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![Stmt::FnDecl {
+            Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 5, "err"),
                 params: ParamList(vec![]),
                 body: Block(vec![
@@ -616,7 +618,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![Stmt::FnDecl {
+            Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::VarDecl {
@@ -640,7 +642,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![Stmt::FnDecl {
+            Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![])
@@ -657,7 +659,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![Stmt::FnDecl {
+            Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(

@@ -32,11 +32,6 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     errors.push((*span, err.to_string()))
                 }
             }
-            Stmt::FnDecl { body, .. } => {
-                for s in &body.0 {
-                    find_errors_rec(s, errors);
-                }
-            }
             Stmt::Expr(Spanned { node: expr, span }) => {
                 if let Expr::Error(err) = expr {
                     errors.push((*span, err.to_string()));
@@ -59,13 +54,16 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     find_errors_rec(s, errors);
                 }
             }
-            Stmt::Import { .. } => {}
         }
     }
 
     let mut errors = vec![];
-    for s in &prg.0 {
-        find_errors_rec(s, &mut errors);
+    for top_lvl in &prg.0 {
+        if let TopLvl::FnDecl { body, .. } = top_lvl {
+            for s in &body.0 {
+                find_errors_rec(s, &mut errors);
+            }
+        }
     }
     errors
 }

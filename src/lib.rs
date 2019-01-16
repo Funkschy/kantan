@@ -1,17 +1,14 @@
 use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io::Write};
 
+#[allow(dead_code)]
+mod cfg;
 mod cli;
 mod parse;
 mod resolve;
 mod types;
 
 use self::{
-    parse::{
-        ast::{Program, Stmt},
-        lexer::Lexer,
-        parser::Parser,
-        Span, Spanned,
-    },
+    parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::Resolver,
 };
 
@@ -105,7 +102,7 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
         .iter()
         .find(|(_, (_, prg))| {
             prg.0.iter().any(|top_lvl| {
-                if let Stmt::FnDecl { name, .. } = top_lvl {
+                if let TopLvl::FnDecl { name, .. } = top_lvl {
                     name.node == "main"
                 } else {
                     false

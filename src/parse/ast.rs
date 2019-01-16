@@ -6,11 +6,10 @@ use super::Spanned;
 use crate::types::Type;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Program<'input>(pub Vec<Stmt<'input>>);
+pub struct Program<'input>(pub Vec<TopLvl<'input>>);
 
-// TODO: refactor Spanned<&'input str> to identifier
 #[derive(Debug, Eq, PartialEq)]
-pub enum Stmt<'input> {
+pub enum TopLvl<'input> {
     FnDecl {
         name: Spanned<&'input str>,
         params: ParamList<'input>,
@@ -19,6 +18,12 @@ pub enum Stmt<'input> {
     Import {
         name: Spanned<&'input str>,
     },
+    Error(Spanned<ParseError<'input>>),
+}
+
+// TODO: refactor Spanned<&'input str> to identifier
+#[derive(Debug, Eq, PartialEq)]
+pub enum Stmt<'input> {
     VarDecl {
         name: Spanned<&'input str>,
         value: Spanned<Expr<'input>>,

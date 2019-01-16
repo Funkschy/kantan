@@ -13,9 +13,9 @@ use super::*;
 
 mod error;
 #[allow(dead_code)]
-mod symbol;
+pub mod symbol;
 
-type PrgMap<'input> = HashMap<&'input str, (&'input Source, &'input Program<'input>)>;
+pub type PrgMap<'input> = HashMap<&'input str, (&'input Source, &'input Program<'input>)>;
 
 pub(crate) struct Resolver<'input> {
     current_name: &'input str,
@@ -50,31 +50,31 @@ impl<'input> Resolver<'input> {
     ) -> Vec<ResolveError<'input>> {
         let mut errors = vec![];
 
-        for stmt in &prg.0 {
-            self.resolve_top_lvl(&stmt, &mut errors, prefix);
+        for top_lvl in &prg.0 {
+            self.declare_top_lvl(&top_lvl, &mut errors, prefix);
         }
 
-        for stmt in &prg.0 {
-            self.resolve_stmt(&stmt, &mut errors);
+        for top_lvl in &prg.0 {
+            self.resolve_top_lvl(&top_lvl, &mut errors);
         }
 
         errors
     }
 
-    fn resolve_top_lvl(
+    fn declare_top_lvl(
         &mut self,
-        stmt: &Stmt<'input>,
+        top_lvl: &TopLvl<'input>,
         errors: &mut Vec<ResolveError<'input>>,
         prefix: Option<&str>,
     ) {
-        match stmt {
-            Stmt::FnDecl { name, .. } => {
+        match top_lvl {
+            TopLvl::FnDecl { name, .. } => {
                 let name = prefix
                     .map(|prefix| format!("{}.{}", prefix, name.node))
                     .unwrap_or_else(|| name.node.to_owned());
                 self.functions.insert(name, Type::Void);
             }
-            Stmt::Import { name, .. } => {
+            TopLvl::Import { name, .. } => {
                 if name.node == self.current_name {
                     errors.push(ResolveError {
                         source: self.current_source(),
@@ -95,6 +95,26 @@ impl<'input> Resolver<'input> {
                 }
             }
             _ => panic!("Invalid top level declaration"),
+        }
+    }
+
+    fn resolve_top_lvl(
+        &mut self,
+        top_lvl: &TopLvl<'input>,
+        errors: &mut Vec<ResolveError<'input>>,
+    ) {
+        if let TopLvl::FnDecl { params, body, .. } = top_lvl {
+            self.sym_table.scope_enter();
+
+            for p in &params.0 {
+                self.sym_table.bind(p.0.node, p.0.span, p.1, true);
+            }
+
+            for stmt in &body.0 {
+                self.resolve_stmt(&stmt, errors);
+            }
+
+            self.sym_table.scope_exit();
         }
     }
 
@@ -136,20 +156,6 @@ impl<'input> Resolver<'input> {
                     }
                 };
             }
-            Stmt::FnDecl { params, body, .. } => {
-                self.sym_table.scope_enter();
-
-                for p in &params.0 {
-                    self.sym_table.bind(p.0.node, p.0.span, p.1, true);
-                }
-
-                for stmt in &body.0 {
-                    self.resolve_stmt(&stmt, errors);
-                }
-
-                self.sym_table.scope_exit();
-            }
-            // TODO: else_branch
             Stmt::If {
                 condition:
                     Spanned {
@@ -183,7 +189,6 @@ impl<'input> Resolver<'input> {
                     errors.push(msg);
                 }
             }
-            Stmt::Import { .. } => { /*Imports are handled in resolve_top_lvl()*/ }
         };
     }
 
@@ -389,10 +394,10 @@ mod tests {
         let test_src = Source::new("test", "fn func() {}");
 
         let main_ast = Program(vec![
-            Stmt::Import {
+            TopLvl::Import {
                 name: Spanned::new(7, 10, "test"),
             },
-            Stmt::FnDecl {
+            TopLvl::FnDecl {
                 name: Spanned::new(16, 19, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -413,7 +418,7 @@ mod tests {
             },
         ]);
 
-        let test_ast = Program(vec![Stmt::FnDecl {
+        let test_ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "func"),
             params: ParamList(vec![]),
             body: Block(vec![]),
@@ -435,7 +440,7 @@ mod tests {
         let source = Source::new("test", "fn main() { test(); } fn test() {}");
 
         let ast = Program(vec![
-            Stmt::FnDecl {
+            TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -447,7 +452,7 @@ mod tests {
                     },
                 ))]),
             },
-            Stmt::FnDecl {
+            TopLvl::FnDecl {
                 name: Spanned::new(25, 28, "test"),
                 params: ParamList(vec![]),
                 body: Block(vec![]),
@@ -468,7 +473,7 @@ mod tests {
     fn test_resolve_without_errors_should_return_empty_vec() {
         let source = Source::new("test", "fn main() { let x = 10; }");
 
-        let ast = Program(vec![Stmt::FnDecl {
+        let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
             params: ParamList(vec![]),
             body: Block(vec![Stmt::VarDecl {
@@ -493,7 +498,7 @@ mod tests {
     fn test_resolve_with_assign_error_should_return_correct_error() {
         let source = Source::new("test", r#"fn main() { let x = 10; x = ""; }"#);
 
-        let ast = Program(vec![Stmt::FnDecl {
+        let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
             params: ParamList(vec![]),
             body: Block(vec![
