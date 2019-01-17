@@ -65,7 +65,7 @@ impl<'input> fmt::Display for ArgList<'input> {
 #[derive(Debug, Eq, PartialEq)]
 pub enum Expr<'input> {
     Error(ParseError<'input>),
-    DecLit(i64),
+    DecLit(&'input str),
     StringLit(&'input str),
     Negate(Box<Expr<'input>>),
     Binary(

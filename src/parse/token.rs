@@ -5,7 +5,7 @@ use crate::types::Type;
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Token<'input> {
     Ident(&'input str),
-    DecLit(i64),
+    DecLit(&'input str),
     StringLit(&'input str),
 
     // Keywords

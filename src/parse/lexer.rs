@@ -167,11 +167,7 @@ impl<'input> Lexer<'input> {
         let start = self.pos();
         let slice = self.read_while(|c| c.is_digit(10));
 
-        let int: i64 = slice.parse().map_err(|err: std::num::ParseIntError| {
-            Spanned::new(start, self.pos(), LexError::with_cause(&err.to_string()))
-        })?;
-
-        Ok(self.spanned(start, Token::DecLit(int)))
+        Ok(self.spanned(start, Token::DecLit(slice)))
     }
 
     fn scan_string(&mut self) -> Scanned<'input> {
@@ -412,7 +408,7 @@ mod tests {
             Spanned::new(10, 12, Token::TypeIdent(Type::I32)),
             Spanned::new(14, 14, Token::Equals),
             Spanned::new(16, 16, Token::LParen),
-            Spanned::new(17, 18, Token::DecLit(42)),
+            Spanned::new(17, 18, Token::DecLit("42")),
             Spanned::new(19, 19, Token::RParen),
             Spanned::new(20, 20, Token::Semi),
         ];
@@ -477,7 +473,7 @@ mod tests {
             Token::LParen,
             Token::LParen,
             Token::LParen,
-            Token::DecLit(42),
+            Token::DecLit("42"),
             Token::RParen,
             Token::RParen,
             Token::RParen,
