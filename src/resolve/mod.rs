@@ -478,7 +478,7 @@ mod tests {
             params: ParamList(vec![]),
             body: Block(vec![Stmt::VarDecl {
                 name: Spanned::new(16, 16, "x"),
-                value: Spanned::new(20, 22, Expr::DecLit(10)),
+                value: Spanned::new(20, 22, Expr::DecLit("10")),
                 eq: Spanned::new(18, 18, Token::Equals),
                 ty: None,
             }]),
@@ -504,7 +504,7 @@ mod tests {
             body: Block(vec![
                 Stmt::VarDecl {
                     name: Spanned::new(16, 16, "x"),
-                    value: Spanned::new(20, 22, Expr::DecLit(10)),
+                    value: Spanned::new(20, 22, Expr::DecLit("10")),
                     eq: Spanned::new(18, 18, Token::Equals),
                     ty: None,
                 },

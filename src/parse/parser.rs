@@ -598,9 +598,9 @@ mod tests {
                     }),
                     Stmt::Expr(Spanned {
                         node: Expr::Binary(
-                            Box::new(Expr::DecLit(3)),
+                            Box::new(Expr::DecLit("3")),
                             Spanned::new(21, 21, Token::Plus),
-                            Box::new(Spanned::new(23, 23, Expr::DecLit(4)))
+                            Box::new(Spanned::new(23, 23, Expr::DecLit("4")))
                         ),
                         span: Span::new(19, 23)
                     })
@@ -623,7 +623,7 @@ mod tests {
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::VarDecl {
                     name: Spanned::new(16, 18, "var"),
-                    value: Spanned::new(22, 22, Expr::DecLit(5)),
+                    value: Spanned::new(22, 22, Expr::DecLit("5")),
                     eq: Spanned::new(20, 20, Token::Equals),
                     ty: None
                 }])
@@ -666,9 +666,9 @@ mod tests {
                     11,
                     15,
                     Expr::Binary(
-                        Box::new(Expr::DecLit(1)),
+                        Box::new(Expr::DecLit("1")),
                         Spanned::new(13, 13, Token::Plus),
-                        Box::new(Spanned::new(15, 15, Expr::DecLit(1)))
+                        Box::new(Spanned::new(15, 15, Expr::DecLit("1")))
                     )
                 ))])
             }]),
@@ -685,7 +685,7 @@ mod tests {
         let mut parser = Parser::new(lexer);
 
         let expr = parser.expression().node;
-        assert_eq!(Expr::DecLit(42), expr);
+        assert_eq!(Expr::DecLit("42"), expr);
     }
 
     #[test]
@@ -698,15 +698,15 @@ mod tests {
         assert_eq!(
             Spanned {
                 node: Expr::Binary(
-                    Box::new(Expr::DecLit(1)),
+                    Box::new(Expr::DecLit("1")),
                     Spanned::new(2, 2, Token::Plus),
                     Box::new(Spanned::new(
                         4,
                         8,
                         Expr::Binary(
-                            Box::new(Expr::DecLit(2)),
+                            Box::new(Expr::DecLit("2")),
                             Spanned::new(6, 6, Token::Star),
-                            Box::new(Spanned::new(8, 8, Expr::DecLit(3)))
+                            Box::new(Spanned::new(8, 8, Expr::DecLit("3")))
                         )
                     ))
                 ),
@@ -724,12 +724,12 @@ mod tests {
             Spanned {
                 node: Expr::Binary(
                     Box::new(Expr::Binary(
-                        Box::new(Expr::DecLit(2)),
+                        Box::new(Expr::DecLit("2")),
                         Spanned::new(2, 2, Token::Star),
-                        Box::new(Spanned::new(4, 4, Expr::DecLit(3)))
+                        Box::new(Spanned::new(4, 4, Expr::DecLit("3")))
                     )),
                     Spanned::new(6, 6, Token::Plus),
-                    Box::new(Spanned::new(8, 8, Expr::DecLit(1))),
+                    Box::new(Spanned::new(8, 8, Expr::DecLit("1"))),
                 ),
                 span: Span::new(0, 8)
             },
@@ -745,12 +745,12 @@ mod tests {
             Spanned {
                 node: Expr::Binary(
                     Box::new(Expr::Binary(
-                        Box::new(Expr::DecLit(2)),
+                        Box::new(Expr::DecLit("2")),
                         Spanned::new(3, 3, Token::Plus),
-                        Box::new(Spanned::new(5, 5, Expr::DecLit(3)))
+                        Box::new(Spanned::new(5, 5, Expr::DecLit("3")))
                     )),
                     Spanned::new(8, 8, Token::Star),
-                    Box::new(Spanned::new(10, 10, Expr::DecLit(1))),
+                    Box::new(Spanned::new(10, 10, Expr::DecLit("1"))),
                 ),
                 span: Span::new(0, 10)
             },
@@ -765,15 +765,15 @@ mod tests {
         assert_eq!(
             Spanned {
                 node: Expr::Binary(
-                    Box::new(Expr::DecLit(1)),
+                    Box::new(Expr::DecLit("1")),
                     Spanned::new(2, 2, Token::Plus),
                     Box::new(Spanned::new(
                         4,
                         10,
                         Expr::Binary(
-                            Box::new(Expr::DecLit(2)),
+                            Box::new(Expr::DecLit("2")),
                             Spanned::new(7, 7, Token::Star),
-                            Box::new(Spanned::new(9, 9, Expr::DecLit(3)))
+                            Box::new(Spanned::new(9, 9, Expr::DecLit("3")))
                         )
                     ))
                 ),
