@@ -47,7 +47,7 @@ pub struct ParamList<'input>(pub Vec<Param<'input>>);
 #[derive(Debug, Eq, PartialEq)]
 pub struct Param<'input>(pub Spanned<&'input str>, pub Type);
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct ArgList<'input>(pub Vec<Spanned<Expr<'input>>>);
 
 impl<'input> fmt::Display for ArgList<'input> {
@@ -62,19 +62,19 @@ impl<'input> fmt::Display for ArgList<'input> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Expr<'input> {
     Error(ParseError<'input>),
     DecLit(&'input str),
     StringLit(&'input str),
-    Negate(Box<Expr<'input>>),
+    Negate(Spanned<Token<'input>>, Box<Spanned<Expr<'input>>>),
     Binary(
-        Box<Expr<'input>>,
+        Box<Spanned<Expr<'input>>>,
         Spanned<Token<'input>>,
         Box<Spanned<Expr<'input>>>,
     ),
     BoolBinary(
-        Box<Expr<'input>>,
+        Box<Spanned<Expr<'input>>>,
         Spanned<Token<'input>>,
         Box<Spanned<Expr<'input>>>,
     ),
@@ -96,17 +96,19 @@ pub enum Expr<'input> {
 
 impl<'input> fmt::Display for Expr<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::Expr::*;
+
         match self {
-            Expr::Error(err) => write!(f, "{}", err),
-            Expr::DecLit(lit) => write!(f, "{}", lit),
-            Expr::StringLit(lit) => write!(f, "{}", lit),
-            Expr::Negate(expr) => write!(f, "{}", expr),
-            Expr::Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op.node, r.node)),
-            Expr::BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l, op.node, r.node)),
-            Expr::Ident(name) => write!(f, "{}", name),
-            Expr::Assign { name, value, .. } => write!(f, "{} = {}", name, value.node),
-            Expr::Call { callee, args } => write!(f, "{}({})", callee.node, args),
-            Expr::Access { left, identifier } => write!(f, "{}.{}", left.node, identifier.node),
+            Error(err) => write!(f, "{}", err),
+            DecLit(lit) => write!(f, "{}", lit),
+            StringLit(lit) => write!(f, "{}", lit),
+            Negate(_, expr) => write!(f, "-{}", expr.node),
+            Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
+            BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
+            Ident(name) => write!(f, "{}", name),
+            Assign { name, value, .. } => write!(f, "{} = {}", name, value.node),
+            Call { callee, args } => write!(f, "{}({})", callee.node, args),
+            Access { left, identifier } => write!(f, "{}.{}", left.node, identifier.node),
         }
     }
 }

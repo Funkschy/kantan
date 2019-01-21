@@ -101,7 +101,7 @@ error: Failed to lex token, because: Non ascii identifiers are currently not sup
 }
 
 #[test]
-fn test_valid_equality_operation_should_return_new_line() {
+fn test_valid_equality_operation_should_print_nothing() {
     let mut cursor = Cursor::new(Vec::new());
 
     let source = Source::new(
@@ -116,7 +116,7 @@ fn test_valid_equality_operation_should_return_new_line() {
     mini_rust::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
-    assert_eq!("\n", output);
+    assert_eq!("", output);
 }
 
 #[test]

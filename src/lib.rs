@@ -1,6 +1,8 @@
 use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io::Write};
 
 mod cli;
+#[allow(dead_code)]
+mod mir;
 mod parse;
 mod resolve;
 mod types;
@@ -123,7 +125,9 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
             .map(|err| err.to_string())
             .collect();
 
-        print_error(&errors.join("\n\n"), writer)?;
+        if !errors.is_empty() {
+            print_error(&errors.join("\n\n"), writer)?;
+        }
     } else {
         for (source, ast) in ast_sources.values() {
             report_errors(source, ast, writer)?;

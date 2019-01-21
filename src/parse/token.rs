@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::types::Type;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Token<'input> {
     Ident(&'input str),
     DecLit(&'input str),
