@@ -5,7 +5,7 @@ use crate::{
     Span,
 };
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Copy, Clone)]
 pub struct DagIndex(pub usize);
 
 #[derive(Default, Debug, Eq, PartialEq)]
@@ -51,7 +51,6 @@ impl<'input, 'ast> Dag {
             Ident(ident) => DagNode::value(ValueType::Name, ident),
             Negate(_, expr) => {
                 let ty = Dag::get_type(types, &(expr.span, &expr.node));
-
                 let value = self.visit(&expr.node, types);
 
                 if ty == Type::I32 {
@@ -62,11 +61,9 @@ impl<'input, 'ast> Dag {
             }
             Binary(l, op, r) | BoolBinary(l, op, r) => {
                 let l_ty = Dag::get_type(types, &(l.span, &l.node));
-
                 let l_val = self.visit(&l.node, types);
 
                 let r_ty = Dag::get_type(types, &(r.span, &r.node));
-
                 let r_val = self.visit(&r.node, types);
 
                 assert_eq!(l_ty, r_ty);
@@ -90,15 +87,18 @@ impl<'input, 'ast> Dag {
             Call { callee, args } => {
                 let left = self.visit(&callee.node, types);
 
+                let mut args_indices = vec![];
+
                 for (i, arg) in args.0.iter().enumerate() {
                     let value_idx = self.visit(&arg.node, types);
                     let name = format!("_{}_arg_{}", callee.node, i);
                     let name_idx = self.push(DagNode::value_string(ValueType::Name, name));
 
                     self.push(DagNode::binary(BinType::ArgAssign, name_idx, value_idx));
+                    args_indices.push(name_idx);
                 }
 
-                DagNode::unary(UnaryType::Call, left)
+                DagNode::call(left, args_indices)
             }
             // TODO: implement
             Access { .. } => unimplemented!(),
@@ -113,6 +113,7 @@ pub enum DagNode {
     Value(ValueDagNode),
     Binary(BinaryDagNode),
     Unary(UnaryDagNode),
+    Call(CallDagNode)
 }
 
 impl DagNode {
@@ -127,6 +128,10 @@ impl DagNode {
         DagNode::Value(ValueDagNode { ty, value })
     }
 
+    pub fn call(name: DagIndex, args: Vec<DagIndex>) -> Self {
+        DagNode::Call(CallDagNode {name, args})
+    }
+
     pub fn unary(ty: UnaryType, value: DagIndex) -> Self {
         DagNode::Unary(UnaryDagNode { ty, value })
     }
@@ -134,6 +139,12 @@ impl DagNode {
     pub fn binary(ty: BinType, left: DagIndex, right: DagIndex) -> Self {
         DagNode::Binary(BinaryDagNode { ty, left, right })
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CallDagNode {
+    name: DagIndex,
+    args: Vec<DagIndex>
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -158,7 +169,6 @@ pub struct UnaryDagNode {
 #[derive(Debug, PartialEq, Eq)]
 pub enum UnaryType {
     I32Negate,
-    Call,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -417,9 +427,9 @@ mod tests {
                     left: DagIndex(9),
                     right: DagIndex(8),
                 }),
-                DagNode::Unary(UnaryDagNode {
-                    ty: UnaryType::Call,
-                    value: DagIndex(0),
+                DagNode::Call(CallDagNode{
+                    name: DagIndex(0),
+                    args: vec![DagIndex(4), DagIndex(6), DagIndex(9) ],
                 }),
             ],
         };
