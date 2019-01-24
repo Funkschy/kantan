@@ -8,6 +8,7 @@ mod resolve;
 mod types;
 
 use self::{
+    mir::cfg::Cfg,
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::Resolver,
 };
@@ -118,15 +119,32 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
     let main = main.unwrap();
 
     if err_count == 0 {
-        let mut resolver = Resolver::new(main, ast_sources);
-        let errors: Vec<String> = resolver
-            .resolve()
-            .iter()
-            .map(|err| err.to_string())
-            .collect();
+        // TODO: implement properly
+        let types = {
+            let mut resolver = Resolver::new(main, &ast_sources);
+            let errors: Vec<String> = resolver
+                .resolve()
+                .iter()
+                .map(|err| err.to_string())
+                .collect();
 
-        if !errors.is_empty() {
-            print_error(&errors.join("\n\n"), writer)?;
+            if !errors.is_empty() {
+                print_error(&errors.join("\n\n"), writer)?;
+                return Ok(());
+            }
+
+            resolver.expr_types
+        };
+
+        let (_, main_prg) = ast_sources[main];
+
+        for top_lvl in &main_prg.0 {
+            if let TopLvl::FnDecl { name, body, params } = top_lvl {
+                let name = name.node;
+                let body = body.0.clone();
+                let params = params.0.iter().map(|Param(_, ty)| *ty).collect();
+                dbg!(Cfg::function(name, params, body, &types).blocks);
+            }
         }
     } else {
         for (source, ast) in ast_sources.values() {

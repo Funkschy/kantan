@@ -1,12 +1,129 @@
 use super::dag::Dag;
 use crate::{
-    parse::ast::{Block, Expr, Stmt},
+    parse::ast::{Else, Expr, Stmt},
     resolve::TypeMap,
-    Spanned,
+    types::Type,
 };
 
-pub struct Cfg {
-    blocks: Vec<BasicBlock>,
+pub struct Cfg<'ast, 'input> {
+    pub(crate) blocks: Vec<BasicBlock>,
+    temp_counter: usize,
+    label_counter: usize,
+    types: &'ast TypeMap<'ast, 'input>,
+}
+
+impl<'ast, 'input> Cfg<'ast, 'input> {
+    pub fn function(
+        name: &str,
+        _params: Vec<Type>,
+        body: Vec<Stmt<'input>>,
+        types: &'ast TypeMap<'ast, 'input>,
+    ) -> Self {
+        let mut cfg = Cfg {
+            blocks: vec![],
+            temp_counter: 0,
+            label_counter: 0,
+            types,
+        };
+
+        let label = Label::from(name);
+        cfg.block_label(label, body);
+        cfg
+    }
+
+    fn handle_if(
+        &mut self,
+        condition: &Expr<'input>,
+        then_block: Vec<Stmt<'input>>,
+        else_label: Label,
+    ) -> Terminator {
+        let condition = Dag::construct_assign(self.temp(), condition, self.types);
+        self.block(then_block);
+
+        let then_label = self
+            .blocks
+            .last()
+            .map(|bb| bb.label.clone())
+            .expect("Empty blocklist");
+
+        Terminator::If {
+            condition,
+            then_label,
+            else_label,
+        }
+    }
+
+    fn block(&mut self, body: Vec<Stmt<'input>>) {
+        let label = self.label();
+        self.block_label(label, body)
+    }
+
+    fn block_label(&mut self, label: Label, mut body: Vec<Stmt<'input>>) {
+        let mut bb = BasicBlock::new(label);
+
+        while !body.is_empty() {
+            let s = body.remove(0);
+            match s {
+                Stmt::Expr(val) => self.expr(&val.node, &mut bb.statements),
+                Stmt::VarDecl { name, value, .. } => {
+                    self.assign_dag(&name.node, &value.node, &mut bb.statements)
+                }
+                Stmt::If {
+                    condition,
+                    then_block,
+                    else_branch,
+                } => {
+                    let mut else_statements = if let Some(else_branch) = else_branch {
+                        match *else_branch {
+                            Else::IfStmt(if_stmt) => vec![if_stmt],
+                            Else::Block(block) => block.0,
+                        }
+                    } else {
+                        vec![]
+                    };
+
+                    let else_label = self.label();
+                    bb.terminator =
+                        self.handle_if(&condition.node, then_block.0, else_label.clone());
+
+                    // push block until if
+                    self.blocks.push(bb);
+
+                    // begin new block for else
+                    bb = BasicBlock::new(else_label);
+                    body.append(&mut else_statements);
+                }
+            }
+        }
+
+        self.blocks.push(bb);
+    }
+
+    fn label(&mut self) -> Label {
+        let num = self.label_counter;
+        self.label_counter += 1;
+        Label(format!("_L{}", num))
+    }
+
+    fn temp(&mut self) -> String {
+        let num = self.temp_counter;
+        self.temp_counter += 1;
+        format!("_t{}", num)
+    }
+
+    #[inline]
+    fn expr(&self, expr: &Expr<'input>, statements: &mut Vec<Statement>) {
+        statements.push(Statement(Dag::construct(expr, self.types)));
+    }
+
+    #[inline]
+    fn assign_dag(&self, name: &str, value: &'ast Expr<'input>, statements: &mut Vec<Statement>) {
+        statements.push(Statement(Dag::construct_assign(
+            name.to_owned(),
+            value,
+            self.types,
+        )));
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -16,85 +133,13 @@ pub struct BasicBlock {
     terminator: Terminator,
 }
 
-impl<'input> BasicBlock {
-    pub fn from_block(mut block_num: usize, block: &Block<'input>, types: &TypeMap) -> Vec<Self> {
-        let mut blocks = vec![];
-
-        BasicBlock::bb_from_block(block, &mut blocks, &mut block_num, types);
-        blocks
-    }
-
-    fn bb_from_block(
-        block: &Block,
-        blocks: &mut Vec<BasicBlock>,
-        block_num: &mut usize,
-        types: &TypeMap,
-    ) -> usize {
-        let label = Label::new(*block_num);
-        *block_num += 1;
-
-        let mut current_block = BasicBlock {
+impl BasicBlock {
+    pub fn new(label: Label) -> Self {
+        BasicBlock {
             label,
             statements: vec![],
-            terminator: Terminator::Exit,
-        };
-
-        for stmt in &block.0 {
-            match stmt {
-                Stmt::VarDecl {
-                    name: Spanned { node: name, .. },
-                    value,
-                    eq,
-                    ..
-                } => {
-                    let value = Expr::Assign {
-                        name,
-                        eq: *eq,
-                        value: Box::new(value.clone()),
-                    };
-
-                    let dag = Dag::construct(&value, types);
-                    current_block.statements.push(Statement(dag));
-                }
-                Stmt::Expr(value) => {
-                    let dag = Dag::construct(&value.node, types);
-                    current_block.statements.push(Statement(dag));
-                }
-                // TODO: else branch
-                Stmt::If {
-                    condition,
-                    then_block,
-                    ..
-                } => {
-                    let condition = Dag::construct(&condition.node, types);
-                    let bb_idx = BasicBlock::bb_from_block(&then_block, blocks, block_num, types);
-                    let then_label = blocks[bb_idx].label.clone();
-
-                    let else_label = Label::new(*block_num);
-
-                    current_block.terminator = Terminator::If {
-                        condition,
-                        then_label,
-                        else_label: else_label.clone(),
-                    };
-
-                    blocks.push(current_block);
-
-                    current_block = BasicBlock {
-                        label: else_label,
-                        statements: vec![],
-                        terminator: Terminator::Exit,
-                    };
-
-                    *block_num += 1;
-                }
-            }
+            terminator: Terminator::Return,
         }
-
-        let idx = blocks.len();
-        blocks.push(current_block);
-
-        idx
     }
 }
 
@@ -104,6 +149,12 @@ pub struct Label(String);
 impl Label {
     fn new(block_num: usize) -> Self {
         Label(format!("L{}", block_num))
+    }
+}
+
+impl From<&str> for Label {
+    fn from(value: &str) -> Label {
+        Label(value.to_owned())
     }
 }
 
@@ -118,110 +169,5 @@ pub enum Terminator {
         else_label: Label,
     },
     GoTo(Label),
-    Exit,
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use super::*;
-    use crate::{
-        mir::dag::*,
-        parse::{ast::*, lexer::Lexer, parser::Parser},
-        resolve::Resolver,
-        Source,
-    };
-
-    #[test]
-    fn test_from_block_should_return_bb_of_consecutive_statements() {
-        let source = Source::new("main", "fn main() { let x = 2 + 3; let y = 2 * x + 2; }");
-        let lexer = Lexer::new(&source.code);
-        let mut parser = Parser::new(lexer);
-
-        let mut programs = HashMap::new();
-        let prg = parser.parse();
-        programs.insert("main", (&source, &prg));
-
-        let mut resolver = Resolver::new("main", programs);
-        assert_eq!(0, resolver.resolve().len());
-
-        let types = resolver.expr_types;
-
-        if let Some(TopLvl::FnDecl { body, .. }) = prg.0.first() {
-            let basic_blocks = BasicBlock::from_block(0, &body, &types);
-            assert_eq!(1, basic_blocks.len());
-
-            use crate::mir::dag::DagNode::*;
-
-            let expected = vec![BasicBlock {
-                label: Label("L0".to_owned()),
-                statements: vec![
-                    Statement(Dag {
-                        nodes: vec![
-                            Value(ValueDagNode {
-                                ty: ValueType::Name,
-                                value: "x".to_owned(),
-                            }),
-                            Value(ValueDagNode {
-                                ty: ValueType::I32,
-                                value: "2".to_owned(),
-                            }),
-                            Value(ValueDagNode {
-                                ty: ValueType::I32,
-                                value: "3".to_owned(),
-                            }),
-                            Binary(BinaryDagNode {
-                                ty: BinType::I32Add,
-                                left: DagIndex(1),
-                                right: DagIndex(2),
-                            }),
-                            Binary(BinaryDagNode {
-                                ty: BinType::Assign,
-                                left: DagIndex(0),
-                                right: DagIndex(3),
-                            }),
-                        ],
-                    }),
-                    Statement(Dag {
-                        nodes: vec![
-                            Value(ValueDagNode {
-                                ty: ValueType::Name,
-                                value: "y".to_owned(),
-                            }),
-                            Value(ValueDagNode {
-                                ty: ValueType::I32,
-                                value: "2".to_owned(),
-                            }),
-                            Value(ValueDagNode {
-                                ty: ValueType::Name,
-                                value: "x".to_owned(),
-                            }),
-                            Binary(BinaryDagNode {
-                                ty: BinType::I32Mul,
-                                left: DagIndex(1),
-                                right: DagIndex(2),
-                            }),
-                            Binary(BinaryDagNode {
-                                ty: BinType::I32Add,
-                                left: DagIndex(3),
-                                right: DagIndex(1),
-                            }),
-                            Binary(BinaryDagNode {
-                                ty: BinType::Assign,
-                                left: DagIndex(0),
-                                right: DagIndex(4),
-                            }),
-                        ],
-                    }),
-                ],
-
-                terminator: Terminator::Exit,
-            }];
-
-            assert_eq!(expected, basic_blocks);
-        } else {
-            panic!("No function body");
-        }
-    }
+    Return,
 }

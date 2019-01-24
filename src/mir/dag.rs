@@ -20,6 +20,17 @@ impl<'input, 'ast> Dag {
         dag
     }
 
+    pub(crate) fn construct_assign(
+        name: String,
+        value: &'ast Expr<'input>,
+        types: &TypeMap<'ast, 'input>,
+    ) -> Self {
+        let mut dag = Dag::default();
+        let assign = dag.assign(name, value, types);
+        dag.push(assign);
+        dag
+    }
+
     fn push(&mut self, node: DagNode) -> DagIndex {
         let pos = self.nodes.iter().position(|n| *n == node);
 
@@ -39,6 +50,18 @@ impl<'input, 'ast> Dag {
         *types
             .get(key)
             .unwrap_or_else(|| panic!("No type for {:?}", key))
+    }
+
+    fn assign(
+        &mut self,
+        name: String,
+        value: &'ast Expr<'input>,
+        types: &TypeMap<'ast, 'input>,
+    ) -> DagNode {
+        let name_idx = self.push(DagNode::value_string(ValueType::Name, name));
+        let value_idx = self.visit(value, types);
+
+        DagNode::binary(BinType::Assign, name_idx, value_idx)
     }
 
     fn visit(&mut self, expr: &'ast Expr<'input>, types: &TypeMap<'ast, 'input>) -> DagIndex {
@@ -73,17 +96,13 @@ impl<'input, 'ast> Dag {
                     Token::Minus => BinType::I32Sub,
                     Token::Star => BinType::I32Mul,
                     Token::Slash => BinType::I32Div,
+                    Token::EqualsEquals => BinType::I32Eq,
                     _ => unimplemented!(),
                 };
 
                 DagNode::binary(ty, l_val, r_val)
             }
-            Assign { name, value, .. } => {
-                let name_idx = self.push(DagNode::value(ValueType::Name, name));
-                let value_idx = self.visit(&value.node, types);
-
-                DagNode::binary(BinType::Assign, name_idx, value_idx)
-            }
+            Assign { name, value, .. } => self.assign(name.to_string(), &value.node, types),
             Call { callee, args } => {
                 let left = self.visit(&callee.node, types);
 
@@ -113,7 +132,7 @@ pub enum DagNode {
     Value(ValueDagNode),
     Binary(BinaryDagNode),
     Unary(UnaryDagNode),
-    Call(CallDagNode)
+    Call(CallDagNode),
 }
 
 impl DagNode {
@@ -129,7 +148,7 @@ impl DagNode {
     }
 
     pub fn call(name: DagIndex, args: Vec<DagIndex>) -> Self {
-        DagNode::Call(CallDagNode {name, args})
+        DagNode::Call(CallDagNode { name, args })
     }
 
     pub fn unary(ty: UnaryType, value: DagIndex) -> Self {
@@ -144,7 +163,7 @@ impl DagNode {
 #[derive(Debug, PartialEq, Eq)]
 pub struct CallDagNode {
     name: DagIndex,
-    args: Vec<DagIndex>
+    args: Vec<DagIndex>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -427,9 +446,9 @@ mod tests {
                     left: DagIndex(9),
                     right: DagIndex(8),
                 }),
-                DagNode::Call(CallDagNode{
+                DagNode::Call(CallDagNode {
                     name: DagIndex(0),
-                    args: vec![DagIndex(4), DagIndex(6), DagIndex(9) ],
+                    args: vec![DagIndex(4), DagIndex(6), DagIndex(9)],
                 }),
             ],
         };

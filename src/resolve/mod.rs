@@ -20,7 +20,7 @@ pub type TypeMap<'input, 'ast> = HashMap<(Span, &'ast Expr<'input>), Type>;
 
 pub(crate) struct Resolver<'input, 'ast> {
     current_name: &'input str,
-    programs: PrgMap<'input>,
+    programs: &'ast PrgMap<'input>,
     resolved: HashSet<&'input str>,
     // use tuple, because Spanned::hash only considers node
     pub expr_types: TypeMap<'input, 'ast>,
@@ -29,7 +29,7 @@ pub(crate) struct Resolver<'input, 'ast> {
 }
 
 impl<'input, 'ast> Resolver<'input, 'ast> {
-    pub fn new(main_file: &'input str, programs: PrgMap<'input>) -> Self {
+    pub fn new(main_file: &'input str, programs: &'ast PrgMap<'input>) -> Self {
         Resolver {
             current_name: main_file,
             programs,
@@ -431,7 +431,7 @@ mod tests {
         map.insert("main", (&main_src, &main_ast));
         map.insert("test", (&test_src, &test_ast));
 
-        let mut resolver = Resolver::new("main", map);
+        let mut resolver = Resolver::new("main", &map);
         let errors = resolver.resolve();
 
         let expected: Vec<ResolveError> = vec![];
@@ -465,7 +465,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("test", (&source, &ast));
 
-        let mut resolver = Resolver::new("test", map);
+        let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
 
         let expected: Vec<ResolveError> = vec![];
@@ -490,7 +490,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("test", (&source, &ast));
 
-        let mut resolver = Resolver::new("test", map);
+        let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
 
         let expected: Vec<ResolveError> = vec![];
@@ -526,7 +526,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("test", (&source, &ast));
 
-        let mut resolver = Resolver::new("test", map);
+        let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
 
         assert_eq!(1, errors.len());

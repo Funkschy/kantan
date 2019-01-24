@@ -22,7 +22,7 @@ pub enum TopLvl<'input> {
 }
 
 // TODO: refactor Spanned<&'input str> to identifier
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Stmt<'input> {
     VarDecl {
         name: Spanned<&'input str>,
@@ -33,12 +33,19 @@ pub enum Stmt<'input> {
     If {
         condition: Spanned<Expr<'input>>,
         then_block: Block<'input>,
-        else_branch: Option<Box<Stmt<'input>>>,
+        else_branch: Option<Box<Else<'input>>>,
     },
     Expr(Spanned<Expr<'input>>),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
+pub enum Else<'input> {
+    IfStmt(Stmt<'input>),
+    Block(Block<'input>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Block<'input>(pub Vec<Stmt<'input>>);
 
 #[derive(Debug, Eq, PartialEq)]
