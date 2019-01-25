@@ -5,6 +5,8 @@ mod cli;
 mod mir;
 mod parse;
 mod resolve;
+#[allow(dead_code)]
+mod tac;
 mod types;
 
 use self::{
