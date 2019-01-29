@@ -39,7 +39,7 @@ impl<'input> fmt::Display for Func<'input> {
             .block
             .0
             .iter()
-            .map(|i| format!("\t{};", i))
+            .map(|i| format!("\t{}", i))
             .collect::<Vec<String>>()
             .join("\n");
 
@@ -111,11 +111,11 @@ impl<'input> fmt::Display for Instruction<'input> {
         use Instruction::*;
 
         let s = match self {
-            Assignment(a, e) => format!("{} = {}", a, e),
-            Jmp(l) => format!("goto {}", l),
-            JmpIf(a, l0, l1) => format!("if {} goto {} else goto {}", a, l0, l1),
-            Return(a) => format!("return {}", a),
-            Label(l) => l.to_string(),
+            Assignment(a, e) => format!("{} = {};", a, e),
+            Jmp(l) => format!("goto {};", l),
+            JmpIf(a, l0, l1) => format!("if {} goto {} else goto {};", a, l0, l1),
+            Return(a) => format!("return {};", a),
+            Label(l) => format!("{}:", l),
         };
 
         write!(f, "{}", s)

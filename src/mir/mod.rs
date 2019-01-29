@@ -62,7 +62,15 @@ impl<'ast, 'input> Tac<'ast, 'input> {
                     then_block,
                     else_branch,
                 } => {
-                    self.if_branch(condition.node, then_block, else_branch, &mut block);
+                    let end_label = self.label();
+                    self.if_branch(
+                        condition.node,
+                        then_block,
+                        else_branch,
+                        &mut block,
+                        end_label.clone(),
+                    );
+                    block.push(Instruction::Label(end_label));
                 }
             };
         }
@@ -76,6 +84,7 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         then_block: Block<'input>,
         else_branch: Option<Box<Else<'input>>>,
         block: &mut InstructionBlock<'input>,
+        end_label: Label,
     ) {
         let msg = "unexpected empty expression";
         let condition = self.expr_instr(condition, block).expect(msg);
@@ -84,7 +93,6 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         let then_label = self.label();
 
         let else_label = self.label();
-        let end_label = self.label();
 
         let instr = Instruction::JmpIf(condition, then_label.clone(), else_label.clone());
         block.push(instr);
@@ -103,7 +111,13 @@ impl<'ast, 'input> Tac<'ast, 'input> {
                         else_branch,
                     } = s
                     {
-                        self.if_branch(condition.node, then_block, else_branch, block);
+                        self.if_branch(
+                            condition.node,
+                            then_block,
+                            else_branch,
+                            block,
+                            end_label.clone(),
+                        );
                     } else {
                         panic!("Only if statement allowed here");
                     }
@@ -113,10 +127,7 @@ impl<'ast, 'input> Tac<'ast, 'input> {
                     block.append(&mut b);
                 }
             }
-            block.push(Instruction::Jmp(end_label.clone()));
         }
-
-        block.push(end_label.into());
     }
 
     fn expr(
