@@ -12,6 +12,7 @@ pub enum Token<'input> {
     Let,
     Fn,
     If,
+    Else,
     Import,
     TypeIdent(Type),
 
@@ -70,6 +71,7 @@ impl<'input> fmt::Display for Token<'input> {
             Token::Let => write!(f, "let"),
             Token::Fn => write!(f, "fn"),
             Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
             Token::Import => write!(f, "import"),
             // Operators
             Token::Equals => write!(f, "="),

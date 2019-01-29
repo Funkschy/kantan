@@ -39,7 +39,7 @@ impl<'input> fmt::Display for Func<'input> {
             .block
             .0
             .iter()
-            .map(|i| format!("\t{}", i))
+            .map(|i| format!("\t{};", i))
             .collect::<Vec<String>>()
             .join("\n");
 
@@ -57,6 +57,10 @@ pub struct InstructionBlock<'input>(Vec<Instruction<'input>>);
 impl<'input> InstructionBlock<'input> {
     pub fn push(&mut self, instr: Instruction<'input>) {
         self.0.push(instr);
+    }
+
+    pub fn append(&mut self, other: &mut Self) {
+        self.0.append(&mut other.0);
     }
 }
 
@@ -82,16 +86,24 @@ impl From<String> for Label {
     }
 }
 
+impl<'input> Into<Instruction<'input>> for Label {
+    fn into(self) -> Instruction<'input> {
+        Instruction::Label(self)
+    }
+}
+
 #[derive(Debug)]
 pub enum Instruction<'input> {
     /// x = <expr>
     Assignment(Address<'input>, Expression<'input>),
     /// goto l
     Jmp(Label),
-    /// if x goto l
-    JmpIf(Address<'input>, Label),
+    /// if x goto l0 else goto l1
+    JmpIf(Address<'input>, Label, Label),
     /// return x
     Return(Address<'input>),
+    /// .L0:
+    Label(Label),
 }
 
 impl<'input> fmt::Display for Instruction<'input> {
@@ -101,8 +113,9 @@ impl<'input> fmt::Display for Instruction<'input> {
         let s = match self {
             Assignment(a, e) => format!("{} = {}", a, e),
             Jmp(l) => format!("goto {}", l),
-            JmpIf(a, l) => format!("if {} goto {}", a, l),
+            JmpIf(a, l0, l1) => format!("if {} goto {} else goto {}", a, l0, l1),
             Return(a) => format!("return {}", a),
+            Label(l) => l.to_string(),
         };
 
         write!(f, "{}", s)
@@ -125,6 +138,18 @@ pub enum Expression<'input> {
     DeRef(Address<'input>),
     /// x = call f (y, z)
     Call(Label, Vec<Address<'input>>),
+    /// empty
+    Empty,
+}
+
+impl<'input> Expression<'input> {
+    pub fn is_empty(&self) -> bool {
+        if let Expression::Empty = self {
+            return true;
+        }
+
+        false
+    }
 }
 
 impl<'input> fmt::Display for Expression<'input> {
@@ -142,6 +167,7 @@ impl<'input> fmt::Display for Expression<'input> {
                 let args = args.join(", ");
                 format!("call {}({})", f, args)
             }
+            Empty => "empty".to_string(),
         };
 
         write!(f, "{}", s)
@@ -150,6 +176,7 @@ impl<'input> fmt::Display for Expression<'input> {
 
 #[derive(Debug)]
 pub enum UnaryType {
+    BoolNegate,
     I32Negate,
 }
 
@@ -159,6 +186,7 @@ impl fmt::Display for UnaryType {
 
         let s = match self {
             I32Negate => "-",
+            BoolNegate => "!",
         };
 
         write!(f, "{}", s)

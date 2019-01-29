@@ -144,11 +144,27 @@ where
         let condition = self.expression();
         let then_block = self.block()?;
 
+        let else_branch = if self.peek_eq(Token::Else) {
+            self.consume(Token::Else)?;
+
+            let else_branch = if self.peek_eq(Token::If) {
+                let else_if = self.if_stmt()?;
+                Else::IfStmt(else_if)
+            } else {
+                let block = self.block()?;
+                Else::Block(block)
+            };
+
+            Some(Box::new(else_branch))
+        } else {
+            None
+        };
+
         // TODO: else branch
         Ok(Stmt::If {
             condition,
             then_block,
-            else_branch: None,
+            else_branch,
         })
     }
 

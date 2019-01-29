@@ -43,23 +43,80 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         let mut block = InstructionBlock::default();
 
         for s in statements {
-            let _ = match s {
-                Stmt::Expr(e) => self.expr_instr(e.node, &mut block),
+            match s {
+                Stmt::Expr(e) => {
+                    self.expr_instr(e.node, &mut block);
+                }
                 Stmt::VarDecl { name, value, .. } => {
-                    let expr: Expression = if let Some(rval) = self.rvalue(&value.node) {
+                    let expr = if let Some(rval) = self.rvalue(&value.node) {
                         rval.into()
                     } else {
                         self.expr(value.node, &mut block)
                     };
 
                     let address = name.node.into();
-                    self.assign(address, expr, &mut block)
+                    self.assign(address, expr, &mut block);
                 }
-                _ => continue,
+                Stmt::If {
+                    condition,
+                    then_block,
+                    else_branch,
+                } => {
+                    self.if_branch(condition.node, then_block, else_branch, &mut block);
+                }
             };
         }
 
         block
+    }
+
+    fn if_branch(
+        &mut self,
+        condition: Expr<'input>,
+        then_block: Block<'input>,
+        else_branch: Option<Box<Else<'input>>>,
+        block: &mut InstructionBlock<'input>,
+    ) {
+        let msg = "unexpected empty expression";
+        let condition = self.expr_instr(condition, block).expect(msg);
+
+        let mut then_block = self.create_block(then_block.0);
+        let then_label = self.label();
+
+        let else_label = self.label();
+        let end_label = self.label();
+
+        let instr = Instruction::JmpIf(condition, then_label.clone(), else_label.clone());
+        block.push(instr);
+        block.push(then_label.into());
+        block.append(&mut then_block);
+        block.push(Instruction::Jmp(end_label.clone()));
+
+        block.push(else_label.into());
+
+        if let Some(else_branch) = else_branch {
+            match *else_branch {
+                Else::IfStmt(s) => {
+                    if let Stmt::If {
+                        condition,
+                        then_block,
+                        else_branch,
+                    } = s
+                    {
+                        self.if_branch(condition.node, then_block, else_branch, block);
+                    } else {
+                        panic!("Only if statement allowed here");
+                    }
+                }
+                Else::Block(b) => {
+                    let mut b = self.create_block(b.0);
+                    block.append(&mut b);
+                }
+            }
+            block.push(Instruction::Jmp(end_label.clone()));
+        }
+
+        block.push(end_label.into());
     }
 
     fn expr(
@@ -69,8 +126,9 @@ impl<'ast, 'input> Tac<'ast, 'input> {
     ) -> Expression<'input> {
         match expr {
             Expr::Binary(l, op, r) | Expr::BoolBinary(l, op, r) => {
-                let left = self.expr_instr(l.node, block);
-                let right = self.expr_instr(r.node, block);
+                let msg = "unexpected empty expression";
+                let left = self.expr_instr(l.node, block).expect(msg);
+                let right = self.expr_instr(r.node, block).expect(msg);
 
                 let bin_type = match op.node {
                     Token::Plus => BinaryType::I32Add,
@@ -86,12 +144,23 @@ impl<'ast, 'input> Tac<'ast, 'input> {
             Expr::Call { callee, args } => {
                 let args: Vec<Address> = args
                     .into_iter()
-                    .map(|a| self.expr_instr(a.node, block))
+                    .filter_map(|a| self.expr_instr(a.node, block))
                     .collect();
 
                 let label = callee.node.to_string().into();
 
                 Expression::Call(label, args)
+            }
+            Expr::Assign { name, value, .. } => {
+                let expr = if let Some(rval) = self.rvalue(&value.node) {
+                    rval.into()
+                } else {
+                    self.expr(value.node, block)
+                };
+
+                let address = name.into();
+                self.assign(address, expr, block);
+                Expression::Empty
             }
             _ => unimplemented!(),
         }
@@ -101,15 +170,20 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         &mut self,
         expr: Expr<'input>,
         block: &mut InstructionBlock<'input>,
-    ) -> Address<'input> {
-        if let Some(rval) = self.rvalue(&expr) {
+    ) -> Option<Address<'input>> {
+        let rval = self.rvalue(&expr);
+        if rval.is_some() {
             return rval;
         }
 
         let e = self.expr(expr, block);
+        if e.is_empty() {
+            return None;
+        }
+
         let temp = self.temp();
 
-        self.assign(temp, e, block)
+        Some(self.assign(temp, e, block))
     }
 
     fn assign(
@@ -144,5 +218,11 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         self.temp_count += 1;
 
         Address::Temp(temp)
+    }
+
+    fn label(&mut self) -> Label {
+        let label = Label::new(self.label_count);
+        self.label_count += 1;
+        label
     }
 }
