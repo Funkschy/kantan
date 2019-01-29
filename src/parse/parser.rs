@@ -53,6 +53,8 @@ where
                 top_lvl_decls.push(decl);
             } else if let Err(err) = decl {
                 top_lvl_decls.push(TopLvl::Error(err));
+                // TODO: fix sync
+                self.sync();
             }
         }
 
@@ -83,8 +85,24 @@ where
     // TODO: parse parameters
     fn param_list(&mut self) -> Result<ParamList<'input>, Spanned<ParseError<'input>>> {
         self.consume(Token::LParen)?;
+
+        if self.peek_eq(Token::RParen) {
+            self.consume(Token::RParen)?;
+            return Ok(ParamList(vec![]));
+        }
+
+        let mut params = vec![];
+
+        while !self.peek_eq(Token::RParen) {
+            let ident = self.consume_ident()?;
+            self.consume(Token::Colon)?;
+            // TODO: user defined types
+            let ty = self.consume_type()?;
+            params.push(Param::new(ident, ty.node));
+        }
+
         self.consume(Token::RParen)?;
-        Ok(ParamList(vec![]))
+        Ok(ParamList(params))
     }
 
     fn block(&mut self) -> Result<Block<'input>, Spanned<ParseError<'input>>> {

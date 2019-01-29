@@ -54,8 +54,23 @@ pub struct ParamList<'input>(pub Vec<Param<'input>>);
 #[derive(Debug, Eq, PartialEq)]
 pub struct Param<'input>(pub Spanned<&'input str>, pub Type);
 
+impl<'input> Param<'input> {
+    pub fn new(ident: Spanned<&'input str>, ty: Type) -> Self {
+        Param(ident, ty)
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct ArgList<'input>(pub Vec<Spanned<Expr<'input>>>);
+
+impl<'input> IntoIterator for ArgList<'input> {
+    type Item = Spanned<Expr<'input>>;
+    type IntoIter = ::std::vec::IntoIter<Spanned<Expr<'input>>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
 
 impl<'input> fmt::Display for ArgList<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

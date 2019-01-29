@@ -8,6 +8,7 @@ mod resolve;
 mod types;
 
 use self::{
+    mir::Tac,
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::Resolver,
 };
@@ -119,7 +120,7 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
 
     if err_count == 0 {
         // TODO: convert to mir
-        let _ = {
+        let types = {
             let mut resolver = Resolver::new(main, &ast_sources);
             let errors: Vec<String> = resolver
                 .resolve()
@@ -134,6 +135,27 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
 
             resolver.expr_types
         };
+
+        let (_, main_prg) = ast_sources[main];
+        let mut tac = Tac::new(&types);
+
+        for top_lvl in &main_prg.0 {
+            if let TopLvl::FnDecl { name, body, params } = top_lvl {
+                let name = name.node;
+                let body = body.clone();
+                let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
+                tac.add_function(name.to_owned(), params, body);
+            }
+        }
+
+        let funcs = tac
+            .functions
+            .iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        println!("{}", funcs);
     } else {
         for (source, ast) in ast_sources.values() {
             report_errors(source, ast, writer)?;

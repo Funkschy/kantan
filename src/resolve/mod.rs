@@ -72,6 +72,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         prefix: Option<&str>,
     ) {
         match top_lvl {
+            // TODO: check params
             TopLvl::FnDecl { name, .. } => {
                 let name = prefix
                     .map(|prefix| format!("{}.{}", prefix, name.node))
@@ -265,6 +266,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 .ok_or_else(|| self.not_defined_error(span, span, name))
                 .map(|sym| sym.node.ty),
 
+            // TODO: check args correspond to params
             Expr::Call { callee, args } => {
                 for Spanned { node: expr, span } in &args.0 {
                     self.resolve_expr(*span, &expr)?;
