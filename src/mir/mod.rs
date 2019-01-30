@@ -1,3 +1,67 @@
+//! The middle intermediate representation.
+//! This IR is very similar to LLVM-IR, but can also be compiled to Assembly directly.
+//!
+//! # Functions
+//! Function prototypes in the MIR look very similar to normal kantan functions
+//! fn main(): void {
+//!     ...
+//! }
+//!
+//! however the body of the function was replaced with three address code from
+//! the tac module.
+//!
+//! # Variables
+//!
+//! fn main(): void {
+//!     let x = 2 + 3 * 5;
+//! }
+//!
+//! compiles to:
+//!
+//! fn main(): void {
+//!     _t0 = 2 * 5;
+//!     x = 2 + _t0;
+//! }
+//!
+//! # If-Else
+//!
+//! fn main(): i32 {
+//!     let x = 0;
+//!     let y = 1;
+//!
+//!     if y == 0 {
+//!         x = 1;
+//!     } else if y == 1 {
+//!         x = 2;
+//!     } else {
+//!         x = 3;
+//!     }
+//!
+//!     return x;
+//! }
+//!
+//! compiles to:
+//!
+//! fn main(): i32 {
+//!     x = 0;
+//!     y = 1;
+//!     _t0 = y == 0;
+//!     if _t0 goto .L1 else goto .L2;
+//!     .L1:
+//!     x = 1;
+//!     goto .L0;
+//!     .L2:
+//!     _t1 = y == 1;
+//!     if _t1 goto .L3 else goto .L4;
+//!     .L3:
+//!     x = 2;
+//!     goto .L0;
+//!     .L4:
+//!     x = 3;
+//!     .L0:
+//!     return x;
+//! }
+
 use std::collections::HashMap;
 
 use super::{parse::ast::*, parse::token::Token, resolve::TypeMap, types::Type, Spanned};
