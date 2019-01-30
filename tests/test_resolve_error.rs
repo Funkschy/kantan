@@ -8,7 +8,7 @@ fn test_invalid_assignment() {
 
     let source = Source::new(
         "test",
-        r#"fn main() {
+        r#"fn main(): void {
     let mystr = "hello";
     mystr = 5;
 }"#,
@@ -39,7 +39,7 @@ fn test_invalid_assignment_explicit_type() {
 
     let source = Source::new(
         "test",
-        r#"fn main() {
+        r#"fn main(): void {
     let mystr: string = 2;
 }"#,
     );
@@ -69,7 +69,7 @@ fn test_non_bool_in_if_condition() {
 
     let source = Source::new(
         "test",
-        r#"fn main() {
+        r#"fn main(): void {
     if "hello" {
 
     }
@@ -93,7 +93,7 @@ fn test_call_of_undefined_function() {
 
     let source = Source::new(
         "test",
-        r#"fn main() {
+        r#"fn main(): void {
     test();
 }
 "#,

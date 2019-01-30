@@ -26,6 +26,7 @@ pub(crate) struct Resolver<'input, 'ast> {
     pub expr_types: TypeMap<'input, 'ast>,
     sym_table: SymbolTable<'input>,
     functions: HashMap<String, Type>,
+    current_func_ret_type: Spanned<Type>,
 }
 
 impl<'input, 'ast> Resolver<'input, 'ast> {
@@ -37,6 +38,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             resolved: HashSet::new(),
             sym_table: SymbolTable::new(),
             functions: HashMap::new(),
+            current_func_ret_type: Spanned::new(0, 0, Type::Void),
         }
     }
 }
@@ -73,11 +75,12 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
     ) {
         match top_lvl {
             // TODO: check params
-            TopLvl::FnDecl { name, .. } => {
+            TopLvl::FnDecl { name, ret_type, .. } => {
                 let name = prefix
                     .map(|prefix| format!("{}.{}", prefix, name.node))
                     .unwrap_or_else(|| name.node.to_owned());
-                self.functions.insert(name, Type::Void);
+
+                self.functions.insert(name, ret_type.node);
             }
             TopLvl::Import { name, .. } => {
                 if name.node == self.current_name {
@@ -108,7 +111,14 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         top_lvl: &'ast TopLvl<'input>,
         errors: &mut Vec<ResolveError<'input>>,
     ) {
-        if let TopLvl::FnDecl { params, body, .. } = top_lvl {
+        if let TopLvl::FnDecl {
+            params,
+            body,
+            ret_type,
+            ..
+        } = top_lvl
+        {
+            self.current_func_ret_type = *ret_type;
             self.sym_table.scope_enter();
 
             for p in &params.0 {
@@ -183,6 +193,31 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
                 for stmt in &then_block.0 {
                     self.resolve_stmt(&stmt, errors);
+                }
+            }
+            Stmt::Return(expr) => {
+                if let Some(expr) = expr {
+                    if self.current_func_ret_type.node == Type::Void {
+                        unimplemented!("Error for return in void");
+                    }
+
+                    let resolve_result = self.resolve_expr(expr.span, &expr.node);
+
+                    if let Err(msg) = resolve_result {
+                        errors.push(msg);
+                    } else if let Ok(res) = resolve_result {
+                        // TODO: proper error handling
+                        if let Err(err) = self.compare_types(
+                            self.current_func_ret_type.span,
+                            expr.span,
+                            self.current_func_ret_type.node,
+                            res,
+                        ) {
+                            errors.push(err);
+                        }
+                    }
+                } else if self.current_func_ret_type.node != Type::Void {
+                    unimplemented!("Error for no return in non void")
                 }
             }
             Stmt::Expr(ref expr) => {
@@ -395,8 +430,8 @@ mod tests {
 
     #[test]
     fn test_resolve_should_find_imported_fn() {
-        let main_src = Source::new("main", "import test\nfn main() {test.func()}");
-        let test_src = Source::new("test", "fn func() {}");
+        let main_src = Source::new("main", "import test\nfn main(): void {test.func()}");
+        let test_src = Source::new("test", "fn func(): void {}");
 
         let main_ast = Program(vec![
             TopLvl::Import {
@@ -404,17 +439,18 @@ mod tests {
             },
             TopLvl::FnDecl {
                 name: Spanned::new(16, 19, "main"),
+                ret_type: Spanned::new(24, 27, Type::Void),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
-                    25,
-                    28,
+                    32,
+                    34,
                     Expr::Call {
                         callee: Box::new(Spanned::new(
-                            23,
-                            31,
+                            29,
+                            37,
                             Expr::Access {
-                                left: Box::new(Spanned::new(23, 26, Expr::Ident("test"))),
-                                identifier: Spanned::new(28, 31, "func"),
+                                left: Box::new(Spanned::new(29, 32, Expr::Ident("test"))),
+                                identifier: Spanned::new(34, 37, "func"),
                             },
                         )),
                         args: ArgList(vec![]),
@@ -425,6 +461,7 @@ mod tests {
 
         let test_ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "func"),
+            ret_type: Spanned::new(11, 14, Type::Void),
             params: ParamList(vec![]),
             body: Block(vec![]),
         }]);
@@ -442,23 +479,25 @@ mod tests {
 
     #[test]
     fn test_functions_are_found_without_forward_decl() {
-        let source = Source::new("test", "fn main() { test(); } fn test() {}");
+        let source = Source::new("test", "fn main(): void { test(); } fn test(): void {}");
 
         let ast = Program(vec![
             TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
+                ret_type: Spanned::new(11, 14, Type::Void),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
-                    12,
-                    17,
+                    18,
+                    23,
                     Expr::Call {
-                        callee: Box::new(Spanned::new(12, 15, Expr::Ident("test"))),
+                        callee: Box::new(Spanned::new(18, 21, Expr::Ident("test"))),
                         args: ArgList(vec![]),
                     },
                 ))]),
             },
             TopLvl::FnDecl {
                 name: Spanned::new(25, 28, "test"),
+                ret_type: Spanned::new(39, 42, Type::Void),
                 params: ParamList(vec![]),
                 body: Block(vec![]),
             },
@@ -476,15 +515,16 @@ mod tests {
 
     #[test]
     fn test_resolve_without_errors_should_return_empty_vec() {
-        let source = Source::new("test", "fn main() { let x = 10; }");
+        let source = Source::new("test", "fn main(): void { let x = 10; }");
 
         let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
+            ret_type: Spanned::new(11, 14, Type::Void),
             params: ParamList(vec![]),
             body: Block(vec![Stmt::VarDecl {
-                name: Spanned::new(16, 16, "x"),
-                value: Spanned::new(20, 22, Expr::DecLit("10")),
-                eq: Spanned::new(18, 18, Token::Equals),
+                name: Spanned::new(22, 22, "x"),
+                value: Spanned::new(26, 28, Expr::DecLit("10")),
+                eq: Spanned::new(24, 24, Token::Equals),
                 ty: None,
             }]),
         }]);
@@ -501,25 +541,26 @@ mod tests {
 
     #[test]
     fn test_resolve_with_assign_error_should_return_correct_error() {
-        let source = Source::new("test", r#"fn main() { let x = 10; x = ""; }"#);
+        let source = Source::new("test", r#"fn main(): void { let x = 10; x = ""; }"#);
 
         let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
+            ret_type: Spanned::new(11, 14, Type::Void),
             params: ParamList(vec![]),
             body: Block(vec![
                 Stmt::VarDecl {
-                    name: Spanned::new(16, 16, "x"),
-                    value: Spanned::new(20, 22, Expr::DecLit("10")),
-                    eq: Spanned::new(18, 18, Token::Equals),
+                    name: Spanned::new(22, 22, "x"),
+                    value: Spanned::new(26, 28, Expr::DecLit("10")),
+                    eq: Spanned::new(24, 24, Token::Equals),
                     ty: None,
                 },
                 Stmt::Expr(Spanned::new(
-                    24,
-                    29,
+                    30,
+                    35,
                     Expr::Assign {
                         name: "x",
-                        eq: Spanned::new(26, 26, Token::Equals),
-                        value: Box::new(Spanned::new(29, 29, Expr::StringLit(""))),
+                        eq: Spanned::new(32, 32, Token::Equals),
+                        value: Box::new(Spanned::new(35, 35, Expr::StringLit(""))),
                     },
                 )),
             ]),

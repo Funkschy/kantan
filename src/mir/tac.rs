@@ -62,6 +62,10 @@ impl<'input> InstructionBlock<'input> {
     pub fn append(&mut self, other: &mut Self) {
         self.0.append(&mut other.0);
     }
+
+    pub fn last(&self) -> Option<&Instruction<'input>> {
+        self.0.last()
+    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Clone)]
@@ -101,7 +105,7 @@ pub enum Instruction<'input> {
     /// if x goto l0 else goto l1
     JmpIf(Address<'input>, Label, Label),
     /// return x
-    Return(Address<'input>),
+    Return(Option<Address<'input>>),
     /// .L0:
     Label(Label),
 }
@@ -114,7 +118,8 @@ impl<'input> fmt::Display for Instruction<'input> {
             Assignment(a, e) => format!("{} = {};", a, e),
             Jmp(l) => format!("goto {};", l),
             JmpIf(a, l0, l1) => format!("if {} goto {} else goto {};", a, l0, l1),
-            Return(a) => format!("return {};", a),
+            Return(Some(a)) => format!("return {};", a),
+            Return(None) => "return;".to_string(),
             Label(l) => format!("{}:", l),
         };
 

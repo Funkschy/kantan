@@ -155,6 +155,8 @@ impl<'input> Lexer<'input> {
             "i32" => Some(self.spanned(start, Token::TypeIdent(Type::I32))),
             "string" => Some(self.spanned(start, Token::TypeIdent(Type::String))),
             "bool" => Some(self.spanned(start, Token::TypeIdent(Type::Bool))),
+            "void" => Some(self.spanned(start, Token::TypeIdent(Type::Void))),
+            "return" => Some(self.spanned(start, Token::Return)),
             "let" => Some(self.spanned(start, Token::Let)),
             "fn" => Some(self.spanned(start, Token::Fn)),
             "if" => Some(self.spanned(start, Token::If)),

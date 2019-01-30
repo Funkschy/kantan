@@ -140,11 +140,19 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
         let mut tac = Tac::new(&types);
 
         for top_lvl in &main_prg.0 {
-            if let TopLvl::FnDecl { name, body, params } = top_lvl {
+            if let TopLvl::FnDecl {
+                name,
+                body,
+                params,
+                ret_type,
+            } = top_lvl
+            {
                 let name = name.node;
                 let body = body.clone();
                 let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
-                tac.add_function(name.to_owned(), params, body);
+                let ret_type = ret_type.node;
+
+                tac.add_function(name.to_owned(), params, body, ret_type);
             }
         }
 
