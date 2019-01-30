@@ -91,6 +91,19 @@ macro_rules! consume_double {
             Ok($self.spanned($start, $single_tok))
         }
     }};
+    ($self:ident, $start:ident, $next_char:expr, $single_tok:expr, $double_tok:expr) => {{
+        $self.advance();
+        if let Some(InputPos { value: new, .. }) = $self.current {
+            if new == $next_char {
+                $self.advance();
+                Ok($self.spanned($start, $double_tok))
+            } else {
+                Ok($self.spanned($start, $single_tok))
+            }
+        } else {
+            Ok($self.spanned($start, $single_tok))
+        }
+    }};
 }
 
 impl<'input> Lexer<'input> {
@@ -204,6 +217,7 @@ impl<'input> Lexer<'input> {
 
         let scanned: Scanned = match ch {
             '=' => consume_double!(self, start, Token::Equals, Token::EqualsEquals),
+            '<' => consume_double!(self, start, '=', Token::Smaller, Token::SmallerEquals),
             '+' => consume_single!(self, start, Token::Plus),
             '-' => consume_single!(self, start, Token::Minus),
             '*' => consume_single!(self, start, Token::Star),
@@ -243,6 +257,27 @@ impl<'input> Iterator for Lexer<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_scan_smaller_and_smaller_equals() {
+        let source = "1 <= 2 <=2< =3";
+        let lexer = Lexer::new(&source);
+
+        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        assert_eq!(
+            vec![
+                Spanned::new(0, 1, Token::DecLit("1")),
+                Spanned::new(2, 3, Token::SmallerEquals),
+                Spanned::new(5, 5, Token::DecLit("2")),
+                Spanned::new(7, 8, Token::SmallerEquals),
+                Spanned::new(9, 9, Token::DecLit("2")),
+                Spanned::new(10, 10, Token::Smaller),
+                Spanned::new(12, 12, Token::Equals),
+                Spanned::new(13, 13, Token::DecLit("3")),
+            ],
+            tokens
+        );
+    }
 
     #[test]
     fn test_scan_string_should_return_correct_string_without_parens() {

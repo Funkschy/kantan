@@ -352,13 +352,19 @@ where
     ) -> ExprResult<'input> {
         let tok = token.node;
         match tok {
-            Token::EqualsEquals | Token::Plus | Token::Minus | Token::Star | Token::Slash => {
+            Token::EqualsEquals
+            | Token::SmallerEquals
+            | Token::Smaller
+            | Token::Plus
+            | Token::Minus
+            | Token::Star
+            | Token::Slash => {
                 let right = self.parse_expression(tok.precedence())?;
                 let right_span = right.span;
                 let left_span = left.span;
 
                 let expr = match tok {
-                    Token::EqualsEquals => {
+                    Token::EqualsEquals | Token::SmallerEquals | Token::Smaller => {
                         Expr::BoolBinary(Box::new(left), *token, Box::new(right))
                     }
                     _ => Expr::Binary(

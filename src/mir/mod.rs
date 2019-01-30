@@ -230,6 +230,8 @@ impl<'ast, 'input> Tac<'ast, 'input> {
                     Token::Star => BinaryType::I32Mul,
                     Token::Slash => BinaryType::I32Div,
                     Token::EqualsEquals => BinaryType::I32Eq,
+                    Token::Smaller => BinaryType::I32Smaller,
+                    Token::SmallerEquals => BinaryType::I32SmallerEq,
                     _ => unimplemented!(),
                 };
 

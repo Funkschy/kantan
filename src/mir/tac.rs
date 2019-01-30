@@ -205,6 +205,8 @@ pub enum BinaryType {
     I32Mul,
     I32Div,
     I32Eq,
+    I32Smaller,
+    I32SmallerEq,
 }
 
 impl fmt::Display for BinaryType {
@@ -217,6 +219,8 @@ impl fmt::Display for BinaryType {
             I32Mul => "*",
             I32Div => "/",
             I32Eq => "==",
+            I32Smaller => "<",
+            I32SmallerEq => "<=",
         };
 
         write!(f, "{}", s)
