@@ -12,7 +12,7 @@ use self::token::Token;
 type Scanned<'input> = Result<Spanned<Token<'input>>, Spanned<ParseError<'input>>>;
 type CharPos = usize;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Span {
     pub start: CharPos,
     pub end: CharPos,

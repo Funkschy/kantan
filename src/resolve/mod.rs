@@ -16,28 +16,34 @@ mod error;
 pub mod symbol;
 
 pub type PrgMap<'input> = HashMap<&'input str, (&'input Source, &'input Program<'input>)>;
+pub type TypeMap<'input, 'ast> = HashMap<(Span, &'ast Expr<'input>), Type>;
 
-pub(crate) struct Resolver<'input> {
+pub(crate) struct Resolver<'input, 'ast> {
     current_name: &'input str,
-    programs: PrgMap<'input>,
+    programs: &'ast PrgMap<'input>,
     resolved: HashSet<&'input str>,
+    // use tuple, because Spanned::hash only considers node
+    pub expr_types: TypeMap<'input, 'ast>,
     sym_table: SymbolTable<'input>,
     functions: HashMap<String, Type>,
+    current_func_ret_type: Spanned<Type>,
 }
 
-impl<'input> Resolver<'input> {
-    pub fn new(main_file: &'input str, programs: PrgMap<'input>) -> Self {
+impl<'input, 'ast> Resolver<'input, 'ast> {
+    pub fn new(main_file: &'input str, programs: &'ast PrgMap<'input>) -> Self {
         Resolver {
             current_name: main_file,
             programs,
+            expr_types: HashMap::new(),
             resolved: HashSet::new(),
             sym_table: SymbolTable::new(),
             functions: HashMap::new(),
+            current_func_ret_type: Spanned::new(0, 0, Type::Void),
         }
     }
 }
 
-impl<'input> Resolver<'input> {
+impl<'input, 'ast> Resolver<'input, 'ast> {
     pub fn resolve(&mut self) -> Vec<ResolveError<'input>> {
         let (_, prg) = self.programs[self.current_name];
         self.resolve_prg(prg, None)
@@ -45,7 +51,7 @@ impl<'input> Resolver<'input> {
 
     fn resolve_prg(
         &mut self,
-        prg: &Program<'input>,
+        prg: &'ast Program<'input>,
         prefix: Option<&str>,
     ) -> Vec<ResolveError<'input>> {
         let mut errors = vec![];
@@ -68,11 +74,13 @@ impl<'input> Resolver<'input> {
         prefix: Option<&str>,
     ) {
         match top_lvl {
-            TopLvl::FnDecl { name, .. } => {
+            // TODO: check params
+            TopLvl::FnDecl { name, ret_type, .. } => {
                 let name = prefix
                     .map(|prefix| format!("{}.{}", prefix, name.node))
                     .unwrap_or_else(|| name.node.to_owned());
-                self.functions.insert(name, Type::Void);
+
+                self.functions.insert(name, ret_type.node);
             }
             TopLvl::Import { name, .. } => {
                 if name.node == self.current_name {
@@ -100,10 +108,17 @@ impl<'input> Resolver<'input> {
 
     fn resolve_top_lvl(
         &mut self,
-        top_lvl: &TopLvl<'input>,
+        top_lvl: &'ast TopLvl<'input>,
         errors: &mut Vec<ResolveError<'input>>,
     ) {
-        if let TopLvl::FnDecl { params, body, .. } = top_lvl {
+        if let TopLvl::FnDecl {
+            params,
+            body,
+            ret_type,
+            ..
+        } = top_lvl
+        {
+            self.current_func_ret_type = *ret_type;
             self.sym_table.scope_enter();
 
             for p in &params.0 {
@@ -118,23 +133,23 @@ impl<'input> Resolver<'input> {
         }
     }
 
-    fn resolve_stmt(&mut self, stmt: &Stmt<'input>, errors: &mut Vec<ResolveError<'input>>) {
+    fn resolve_stmt(&mut self, stmt: &'ast Stmt<'input>, errors: &mut Vec<ResolveError<'input>>) {
         match stmt {
             Stmt::VarDecl {
-                name: Spanned { node: name, span },
+                name,
                 ref value,
                 eq,
                 ty: var_type,
             } => {
-                match self.resolve_expr(&Spanned::from_span(value.span, &value.node)) {
+                match self.resolve_expr(value.span, &value.node) {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => {
                         if let Some(var_type) = var_type {
-                            let expr_span = Span::new(span.start, value.span.end);
+                            let expr_span = Span::new(name.span.start, value.span.end);
                             // If a type was provided, check if it's one of the builtin types
                             if let Err(err) = self
                                 .compare_types(eq.span, expr_span, var_type.node, ty)
-                                .map(|_| self.sym_table.bind(name, *span, ty, false))
+                                .map(|_| self.sym_table.bind(name.node, name.span, ty, false))
                                 .map_err(
                                     |ResolveError {
                                          error,
@@ -143,7 +158,7 @@ impl<'input> Resolver<'input> {
                                          ..
                                      }| {
                                         self.illegal_op_to_illegal_assignment(
-                                            err_span, expr_span, name, error, *span,
+                                            err_span, expr_span, name.node, error, name.span,
                                         )
                                     },
                                 )
@@ -151,27 +166,23 @@ impl<'input> Resolver<'input> {
                                 errors.push(err);
                             }
                         } else {
-                            self.sym_table.bind(name, *span, ty, false)
+                            self.sym_table.bind(name.node, name.span, ty, false)
                         }
                     }
                 };
             }
             Stmt::If {
-                condition:
-                    Spanned {
-                        span,
-                        node: condition,
-                    },
+                condition,
                 then_block,
                 ..
             } => {
-                match self.resolve_expr(&Spanned::from_span(*span, &condition)) {
+                match self.resolve_expr(condition.span, &condition.node) {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => {
                         if ty != Type::Bool {
                             errors.push(self.type_error(
-                                *span,
-                                *span,
+                                condition.span,
+                                condition.span,
                                 "if condition",
                                 Type::Bool,
                                 ty,
@@ -184,46 +195,68 @@ impl<'input> Resolver<'input> {
                     self.resolve_stmt(&stmt, errors);
                 }
             }
+            Stmt::Return(expr) => {
+                if let Some(expr) = expr {
+                    if self.current_func_ret_type.node == Type::Void {
+                        unimplemented!("Error for return in void");
+                    }
+
+                    let resolve_result = self.resolve_expr(expr.span, &expr.node);
+
+                    if let Err(msg) = resolve_result {
+                        errors.push(msg);
+                    } else if let Ok(res) = resolve_result {
+                        // TODO: proper error handling
+                        if let Err(err) = self.compare_types(
+                            self.current_func_ret_type.span,
+                            expr.span,
+                            self.current_func_ret_type.node,
+                            res,
+                        ) {
+                            errors.push(err);
+                        }
+                    }
+                } else if self.current_func_ret_type.node != Type::Void {
+                    unimplemented!("Error for no return in non void")
+                }
+            }
             Stmt::Expr(ref expr) => {
-                if let Err(msg) = self.resolve_expr(&Spanned::from_span(expr.span, &expr.node)) {
+                if let Err(msg) = self.resolve_expr(expr.span, &expr.node) {
                     errors.push(msg);
                 }
             }
         };
     }
 
-    // TODO: change to &Spanned<Expr<'input>>
     fn resolve_expr(
         &mut self,
-        expr: &Spanned<&Expr<'input>>,
+        span: Span,
+        expr: &'ast Expr<'input>,
     ) -> Result<Type, ResolveError<'input>> {
-        let span = expr.span;
-
-        match &expr.node {
+        let ty = match &expr {
             Expr::Error(_) => {
                 unreachable!("If errors occur during parsing, the program should not be resolved")
             }
             Expr::DecLit(_) => Ok(Type::I32),
             Expr::StringLit(_) => Ok(Type::String),
-            Expr::Negate(expr) => self.resolve_expr(&Spanned::from_span(span, expr)),
+            Expr::Negate(op, expr) => {
+                let ty = self.resolve_expr(expr.span, &expr.node)?;
+                // TODO: unary operation error
+                self.compare_types(op.span, span, ty, Type::I32)
+            }
             Expr::Binary(l, op, r) => {
-                let left = self.resolve_expr(&Spanned::from_span(span, l))?;
-                let right_span = r.span;
-                let right_expr = &r.node;
-                let right = self.resolve_expr(&Spanned::from_span(right_span, right_expr))?;
-                self.compare_types(op.span, expr.span, left, right)
+                let left = self.resolve_expr(l.span, &l.node)?;
+                let right = self.resolve_expr(r.span, &r.node)?;
+                self.compare_types(op.span, span, left, right)
             }
             Expr::BoolBinary(l, op, r) => {
-                let left = self.resolve_expr(&Spanned::from_span(span, l))?;
-                let right_span = r.span;
-                let right_expr = &r.node;
-                let right = self.resolve_expr(&Spanned::from_span(right_span, right_expr))?;
-                self.compare_types(op.span, expr.span, left, right)?;
+                let left = self.resolve_expr(l.span, &l.node)?;
+                let right = self.resolve_expr(r.span, &r.node)?;
+                self.compare_types(op.span, span, left, right)?;
                 Ok(Type::Bool)
             }
             Expr::Access { left, .. } => {
-                // TODO: check if ident is package name -> import
-                self.resolve_expr(&Spanned::from_span(left.span, &left.node))?;
+                self.resolve_expr(left.span, &left.node)?;
                 // TODO: check type of field/import
                 Ok(Type::Void)
             }
@@ -246,7 +279,7 @@ impl<'input> Resolver<'input> {
                 } = &**value;
 
                 // get type of right expression
-                let val_type = self.resolve_expr(&Spanned::from_span(value_span, node))?;
+                let val_type = self.resolve_expr(value_span, node)?;
                 // check if type of right expression is the same as that of
                 // the declared variable
                 self.compare_types(eq.span, span, ty, val_type).map_err(
@@ -268,9 +301,10 @@ impl<'input> Resolver<'input> {
                 .ok_or_else(|| self.not_defined_error(span, span, name))
                 .map(|sym| sym.node.ty),
 
+            // TODO: check args correspond to params
             Expr::Call { callee, args } => {
                 for Spanned { node: expr, span } in &args.0 {
-                    self.resolve_expr(&Spanned::from_span(*span, &expr))?;
+                    self.resolve_expr(*span, &expr)?;
                 }
 
                 let callee_name = self.current_source().slice(callee.span);
@@ -282,11 +316,17 @@ impl<'input> Resolver<'input> {
 
                 Ok(*func_type)
             }
+        };
+
+        if let Ok(ty) = ty {
+            self.expr_types.insert((span, expr), ty);
         }
+
+        ty
     }
 }
 
-impl<'input> Resolver<'input> {
+impl<'input, 'ast> Resolver<'input, 'ast> {
     fn current_source(&self) -> &'input Source {
         let (src, _) = self.programs[self.current_name];
         src
@@ -390,8 +430,8 @@ mod tests {
 
     #[test]
     fn test_resolve_should_find_imported_fn() {
-        let main_src = Source::new("main", "import test\nfn main() {test.func()}");
-        let test_src = Source::new("test", "fn func() {}");
+        let main_src = Source::new("main", "import test\nfn main(): void {test.func()}");
+        let test_src = Source::new("test", "fn func(): void {}");
 
         let main_ast = Program(vec![
             TopLvl::Import {
@@ -399,17 +439,18 @@ mod tests {
             },
             TopLvl::FnDecl {
                 name: Spanned::new(16, 19, "main"),
+                ret_type: Spanned::new(24, 27, Type::Void),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
-                    25,
-                    28,
+                    32,
+                    34,
                     Expr::Call {
                         callee: Box::new(Spanned::new(
-                            23,
-                            31,
+                            29,
+                            37,
                             Expr::Access {
-                                left: Box::new(Spanned::new(23, 26, Expr::Ident("test"))),
-                                identifier: Spanned::new(28, 31, "func"),
+                                left: Box::new(Spanned::new(29, 32, Expr::Ident("test"))),
+                                identifier: Spanned::new(34, 37, "func"),
                             },
                         )),
                         args: ArgList(vec![]),
@@ -420,6 +461,7 @@ mod tests {
 
         let test_ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "func"),
+            ret_type: Spanned::new(11, 14, Type::Void),
             params: ParamList(vec![]),
             body: Block(vec![]),
         }]);
@@ -428,7 +470,7 @@ mod tests {
         map.insert("main", (&main_src, &main_ast));
         map.insert("test", (&test_src, &test_ast));
 
-        let mut resolver = Resolver::new("main", map);
+        let mut resolver = Resolver::new("main", &map);
         let errors = resolver.resolve();
 
         let expected: Vec<ResolveError> = vec![];
@@ -437,23 +479,25 @@ mod tests {
 
     #[test]
     fn test_functions_are_found_without_forward_decl() {
-        let source = Source::new("test", "fn main() { test(); } fn test() {}");
+        let source = Source::new("test", "fn main(): void { test(); } fn test(): void {}");
 
         let ast = Program(vec![
             TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
+                ret_type: Spanned::new(11, 14, Type::Void),
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
-                    12,
-                    17,
+                    18,
+                    23,
                     Expr::Call {
-                        callee: Box::new(Spanned::new(12, 15, Expr::Ident("test"))),
+                        callee: Box::new(Spanned::new(18, 21, Expr::Ident("test"))),
                         args: ArgList(vec![]),
                     },
                 ))]),
             },
             TopLvl::FnDecl {
                 name: Spanned::new(25, 28, "test"),
+                ret_type: Spanned::new(39, 42, Type::Void),
                 params: ParamList(vec![]),
                 body: Block(vec![]),
             },
@@ -462,7 +506,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("test", (&source, &ast));
 
-        let mut resolver = Resolver::new("test", map);
+        let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
 
         let expected: Vec<ResolveError> = vec![];
@@ -471,15 +515,16 @@ mod tests {
 
     #[test]
     fn test_resolve_without_errors_should_return_empty_vec() {
-        let source = Source::new("test", "fn main() { let x = 10; }");
+        let source = Source::new("test", "fn main(): void { let x = 10; }");
 
         let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
+            ret_type: Spanned::new(11, 14, Type::Void),
             params: ParamList(vec![]),
             body: Block(vec![Stmt::VarDecl {
-                name: Spanned::new(16, 16, "x"),
-                value: Spanned::new(20, 22, Expr::DecLit("10")),
-                eq: Spanned::new(18, 18, Token::Equals),
+                name: Spanned::new(22, 22, "x"),
+                value: Spanned::new(26, 28, Expr::DecLit("10")),
+                eq: Spanned::new(24, 24, Token::Equals),
                 ty: None,
             }]),
         }]);
@@ -487,7 +532,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("test", (&source, &ast));
 
-        let mut resolver = Resolver::new("test", map);
+        let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
 
         let expected: Vec<ResolveError> = vec![];
@@ -496,25 +541,26 @@ mod tests {
 
     #[test]
     fn test_resolve_with_assign_error_should_return_correct_error() {
-        let source = Source::new("test", r#"fn main() { let x = 10; x = ""; }"#);
+        let source = Source::new("test", r#"fn main(): void { let x = 10; x = ""; }"#);
 
         let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
+            ret_type: Spanned::new(11, 14, Type::Void),
             params: ParamList(vec![]),
             body: Block(vec![
                 Stmt::VarDecl {
-                    name: Spanned::new(16, 16, "x"),
-                    value: Spanned::new(20, 22, Expr::DecLit("10")),
-                    eq: Spanned::new(18, 18, Token::Equals),
+                    name: Spanned::new(22, 22, "x"),
+                    value: Spanned::new(26, 28, Expr::DecLit("10")),
+                    eq: Spanned::new(24, 24, Token::Equals),
                     ty: None,
                 },
                 Stmt::Expr(Spanned::new(
-                    24,
-                    29,
+                    30,
+                    35,
                     Expr::Assign {
                         name: "x",
-                        eq: Spanned::new(26, 26, Token::Equals),
-                        value: Box::new(Spanned::new(29, 29, Expr::StringLit(""))),
+                        eq: Spanned::new(32, 32, Token::Equals),
+                        value: Box::new(Spanned::new(35, 35, Expr::StringLit(""))),
                     },
                 )),
             ]),
@@ -523,7 +569,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("test", (&source, &ast));
 
-        let mut resolver = Resolver::new("test", map);
+        let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
 
         assert_eq!(1, errors.len());

@@ -2,18 +2,20 @@ use std::fmt;
 
 use crate::types::Type;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Token<'input> {
     Ident(&'input str),
     DecLit(&'input str),
     StringLit(&'input str),
+    TypeIdent(Type),
 
     // Keywords
     Let,
     Fn,
     If,
+    Else,
     Import,
-    TypeIdent(Type),
+    Return,
 
     // Operators
     Equals, // =
@@ -70,7 +72,9 @@ impl<'input> fmt::Display for Token<'input> {
             Token::Let => write!(f, "let"),
             Token::Fn => write!(f, "fn"),
             Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
             Token::Import => write!(f, "import"),
+            Token::Return => write!(f, "return"),
             // Operators
             Token::Equals => write!(f, "="),
             Token::Plus => write!(f, "+"),

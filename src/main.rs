@@ -1,6 +1,6 @@
 use std::{env, error, fs, io};
 
-use mini_rust::{compile, Source};
+use kantan::{compile, Source};
 
 fn main() -> Result<(), Box<dyn error::Error>> {
     let args: Vec<String> = env::args().collect();

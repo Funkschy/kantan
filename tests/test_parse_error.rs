@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use mini_rust::*;
+use kantan::*;
 
 #[test]
 fn test_multiple_plus_and_star_operator() {
@@ -8,7 +8,7 @@ fn test_multiple_plus_and_star_operator() {
 
     let source = Source::new(
         "test",
-        r#"fn main() {
+        r#"fn main(): void {
     let mystr = "hello";
     mystr = "world";
     mystr = 1;
@@ -19,7 +19,7 @@ fn test_multiple_plus_and_star_operator() {
 }"#,
     );
 
-    mini_rust::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -44,12 +44,12 @@ fn test_hiragana_identifier() {
 
     let source = Source::new(
         "test-kana",
-        r#"fn main() {
+        r#"fn main(): void {
     let こんにちは = "hello"; 
 }"#,
     );
 
-    mini_rust::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -69,14 +69,14 @@ fn test_kanji_identifier() {
 
     let source = Source::new(
         "test-kanji",
-        r#"fn main() {
+        r#"fn main(): void {
     let 今日 = "03.12.2017";
     今日 = "04.12.2017";
     今日 = 1;
 }"#,
     );
 
-    mini_rust::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -101,22 +101,22 @@ error: Failed to lex token, because: Non ascii identifiers are currently not sup
 }
 
 #[test]
-fn test_valid_equality_operation_should_return_new_line() {
+fn test_valid_equality_operation_should_print_nothing() {
     let mut cursor = Cursor::new(Vec::new());
 
     let source = Source::new(
         "test-equals",
-        r#"fn main() {
+        r#"fn main(): void {
  let s = "hello";
  let s2 = "world";
  let res = s == s2;
  }"#,
     );
 
-    mini_rust::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
-    assert_eq!("\n", output);
+    assert_eq!("", output);
 }
 
 #[test]
@@ -125,14 +125,14 @@ fn test_invalid_equality_operation_should_return_error_message() {
 
     let source = Source::new(
         "test-equals",
-        r#"fn main() {
+        r#"fn main(): void {
  let s = "hello";
  let s2 = 2;
  let res = s == s2;
  }"#,
     );
 
-    mini_rust::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     let expected = "error: binary operation '==' cannot be applied to 'string' and 'i32'

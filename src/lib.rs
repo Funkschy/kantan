@@ -1,11 +1,14 @@
 use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io::Write};
 
 mod cli;
+#[allow(dead_code)]
+mod mir;
 mod parse;
 mod resolve;
 mod types;
 
 use self::{
+    mir::Tac,
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::Resolver,
 };
@@ -116,14 +119,51 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
     let main = main.unwrap();
 
     if err_count == 0 {
-        let mut resolver = Resolver::new(main, ast_sources);
-        let errors: Vec<String> = resolver
-            .resolve()
-            .iter()
-            .map(|err| err.to_string())
-            .collect();
+        // TODO: convert to mir
+        let types = {
+            let mut resolver = Resolver::new(main, &ast_sources);
+            let errors: Vec<String> = resolver
+                .resolve()
+                .iter()
+                .map(|err| err.to_string())
+                .collect();
 
-        print_error(&errors.join("\n\n"), writer)?;
+            if !errors.is_empty() {
+                print_error(&errors.join("\n\n"), writer)?;
+                return Ok(());
+            }
+
+            resolver.expr_types
+        };
+
+        let (_, main_prg) = ast_sources[main];
+        let mut tac = Tac::new(&types);
+
+        for top_lvl in &main_prg.0 {
+            if let TopLvl::FnDecl {
+                name,
+                body,
+                params,
+                ret_type,
+            } = top_lvl
+            {
+                let name = name.node;
+                let body = body.clone();
+                let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
+                let ret_type = ret_type.node;
+
+                tac.add_function(name.to_owned(), params, body, ret_type);
+            }
+        }
+
+        let funcs = tac
+            .functions
+            .iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        println!("{}", funcs);
     } else {
         for (source, ast) in ast_sources.values() {
             report_errors(source, ast, writer)?;

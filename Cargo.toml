@@ -1,11 +1,11 @@
 [package]
-name = "mini-rust"
+name = "kantan"
 version = "0.1.0"
 authors = ["Funkschy <felixschoeller@outlook.de>"]
 edition = "2018"
-description = "A compiler for a small subset of the Rust programming language"
-keywords = ["compiler", "rust", "parser"]
+description = "A compiler for the Kantan programming language"
+keywords = ["compiler", "rust", "parser", "kantan"]
 
 [dependencies]
-ansi_term = "0.11"
+ansi_term = "0.11.0"
 unicode-width = "0.1.5"
