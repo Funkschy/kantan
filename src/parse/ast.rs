@@ -14,6 +14,7 @@ pub enum TopLvl<'input> {
         name: Spanned<&'input str>,
         params: ParamList<'input>,
         body: Block<'input>,
+        ret_type: Spanned<Type>,
     },
     Import {
         name: Spanned<&'input str>,
@@ -35,6 +36,7 @@ pub enum Stmt<'input> {
         then_block: Block<'input>,
         else_branch: Option<Box<Else<'input>>>,
     },
+    Return(Option<Spanned<Expr<'input>>>),
     Expr(Spanned<Expr<'input>>),
 }
 

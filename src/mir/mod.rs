@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{parse::ast::*, parse::token::Token, resolve::TypeMap, types::Type};
+use super::{parse::ast::*, parse::token::Token, resolve::TypeMap, types::Type, Spanned};
 use tac::*;
 
 mod tac;
@@ -32,9 +32,19 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         name: String,
         params: Vec<(&'input str, Type)>,
         body: Block<'input>,
+        ret_type: Type,
     ) {
-        let block = self.create_block(body.0);
-        let f = Func::new(name.into(), params, Type::Void, block);
+        let mut block = self.create_block(body.0);
+        let add_ret = match block.last() {
+            Some(Instruction::Return(_)) => false,
+            _ => true,
+        };
+
+        if add_ret {
+            block.push(Instruction::Return(None));
+        }
+
+        let f = Func::new(name.into(), params, ret_type, block);
 
         self.functions.push(f);
     }
@@ -56,6 +66,15 @@ impl<'ast, 'input> Tac<'ast, 'input> {
 
                     let address = name.node.into();
                     self.assign(address, expr, &mut block);
+                }
+                Stmt::Return(e) => {
+                    let ret = if let Some(Spanned { node, .. }) = e {
+                        let address = self.expr_instr(node, &mut block).unwrap();
+                        Instruction::Return(Some(address))
+                    } else {
+                        Instruction::Return(None)
+                    };
+                    block.push(ret);
                 }
                 Stmt::If {
                     condition,

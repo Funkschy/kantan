@@ -7,6 +7,7 @@ pub enum Token<'input> {
     Ident(&'input str),
     DecLit(&'input str),
     StringLit(&'input str),
+    TypeIdent(Type),
 
     // Keywords
     Let,
@@ -14,7 +15,7 @@ pub enum Token<'input> {
     If,
     Else,
     Import,
-    TypeIdent(Type),
+    Return,
 
     // Operators
     Equals, // =
@@ -73,6 +74,7 @@ impl<'input> fmt::Display for Token<'input> {
             Token::If => write!(f, "if"),
             Token::Else => write!(f, "else"),
             Token::Import => write!(f, "import"),
+            Token::Return => write!(f, "return"),
             // Operators
             Token::Equals => write!(f, "="),
             Token::Plus => write!(f, "+"),
