@@ -175,7 +175,11 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         let mut then_block = self.create_block(then_block.0);
         let then_label = self.label();
 
-        let else_label = self.label();
+        let else_label = if else_branch.is_some() {
+            self.label()
+        } else {
+            end_label.clone()
+        };
 
         let instr = Instruction::JmpIf(condition, then_label.clone(), else_label.clone());
         block.push(instr);
@@ -183,9 +187,9 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         block.append(&mut then_block);
         block.push(Instruction::Jmp(end_label.clone()));
 
-        block.push(else_label.into());
-
         if let Some(else_branch) = else_branch {
+            block.push(else_label.into());
+
             match *else_branch {
                 Else::IfStmt(s) => {
                     if let Stmt::If {
