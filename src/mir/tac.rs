@@ -31,7 +31,7 @@ impl<'input> fmt::Display for Func<'input> {
         let params = self
             .params
             .iter()
-            .map(|(n, t)| format!("{}: {}", n, t))
+            .map(|(n, t)| format!("{}: t_{}", n, t))
             .collect::<Vec<String>>()
             .join(", ");
 
