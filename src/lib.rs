@@ -2,6 +2,8 @@ use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io::Write};
 
 mod cli;
 #[allow(dead_code)]
+mod codegen;
+#[allow(dead_code)]
 mod mir;
 mod parse;
 mod resolve;
