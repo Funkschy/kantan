@@ -188,11 +188,10 @@ fn tac_functions<'input, 'ast>(
             } = top_lvl
             {
                 let name = name.node;
-                let body = body.clone();
                 let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
                 let ret_type = ret_type.node;
 
-                tac.add_function(name.to_owned(), params, body, ret_type);
+                tac.add_function(name.to_owned(), params, &body, ret_type);
             }
         }
     }
