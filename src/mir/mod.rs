@@ -11,7 +11,7 @@ mod blockmap;
 mod tac;
 
 #[derive(Debug)]
-pub struct Tac<'ast, 'input> {
+pub struct Tac<'input, 'ast> {
     types: &'ast TypeMap<'input, 'ast>,
     pub(crate) functions: Vec<Func<'input>>,
     literals: HashMap<Label, &'input str>,
@@ -19,7 +19,7 @@ pub struct Tac<'ast, 'input> {
     label_count: usize,
 }
 
-impl<'ast, 'input> Tac<'ast, 'input> {
+impl<'input, 'ast> Tac<'input, 'ast> {
     pub fn new(types: &'ast TypeMap<'input, 'ast>) -> Self {
         Tac {
             types,
@@ -31,7 +31,7 @@ impl<'ast, 'input> Tac<'ast, 'input> {
     }
 }
 
-impl<'ast, 'input> Tac<'ast, 'input> {
+impl<'input, 'ast> Tac<'input, 'ast> {
     pub fn add_function(
         &mut self,
         name: String,

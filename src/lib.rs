@@ -1,4 +1,4 @@
-use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io::Write};
+use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
 
 mod cli;
 #[allow(dead_code)]
@@ -12,7 +12,7 @@ mod types;
 use self::{
     mir::Tac,
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
-    resolve::Resolver,
+    resolve::{Resolver, TypeMap},
 };
 
 pub(crate) use self::cli::*;
@@ -56,6 +56,35 @@ impl Source {
     }
 }
 
+#[derive(Debug)]
+pub enum CompilationError {
+    NoMain(NoMainFunctionError),
+    ParseError,
+    TypeCheckError,
+    IO(io::Error),
+}
+
+impl fmt::Display for CompilationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use CompilationError::*;
+
+        match self {
+            NoMain(err) => write!(f, "{}", err),
+            ParseError => write!(f, "Error while parsing"),
+            TypeCheckError => write!(f, "Error while typechecking"),
+            IO(err) => write!(f, "{}", err),
+        }
+    }
+}
+
+impl error::Error for CompilationError {}
+
+impl From<io::Error> for CompilationError {
+    fn from(err: io::Error) -> Self {
+        CompilationError::IO(err)
+    }
+}
+
 pub struct NoMainFunctionError;
 
 impl fmt::Debug for NoMainFunctionError {
@@ -72,7 +101,7 @@ impl fmt::Display for NoMainFunctionError {
 
 impl error::Error for NoMainFunctionError {}
 
-pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<dyn error::Error>> {
+fn init_ansi() {
     #[cfg(windows)]
     {
         if let Err(code) = ansi_term::enable_ansi_support() {
@@ -82,26 +111,35 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
             );
         }
     }
+}
 
-    let (parse_trees, err_count) =
-        sources
-            .iter()
-            .fold((vec![], 0), |(mut asts, err_count), source| {
-                let lexer = Lexer::new(&source.code);
-                let mut parser = Parser::new(lexer);
-                let prg = parser.parse();
-                asts.push(prg);
-                (asts, err_count + parser.err_count)
-            });
+fn parse<'input>(sources: &'input [Source]) -> (Vec<Program<'input>>, usize) {
+    sources
+        .iter()
+        .fold((vec![], 0), |(mut asts, err_count), source| {
+            let lexer = Lexer::new(&source.code);
+            let mut parser = Parser::new(lexer);
+            let prg = parser.parse();
+            asts.push(prg);
+            (asts, err_count + parser.err_count)
+        })
+}
 
-    let ast_sources = sources
+type SourceMap<'input, 'ast> = HashMap<&'ast str, (&'input Source, &'ast Program<'input>)>;
+
+fn ast_sources<'input, 'ast>(
+    sources: &'input [Source],
+    parse_trees: &'ast [Program<'input>],
+) -> SourceMap<'input, 'ast> {
+    sources
         .iter()
         .zip(parse_trees.iter())
         .map(|(src, prg)| (src.name.as_str(), (src, prg)))
-        .collect::<HashMap<&str, (&Source, &Program)>>();
+        .collect()
+}
 
-    // Try to find the main function in one of the ASTs
-    let main = ast_sources
+fn find_main<'input, 'ast>(ast_sources: &SourceMap<'input, 'ast>) -> Option<&'ast str> {
+    ast_sources
         .iter()
         .find(|(_, (_, prg))| {
             prg.0.iter().any(|top_lvl| {
@@ -112,66 +150,87 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
                 }
             })
         })
-        .map(|(src, _)| src);
+        .map(|(src, _)| *src)
+}
+
+fn type_check<'input, 'ast, W: Write>(
+    main: &'ast str,
+    ast_sources: &'input SourceMap<'input, 'ast>,
+    writer: &mut W,
+) -> Result<TypeMap<'input, 'ast>, CompilationError> {
+    let mut resolver = Resolver::new(main, &ast_sources);
+    let errors: Vec<String> = resolver
+        .resolve()
+        .iter()
+        .map(|err| err.to_string())
+        .collect();
+
+    if !errors.is_empty() {
+        print_error(&errors.join("\n\n"), writer)?;
+        return Err(CompilationError::TypeCheckError);
+    }
+
+    Ok(resolver.expr_types)
+}
+
+fn tac_functions<'input, 'ast>(
+    types: &'input TypeMap<'input, 'ast>,
+    ast_sources: &SourceMap<'ast, 'input>,
+) -> Tac<'input, 'ast> {
+    let mut tac = Tac::new(&types);
+    for (_, (_, prg)) in ast_sources.iter() {
+        for top_lvl in &prg.0 {
+            if let TopLvl::FnDecl {
+                name,
+                body,
+                params,
+                ret_type,
+            } = top_lvl
+            {
+                let name = name.node;
+                let body = body.clone();
+                let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
+                let ret_type = ret_type.node;
+
+                tac.add_function(name.to_owned(), params, body, ret_type);
+            }
+        }
+    }
+    tac
+}
+
+pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), CompilationError> {
+    init_ansi();
+    let (parse_trees, err_count) = parse(sources);
+    let ast_sources = ast_sources(sources, &parse_trees);
+
+    if err_count != 0 {
+        for (source, ast) in ast_sources.values() {
+            report_errors(source, ast, writer)?;
+        }
+        return Err(CompilationError::ParseError);
+    }
+
+    // Try to find the main function in one of the ASTs
+    // TODO: require one of the files to be called main.*
+    let main = find_main(&ast_sources);
 
     if main.is_none() {
-        return Err(Box::new(NoMainFunctionError));
+        return Err(CompilationError::NoMain(NoMainFunctionError));
     }
 
     let main = main.unwrap();
 
-    if err_count == 0 {
-        // TODO: convert to mir
-        let types = {
-            let mut resolver = Resolver::new(main, &ast_sources);
-            let errors: Vec<String> = resolver
-                .resolve()
-                .iter()
-                .map(|err| err.to_string())
-                .collect();
+    let types = type_check(main, &ast_sources, writer)?;
+    let tac = tac_functions(&types, &ast_sources);
 
-            if !errors.is_empty() {
-                print_error(&errors.join("\n\n"), writer)?;
-                return Ok(());
-            }
+    let funcs = tac
+        .functions
+        .iter()
+        .map(|f| f.to_string())
+        .collect::<Vec<String>>()
+        .join("\n");
 
-            resolver.expr_types
-        };
-
-        let mut tac = Tac::new(&types);
-
-        for (_, (_, prg)) in ast_sources.iter() {
-            for top_lvl in &prg.0 {
-                if let TopLvl::FnDecl {
-                    name,
-                    body,
-                    params,
-                    ret_type,
-                } = top_lvl
-                {
-                    let name = name.node;
-                    let body = body.clone();
-                    let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
-                    let ret_type = ret_type.node;
-
-                    tac.add_function(name.to_owned(), params, body, ret_type);
-                }
-            }
-        }
-
-        let funcs = tac
-            .functions
-            .iter()
-            .map(|f| f.to_string())
-            .collect::<Vec<String>>()
-            .join("\n");
-
-        println!("{}", funcs);
-    } else {
-        for (source, ast) in ast_sources.values() {
-            report_errors(source, ast, writer)?;
-        }
-    }
-
+    println!("{}", funcs);
     Ok(())
 }
