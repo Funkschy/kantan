@@ -2,12 +2,14 @@ use std::fmt;
 
 use crate::types::Type;
 
+use super::blockmap::BlockMap;
+
 #[derive(Debug)]
 pub struct Func<'input> {
     label: Label,
     params: Vec<(&'input str, Type)>,
     ret: Type,
-    block: InstructionBlock<'input>,
+    blocks: BlockMap<'input>,
 }
 
 impl<'input> Func<'input> {
@@ -15,13 +17,13 @@ impl<'input> Func<'input> {
         label: Label,
         params: Vec<(&'input str, Type)>,
         ret: Type,
-        block: InstructionBlock<'input>,
+        blocks: BlockMap<'input>,
     ) -> Self {
         Func {
             label,
             params,
             ret,
-            block,
+            blocks,
         }
     }
 }
@@ -35,11 +37,18 @@ impl<'input> fmt::Display for Func<'input> {
             .collect::<Vec<String>>()
             .join(", ");
 
+        dbg!(&self.blocks);
+
         let instructions = self
-            .block
-            .0
+            .blocks
+            .blocks
             .iter()
-            .map(|i| format!("\t{}", i))
+            .map(|b| (b.instructions.iter(), &b.terminator))
+            .flat_map(|(is, t)| {
+                let mut instrs = is.map(|i| format!("\t{}", i)).collect::<Vec<String>>();
+                instrs.push(format!("\t{}", t));
+                instrs
+            })
             .collect::<Vec<String>>()
             .join("\n");
 
@@ -51,8 +60,23 @@ impl<'input> fmt::Display for Func<'input> {
     }
 }
 
+#[derive(PartialEq, Debug)]
+pub struct BasicBlock<'input> {
+    pub instructions: Vec<Instruction<'input>>,
+    pub terminator: Instruction<'input>,
+}
+
+impl<'input> BasicBlock<'input> {
+    pub fn new() -> Self {
+        BasicBlock {
+            instructions: vec![],
+            terminator: Instruction::Nop,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
-pub struct InstructionBlock<'input>(Vec<Instruction<'input>>);
+pub struct InstructionBlock<'input>(pub Vec<Instruction<'input>>);
 
 impl<'input> InstructionBlock<'input> {
     pub fn push(&mut self, instr: Instruction<'input>) {
@@ -96,7 +120,7 @@ impl<'input> Into<Instruction<'input>> for Label {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum Instruction<'input> {
     /// x = <expr>
     Assignment(Address<'input>, Expression<'input>),
@@ -108,6 +132,8 @@ pub enum Instruction<'input> {
     Return(Option<Address<'input>>),
     /// .L0:
     Label(Label),
+    /// No operation
+    Nop,
 }
 
 impl<'input> fmt::Display for Instruction<'input> {
@@ -121,6 +147,7 @@ impl<'input> fmt::Display for Instruction<'input> {
             Return(Some(a)) => format!("return {};", a),
             Return(None) => "return;".to_string(),
             Label(l) => format!("{}:", l),
+            Nop => "nop".to_string(),
         };
 
         write!(f, "{}", s)
@@ -129,7 +156,7 @@ impl<'input> fmt::Display for Instruction<'input> {
 
 /// An expression is always on the right side of an assignment instruction
 /// In the comments, this assignment is denoted as 'x = '
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum Expression<'input> {
     /// x = y op z
     Binary(Address<'input>, BinaryType, Address<'input>),
@@ -179,7 +206,7 @@ impl<'input> fmt::Display for Expression<'input> {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum UnaryType {
     BoolNegate,
     I32Negate,
@@ -198,7 +225,7 @@ impl fmt::Display for UnaryType {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum BinaryType {
     I32Add,
     I32Sub,
@@ -227,7 +254,7 @@ impl fmt::Display for BinaryType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Address<'input> {
     Name(&'input str),
     Const(Constant<'input>),
@@ -276,7 +303,7 @@ impl<'input> Address<'input> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct TempVar(usize);
 
 impl From<usize> for TempVar {
@@ -291,7 +318,7 @@ impl fmt::Display for TempVar {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Constant<'input> {
     ty: Type,
     literal: &'input str,
