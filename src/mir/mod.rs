@@ -1,72 +1,13 @@
 //! The middle intermediate representation.
 //! This IR is very similar to LLVM-IR, but can also be compiled to Assembly directly.
-//!
-//! # Functions
-//! Function prototypes in the MIR look very similar to normal kantan functions
-//! fn main(): void {
-//!     ...
-//! }
-//!
-//! however the body of the function was replaced with three address code from
-//! the tac module.
-//!
-//! # Variables
-//!
-//! fn main(): void {
-//!     let x = 2 + 3 * 5;
-//! }
-//!
-//! compiles to:
-//!
-//! fn main(): void {
-//!     _t0 = 2 * 5;
-//!     x = 2 + _t0;
-//! }
-//!
-//! # If-Else
-//!
-//! fn main(): i32 {
-//!     let x = 0;
-//!     let y = 1;
-//!
-//!     if y == 0 {
-//!         x = 1;
-//!     } else if y == 1 {
-//!         x = 2;
-//!     } else {
-//!         x = 3;
-//!     }
-//!
-//!     return x;
-//! }
-//!
-//! compiles to:
-//!
-//! fn main(): i32 {
-//!     x = 0;
-//!     y = 1;
-//!     _t0 = y == 0;
-//!     if _t0 goto .L1 else goto .L2;
-//!     .L1:
-//!     x = 1;
-//!     goto .L0;
-//!     .L2:
-//!     _t1 = y == 1;
-//!     if _t1 goto .L3 else goto .L4;
-//!     .L3:
-//!     x = 2;
-//!     goto .L0;
-//!     .L4:
-//!     x = 3;
-//!     .L0:
-//!     return x;
-//! }
 
 use std::collections::HashMap;
 
 use super::{parse::ast::*, parse::token::Token, resolve::TypeMap, types::Type, Spanned};
+use blockmap::BlockMap;
 use tac::*;
 
+mod blockmap;
 mod tac;
 
 #[derive(Debug)]
@@ -108,7 +49,12 @@ impl<'ast, 'input> Tac<'ast, 'input> {
             block.push(Instruction::Return(None));
         }
 
-        let f = Func::new(name.into(), params, ret_type, block);
+        let f = Func::new(
+            name.into(),
+            params,
+            ret_type,
+            BlockMap::from_instructions(block),
+        );
 
         self.functions.push(f);
     }
@@ -175,7 +121,11 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         let mut then_block = self.create_block(then_block.0);
         let then_label = self.label();
 
-        let else_label = self.label();
+        let else_label = if else_branch.is_some() {
+            self.label()
+        } else {
+            end_label.clone()
+        };
 
         let instr = Instruction::JmpIf(condition, then_label.clone(), else_label.clone());
         block.push(instr);
@@ -183,9 +133,9 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         block.append(&mut then_block);
         block.push(Instruction::Jmp(end_label.clone()));
 
-        block.push(else_label.into());
-
         if let Some(else_branch) = else_branch {
+            block.push(else_label.into());
+
             match *else_branch {
                 Else::IfStmt(s) => {
                     if let Stmt::If {
@@ -230,6 +180,8 @@ impl<'ast, 'input> Tac<'ast, 'input> {
                     Token::Star => BinaryType::I32Mul,
                     Token::Slash => BinaryType::I32Div,
                     Token::EqualsEquals => BinaryType::I32Eq,
+                    Token::Smaller => BinaryType::I32Smaller,
+                    Token::SmallerEquals => BinaryType::I32SmallerEq,
                     _ => unimplemented!(),
                 };
 

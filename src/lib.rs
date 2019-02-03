@@ -2,6 +2,8 @@ use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io::Write};
 
 mod cli;
 #[allow(dead_code)]
+mod codegen;
+#[allow(dead_code)]
 mod mir;
 mod parse;
 mod resolve;
@@ -136,23 +138,24 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Box<d
             resolver.expr_types
         };
 
-        let (_, main_prg) = ast_sources[main];
         let mut tac = Tac::new(&types);
 
-        for top_lvl in &main_prg.0 {
-            if let TopLvl::FnDecl {
-                name,
-                body,
-                params,
-                ret_type,
-            } = top_lvl
-            {
-                let name = name.node;
-                let body = body.clone();
-                let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
-                let ret_type = ret_type.node;
+        for (_, (_, prg)) in ast_sources.iter() {
+            for top_lvl in &prg.0 {
+                if let TopLvl::FnDecl {
+                    name,
+                    body,
+                    params,
+                    ret_type,
+                } = top_lvl
+                {
+                    let name = name.node;
+                    let body = body.clone();
+                    let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
+                    let ret_type = ret_type.node;
 
-                tac.add_function(name.to_owned(), params, body, ret_type);
+                    tac.add_function(name.to_owned(), params, body, ret_type);
+                }
             }
         }
 

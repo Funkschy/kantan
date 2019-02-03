@@ -24,6 +24,8 @@ pub enum Token<'input> {
     Star,   // *
     Slash,  // /
 
+    Smaller, // <
+
     Colon, // :
     Semi,  // ;
     Dot,   // .
@@ -34,7 +36,8 @@ pub enum Token<'input> {
     RBrace, // }
 
     // double Operators
-    EqualsEquals, // ==
+    EqualsEquals,  // ==
+    SmallerEquals, // <=
 }
 
 #[repr(u8)]
@@ -42,16 +45,18 @@ pub enum Token<'input> {
 pub enum Precedence {
     None = 0,
     Assign = 1,
-    Equality = 2,
-    Sum = 3,
-    Product = 4,
-    Call = 5,
+    Comparison = 2,
+    Equality = 3,
+    Sum = 4,
+    Product = 5,
+    Call = 6,
 }
 
 impl<'input> Token<'input> {
     pub fn precedence(&self) -> Precedence {
         match self {
             Token::Equals => Precedence::Assign,
+            Token::Smaller | Token::SmallerEquals => Precedence::Comparison,
             Token::EqualsEquals => Precedence::Equality,
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
@@ -82,6 +87,8 @@ impl<'input> fmt::Display for Token<'input> {
             Token::Star => write!(f, "*"),
             Token::Slash => write!(f, "/"),
 
+            Token::Smaller => write!(f, "<"),
+
             Token::Colon => write!(f, ":"),
             Token::Semi => write!(f, ";"),
             Token::Dot => write!(f, "."),
@@ -93,6 +100,7 @@ impl<'input> fmt::Display for Token<'input> {
 
             // double Operators
             Token::EqualsEquals => write!(f, "=="),
+            Token::SmallerEquals => write!(f, "<="),
         }
     }
 }
