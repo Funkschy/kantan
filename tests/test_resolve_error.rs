@@ -14,7 +14,7 @@ fn test_invalid_assignment() {
 }"#,
     );
 
-    kantan::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap_err();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -44,7 +44,7 @@ fn test_invalid_assignment_explicit_type() {
 }"#,
     );
 
-    kantan::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap_err();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -76,7 +76,7 @@ fn test_non_bool_in_if_condition() {
 }"#,
     );
 
-    kantan::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap_err();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
     let expected = "error: if condition must be of type 'bool', but the supplied type was 'string'
 --> test:2:9
@@ -99,7 +99,7 @@ fn test_call_of_undefined_function() {
 "#,
     );
 
-    kantan::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap_err();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
     let expected = "error: 'test' not in scope
 --> test:2:5

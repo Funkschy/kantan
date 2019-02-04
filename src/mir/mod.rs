@@ -11,7 +11,7 @@ mod blockmap;
 mod tac;
 
 #[derive(Debug)]
-pub struct Tac<'ast, 'input> {
+pub struct Tac<'input, 'ast> {
     types: &'ast TypeMap<'input, 'ast>,
     pub(crate) functions: Vec<Func<'input>>,
     literals: HashMap<Label, &'input str>,
@@ -19,7 +19,7 @@ pub struct Tac<'ast, 'input> {
     label_count: usize,
 }
 
-impl<'ast, 'input> Tac<'ast, 'input> {
+impl<'input, 'ast> Tac<'input, 'ast> {
     pub fn new(types: &'ast TypeMap<'input, 'ast>) -> Self {
         Tac {
             types,
@@ -31,15 +31,15 @@ impl<'ast, 'input> Tac<'ast, 'input> {
     }
 }
 
-impl<'ast, 'input> Tac<'ast, 'input> {
+impl<'input, 'ast> Tac<'input, 'ast> {
     pub fn add_function(
         &mut self,
         name: String,
         params: Vec<(&'input str, Type)>,
-        body: Block<'input>,
+        body: &Block<'input>,
         ret_type: Type,
     ) {
-        let mut block = self.create_block(body.0);
+        let mut block = self.create_block(&body.0);
         let add_ret = match block.last() {
             Some(Instruction::Return(_)) => false,
             _ => true,
@@ -59,19 +59,19 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         self.functions.push(f);
     }
 
-    fn create_block(&mut self, statements: Vec<Stmt<'input>>) -> InstructionBlock<'input> {
+    fn create_block(&mut self, statements: &[Stmt<'input>]) -> InstructionBlock<'input> {
         let mut block = InstructionBlock::default();
 
         for s in statements {
             match s {
                 Stmt::Expr(e) => {
-                    self.expr_instr(e.node, &mut block);
+                    self.expr_instr(&e.node, &mut block);
                 }
                 Stmt::VarDecl { name, value, .. } => {
                     let expr = if let Some(rval) = self.rvalue(&value.node) {
                         rval.into()
                     } else {
-                        self.expr(value.node, &mut block)
+                        self.expr(&value.node, &mut block)
                     };
 
                     let address = name.node.into();
@@ -93,7 +93,7 @@ impl<'ast, 'input> Tac<'ast, 'input> {
                 } => {
                     let end_label = self.label();
                     self.if_branch(
-                        condition.node,
+                        &condition.node,
                         then_block,
                         else_branch,
                         &mut block,
@@ -109,16 +109,16 @@ impl<'ast, 'input> Tac<'ast, 'input> {
 
     fn if_branch(
         &mut self,
-        condition: Expr<'input>,
-        then_block: Block<'input>,
-        else_branch: Option<Box<Else<'input>>>,
+        condition: &Expr<'input>,
+        then_block: &Block<'input>,
+        else_branch: &Option<Box<Else<'input>>>,
         block: &mut InstructionBlock<'input>,
         end_label: Label,
     ) {
         let msg = "unexpected empty expression";
         let condition = self.expr_instr(condition, block).expect(msg);
 
-        let mut then_block = self.create_block(then_block.0);
+        let mut then_block = self.create_block(&then_block.0);
         let then_label = self.label();
 
         let else_label = if else_branch.is_some() {
@@ -136,7 +136,7 @@ impl<'ast, 'input> Tac<'ast, 'input> {
         if let Some(else_branch) = else_branch {
             block.push(else_label.into());
 
-            match *else_branch {
+            match else_branch.as_ref() {
                 Else::IfStmt(s) => {
                     if let Stmt::If {
                         condition,
@@ -145,9 +145,9 @@ impl<'ast, 'input> Tac<'ast, 'input> {
                     } = s
                     {
                         self.if_branch(
-                            condition.node,
-                            then_block,
-                            else_branch,
+                            &condition.node,
+                            &then_block,
+                            &else_branch,
                             block,
                             end_label.clone(),
                         );
@@ -156,7 +156,7 @@ impl<'ast, 'input> Tac<'ast, 'input> {
                     }
                 }
                 Else::Block(b) => {
-                    let mut b = self.create_block(b.0);
+                    let mut b = self.create_block(&b.0);
                     block.append(&mut b);
                 }
             }
@@ -165,14 +165,14 @@ impl<'ast, 'input> Tac<'ast, 'input> {
 
     fn expr(
         &mut self,
-        expr: Expr<'input>,
+        expr: &Expr<'input>,
         block: &mut InstructionBlock<'input>,
     ) -> Expression<'input> {
         match expr {
             Expr::Binary(l, op, r) | Expr::BoolBinary(l, op, r) => {
                 let msg = "unexpected empty expression";
-                let left = self.expr_instr(l.node, block).expect(msg);
-                let right = self.expr_instr(r.node, block).expect(msg);
+                let left = self.expr_instr(&l.node, block).expect(msg);
+                let right = self.expr_instr(&r.node, block).expect(msg);
 
                 let bin_type = match op.node {
                     Token::Plus => BinaryType::I32Add,
@@ -189,8 +189,9 @@ impl<'ast, 'input> Tac<'ast, 'input> {
             }
             Expr::Call { callee, args } => {
                 let args: Vec<Address> = args
-                    .into_iter()
-                    .filter_map(|a| self.expr_instr(a.node, block))
+                    .0
+                    .iter()
+                    .filter_map(|a| self.expr_instr(&a.node, block))
                     .collect();
 
                 let label = callee.node.to_string().into();
@@ -201,10 +202,10 @@ impl<'ast, 'input> Tac<'ast, 'input> {
                 let expr = if let Some(rval) = self.rvalue(&value.node) {
                     rval.into()
                 } else {
-                    self.expr(value.node, block)
+                    self.expr(&value.node, block)
                 };
 
-                let address = name.into();
+                let address = (*name).into();
                 self.assign(address, expr, block);
                 Expression::Empty
             }
@@ -214,7 +215,7 @@ impl<'ast, 'input> Tac<'ast, 'input> {
 
     fn expr_instr(
         &mut self,
-        expr: Expr<'input>,
+        expr: &Expr<'input>,
         block: &mut InstructionBlock<'input>,
     ) -> Option<Address<'input>> {
         let rval = self.rvalue(&expr);

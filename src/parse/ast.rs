@@ -23,7 +23,7 @@ pub enum TopLvl<'input> {
 }
 
 // TODO: refactor Spanned<&'input str> to identifier
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Stmt<'input> {
     VarDecl {
         name: Spanned<&'input str>,
@@ -40,14 +40,13 @@ pub enum Stmt<'input> {
     Expr(Spanned<Expr<'input>>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Else<'input> {
     IfStmt(Stmt<'input>),
     Block(Block<'input>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Block<'input>(pub Vec<Stmt<'input>>);
 
 #[derive(Debug, Eq, PartialEq)]
@@ -62,17 +61,8 @@ impl<'input> Param<'input> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub struct ArgList<'input>(pub Vec<Spanned<Expr<'input>>>);
-
-impl<'input> IntoIterator for ArgList<'input> {
-    type Item = Spanned<Expr<'input>>;
-    type IntoIter = ::std::vec::IntoIter<Spanned<Expr<'input>>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
 
 impl<'input> fmt::Display for ArgList<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -86,7 +76,7 @@ impl<'input> fmt::Display for ArgList<'input> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub enum Expr<'input> {
     Error(ParseError<'input>),
     DecLit(&'input str),
