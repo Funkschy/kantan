@@ -13,7 +13,7 @@ impl<'input> BlockMap<'input> {
         let mut mappings = HashMap::new();
         let mut blocks = vec![];
         let mut bb = BasicBlock::new();
-        let mut label = Label::from(".entry0:".to_string());
+        let mut label = Label::from(".entry0".to_string());
         let mut label_count = 1;
 
         for instr in block.0 {
@@ -22,7 +22,7 @@ impl<'input> BlockMap<'input> {
                     bb.instructions.push(instr);
                 }
                 Instruction::Label(ref l) => {
-                    if bb.instructions.len() > 0 {
+                    if !bb.instructions.is_empty() {
                         // Terminate last block with goto
                         let term = Instruction::Jmp(l.clone());
                         bb.terminator = term;
@@ -134,6 +134,197 @@ mod tests {
             ],
             terminator: Instruction::Return(None),
         }];
+
+        assert_eq!(expected, result.blocks);
+    }
+
+    #[test]
+    fn test_from_instructions_one_if_should_return_three_basic_blocks() {
+        // x = 0;
+        // if x == 0 {
+        //     x = 1;
+        // }
+        // return x;
+
+        let instructions = vec![
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+            ),
+            Instruction::Assignment(
+                Address::Temp(TempVar::from(0)),
+                Expression::Binary(
+                    Address::Name("x"),
+                    BinaryType::I32Eq,
+                    Address::Const(Constant::new(Type::I32, "0")),
+                ),
+            ),
+            Instruction::JmpIf(
+                Address::Temp(TempVar::from(0)),
+                Label::new(1),
+                Label::new(0),
+            ),
+            Instruction::Label(Label::new(1)),
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "1"))),
+            ),
+            Instruction::Jmp(Label::new(0)),
+            Instruction::Label(Label::new(0)),
+            Instruction::Return(Some(Address::Name("x"))),
+        ];
+
+        let result = BlockMap::from_instructions(InstructionBlock(instructions));
+        let mut expected = HashMap::new();
+        expected.insert(Label::from(".entry0".to_string()), 0);
+        expected.insert(Label::from(".L1".to_string()), 1);
+        expected.insert(Label::from(".L0".to_string()), 2);
+
+        assert_eq!(expected, result.mappings);
+        assert_eq!(3, result.blocks.len());
+
+        let expected = vec![
+            BasicBlock {
+                instructions: vec![
+                    Instruction::Assignment(
+                        Address::Name("x"),
+                        Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                    ),
+                    Instruction::Assignment(
+                        Address::Temp(TempVar::from(0)),
+                        Expression::Binary(
+                            Address::Name("x"),
+                            BinaryType::I32Eq,
+                            Address::Const(Constant::new(Type::I32, "0")),
+                        ),
+                    ),
+                ],
+                terminator: Instruction::JmpIf(
+                    Address::Temp(TempVar::from(0)),
+                    Label::new(1),
+                    Label::new(0),
+                ),
+            },
+            BasicBlock {
+                instructions: vec![
+                    Instruction::Label(Label::new(1)),
+                    Instruction::Assignment(
+                        Address::Name("x"),
+                        Expression::Copy(Address::Const(Constant::new(Type::I32, "1"))),
+                    ),
+                ],
+                terminator: Instruction::Jmp(Label::new(0)),
+            },
+            BasicBlock {
+                instructions: vec![Instruction::Label(Label::new(0))],
+                terminator: Instruction::Return(Some(Address::Name("x"))),
+            },
+        ];
+
+        assert_eq!(expected, result.blocks);
+    }
+
+    #[test]
+    fn test_from_instructions_if_else_should_return_four_basic_blocks() {
+        // x = 0;
+        // if x == 0 {
+        //     x = 1;
+        // } else {
+        //     x = 2;
+        // }
+        // return x;
+
+        let instructions = vec![
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+            ),
+            Instruction::Assignment(
+                Address::Temp(TempVar::from(0)),
+                Expression::Binary(
+                    Address::Name("x"),
+                    BinaryType::I32Eq,
+                    Address::Const(Constant::new(Type::I32, "0")),
+                ),
+            ),
+            Instruction::JmpIf(
+                Address::Temp(TempVar::from(0)),
+                Label::new(1),
+                Label::new(2),
+            ),
+            Instruction::Label(Label::new(1)),
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "1"))),
+            ),
+            Instruction::Jmp(Label::new(0)),
+            Instruction::Label(Label::new(2)),
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+            ),
+            Instruction::Jmp(Label::new(0)),
+            Instruction::Label(Label::new(0)),
+            Instruction::Return(Some(Address::Name("x"))),
+        ];
+
+        let result = BlockMap::from_instructions(InstructionBlock(instructions));
+        let mut expected = HashMap::new();
+        expected.insert(Label::from(".entry0".to_string()), 0);
+        expected.insert(Label::from(".L1".to_string()), 1);
+        expected.insert(Label::from(".L2".to_string()), 2);
+        expected.insert(Label::from(".L0".to_string()), 3);
+
+        assert_eq!(expected, result.mappings);
+        assert_eq!(4, result.blocks.len());
+
+        let expected = vec![
+            BasicBlock {
+                instructions: vec![
+                    Instruction::Assignment(
+                        Address::Name("x"),
+                        Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                    ),
+                    Instruction::Assignment(
+                        Address::Temp(TempVar::from(0)),
+                        Expression::Binary(
+                            Address::Name("x"),
+                            BinaryType::I32Eq,
+                            Address::Const(Constant::new(Type::I32, "0")),
+                        ),
+                    ),
+                ],
+                terminator: Instruction::JmpIf(
+                    Address::Temp(TempVar::from(0)),
+                    Label::new(1),
+                    Label::new(2),
+                ),
+            },
+            BasicBlock {
+                instructions: vec![
+                    Instruction::Label(Label::new(1)),
+                    Instruction::Assignment(
+                        Address::Name("x"),
+                        Expression::Copy(Address::Const(Constant::new(Type::I32, "1"))),
+                    ),
+                ],
+                terminator: Instruction::Jmp(Label::new(0)),
+            },
+            BasicBlock {
+                instructions: vec![
+                    Instruction::Label(Label::new(2)),
+                    Instruction::Assignment(
+                        Address::Name("x"),
+                        Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+                    ),
+                ],
+                terminator: Instruction::Jmp(Label::new(0)),
+            },
+            BasicBlock {
+                instructions: vec![Instruction::Label(Label::new(0))],
+                terminator: Instruction::Return(Some(Address::Name("x"))),
+            },
+        ];
 
         assert_eq!(expected, result.blocks);
     }

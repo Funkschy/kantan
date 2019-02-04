@@ -19,7 +19,7 @@ fn test_multiple_plus_and_star_operator() {
 }"#,
     );
 
-    kantan::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap_err();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -49,7 +49,7 @@ fn test_hiragana_identifier() {
 }"#,
     );
 
-    kantan::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap_err();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -76,7 +76,7 @@ fn test_kanji_identifier() {
 }"#,
     );
 
-    kantan::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap_err();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     assert_eq!(
@@ -132,7 +132,7 @@ fn test_invalid_equality_operation_should_return_error_message() {
  }"#,
     );
 
-    kantan::compile(&vec![source], &mut cursor).unwrap();
+    kantan::compile(&vec![source], &mut cursor).unwrap_err();
     let output = String::from_utf8(cursor.into_inner()).unwrap();
 
     let expected = "error: binary operation '==' cannot be applied to 'string' and 'i32'
