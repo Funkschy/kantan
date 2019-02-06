@@ -4,9 +4,11 @@
 use std::collections::HashMap;
 
 use super::{parse::ast::*, parse::token::Token, resolve::TypeMap, types::Type, Spanned};
+use address::Address;
 use blockmap::BlockMap;
 use tac::*;
 
+mod address;
 mod blockmap;
 mod tac;
 
@@ -171,19 +173,21 @@ impl<'input, 'ast> Tac<'input, 'ast> {
         match expr {
             Expr::Binary(l, op, r) | Expr::BoolBinary(l, op, r) => {
                 let msg = "unexpected empty expression";
+
                 let left = self.expr_instr(&l.node, block).expect(msg);
                 let right = self.expr_instr(&r.node, block).expect(msg);
 
-                let bin_type = match op.node {
-                    Token::Plus => BinaryType::I32Add,
-                    Token::Minus => BinaryType::I32Sub,
-                    Token::Star => BinaryType::I32Mul,
-                    Token::Slash => BinaryType::I32Div,
-                    Token::EqualsEquals => BinaryType::I32Eq,
-                    Token::Smaller => BinaryType::I32Smaller,
-                    Token::SmallerEquals => BinaryType::I32SmallerEq,
+                // TODO: find correct dec size
+                let bin_type = BinaryType::I32(match op.node {
+                    Token::Plus => IntBinaryType::Add,
+                    Token::Minus => IntBinaryType::Sub,
+                    Token::Star => IntBinaryType::Mul,
+                    Token::Slash => IntBinaryType::Div,
+                    Token::EqualsEquals => IntBinaryType::Eq,
+                    Token::Smaller => IntBinaryType::Smaller,
+                    Token::SmallerEquals => IntBinaryType::SmallerEq,
                     _ => unimplemented!(),
-                };
+                });
 
                 Expression::Binary(left, bin_type, right)
             }
@@ -229,7 +233,6 @@ impl<'input, 'ast> Tac<'input, 'ast> {
         }
 
         let temp = self.temp();
-
         Some(self.assign(temp, e, block))
     }
 
