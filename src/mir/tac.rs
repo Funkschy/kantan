@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::types::Type;
+use crate::{parse::token::Token, types::Type};
 
 use super::{
     address::{Address, CompilerConstant},
@@ -228,7 +228,7 @@ impl fmt::Display for UnaryType {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum BinaryType {
     I16(IntBinaryType),
     I32(IntBinaryType),
@@ -246,7 +246,7 @@ impl fmt::Display for BinaryType {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum IntBinaryType {
     Add,
     Sub,
@@ -255,6 +255,23 @@ pub enum IntBinaryType {
     Eq,
     Smaller,
     SmallerEq,
+}
+
+impl<'a> From<&Token<'a>> for Option<IntBinaryType> {
+    fn from(value: &Token) -> Self {
+        use IntBinaryType::*;
+
+        match value {
+            Token::Plus => Some(Add),
+            Token::Minus => Some(Sub),
+            Token::Star => Some(Mul),
+            Token::Slash => Some(Div),
+            Token::EqualsEquals => Some(Eq),
+            Token::Smaller => Some(Smaller),
+            Token::SmallerEquals => Some(SmallerEq),
+            _ => None,
+        }
+    }
 }
 
 macro_rules! boolean {

@@ -17,6 +17,8 @@ use self::{
 
 pub(crate) use self::cli::*;
 
+pub type PrgMap<'input> = HashMap<&'input str, (&'input Source, Program<'input>)>;
+
 #[derive(Debug)]
 pub struct Source {
     pub name: String,
@@ -125,20 +127,19 @@ fn parse<'input>(sources: &'input [Source]) -> (Vec<Program<'input>>, usize) {
         })
 }
 
-type SourceMap<'input, 'ast> = HashMap<&'ast str, (&'input Source, &'ast Program<'input>)>;
-
-fn ast_sources<'input, 'ast>(
-    sources: &'input [Source],
-    parse_trees: &'ast [Program<'input>],
-) -> SourceMap<'input, 'ast> {
-    sources
-        .iter()
-        .zip(parse_trees.iter())
-        .map(|(src, prg)| (src.name.as_str(), (src, prg)))
-        .collect()
+fn ast_sources<'input, 'ast>(sources: &'input [Source]) -> (PrgMap<'input>, usize) {
+    let (parse_trees, err_count) = parse(sources);
+    (
+        sources
+            .iter()
+            .zip(parse_trees.into_iter())
+            .map(|(src, prg)| (src.name.as_str(), (src, prg)))
+            .collect(),
+        err_count,
+    )
 }
 
-fn find_main<'input, 'ast>(ast_sources: &SourceMap<'input, 'ast>) -> Option<&'ast str> {
+fn find_main<'input, 'ast>(ast_sources: &PrgMap<'input>) -> Option<&'input str> {
     ast_sources
         .iter()
         .find(|(_, (_, prg))| {
@@ -154,8 +155,8 @@ fn find_main<'input, 'ast>(ast_sources: &SourceMap<'input, 'ast>) -> Option<&'as
 }
 
 fn type_check<'input, 'ast, W: Write>(
-    main: &'ast str,
-    ast_sources: &'input SourceMap<'input, 'ast>,
+    main: &'input str,
+    ast_sources: &'input PrgMap<'input>,
     writer: &mut W,
 ) -> Result<TypeMap<'input, 'ast>, CompilationError> {
     let mut resolver = Resolver::new(main, &ast_sources);
@@ -175,7 +176,7 @@ fn type_check<'input, 'ast, W: Write>(
 
 fn tac_functions<'input, 'ast>(
     types: &'input TypeMap<'input, 'ast>,
-    ast_sources: &SourceMap<'ast, 'input>,
+    ast_sources: &PrgMap<'input>,
 ) -> Tac<'input, 'ast> {
     let mut tac = Tac::new(&types);
     for (_, (_, prg)) in ast_sources.iter() {
@@ -200,8 +201,7 @@ fn tac_functions<'input, 'ast>(
 
 pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), CompilationError> {
     init_ansi();
-    let (parse_trees, err_count) = parse(sources);
-    let ast_sources = ast_sources(sources, &parse_trees);
+    let (ast_sources, err_count) = ast_sources(sources);
 
     if err_count != 0 {
         for (source, ast) in ast_sources.values() {

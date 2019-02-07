@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use super::{parse::ast::*, parse::token::Token, resolve::TypeMap, types::Type, Spanned};
+use super::{parse::ast::*, resolve::TypeMap, types::Type, Spanned};
 use address::Address;
 use blockmap::BlockMap;
 use tac::*;
@@ -174,20 +174,13 @@ impl<'input, 'ast> Tac<'input, 'ast> {
             Expr::Binary(l, op, r) | Expr::BoolBinary(l, op, r) => {
                 let msg = "unexpected empty expression";
 
+                // TODO: find correct dec size
+                let bin_type = Option::from(&op.node)
+                    .map(|ty| BinaryType::I32(ty))
+                    .unwrap();
+
                 let left = self.expr_instr(&l.node, block).expect(msg);
                 let right = self.expr_instr(&r.node, block).expect(msg);
-
-                // TODO: find correct dec size
-                let bin_type = BinaryType::I32(match op.node {
-                    Token::Plus => IntBinaryType::Add,
-                    Token::Minus => IntBinaryType::Sub,
-                    Token::Star => IntBinaryType::Mul,
-                    Token::Slash => IntBinaryType::Div,
-                    Token::EqualsEquals => IntBinaryType::Eq,
-                    Token::Smaller => IntBinaryType::Smaller,
-                    Token::SmallerEquals => IntBinaryType::SmallerEq,
-                    _ => unimplemented!(),
-                });
 
                 Expression::Binary(left, bin_type, right)
             }
