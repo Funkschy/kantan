@@ -15,7 +15,6 @@ mod error;
 #[allow(dead_code)]
 pub mod symbol;
 
-pub type PrgMap<'input> = HashMap<&'input str, (&'input Source, &'input Program<'input>)>;
 pub type TypeMap<'input, 'ast> = HashMap<(Span, &'ast Expr<'input>), Type>;
 
 pub(crate) struct Resolver<'input, 'ast> {
@@ -45,7 +44,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
 impl<'input, 'ast> Resolver<'input, 'ast> {
     pub fn resolve(&mut self) -> Vec<ResolveError<'input>> {
-        let (_, prg) = self.programs[self.current_name];
+        let (_, prg) = &self.programs[self.current_name];
         self.resolve_prg(prg, None)
     }
 
@@ -467,8 +466,8 @@ mod tests {
         }]);
 
         let mut map = HashMap::new();
-        map.insert("main", (&main_src, &main_ast));
-        map.insert("test", (&test_src, &test_ast));
+        map.insert("main", (&main_src, main_ast));
+        map.insert("test", (&test_src, test_ast));
 
         let mut resolver = Resolver::new("main", &map);
         let errors = resolver.resolve();
@@ -504,7 +503,7 @@ mod tests {
         ]);
 
         let mut map = HashMap::new();
-        map.insert("test", (&source, &ast));
+        map.insert("test", (&source, ast));
 
         let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
@@ -530,7 +529,7 @@ mod tests {
         }]);
 
         let mut map = HashMap::new();
-        map.insert("test", (&source, &ast));
+        map.insert("test", (&source, ast));
 
         let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
@@ -567,7 +566,7 @@ mod tests {
         }]);
 
         let mut map = HashMap::new();
-        map.insert("test", (&source, &ast));
+        map.insert("test", (&source, ast));
 
         let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();

@@ -57,7 +57,7 @@ impl<'input> BlockMap<'input> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{super::address::*, *};
     use crate::types::Type;
 
     #[test]
@@ -78,7 +78,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
                     Address::Name("x"),
-                    BinaryType::I32Mul,
+                    BinaryType::I32(IntBinaryType::Mul),
                     Address::Const(Constant::new(Type::I32, "3")),
                 ),
             ),
@@ -86,7 +86,7 @@ mod tests {
                 Address::Name("y"),
                 Expression::Binary(
                     Address::Temp(TempVar::from(0)),
-                    BinaryType::I32Add,
+                    BinaryType::I32(IntBinaryType::Add),
                     Address::Const(Constant::new(Type::I32, "3")),
                 ),
             ),
@@ -115,7 +115,7 @@ mod tests {
                     Address::Temp(TempVar::from(0)),
                     Expression::Binary(
                         Address::Name("x"),
-                        BinaryType::I32Mul,
+                        BinaryType::I32(IntBinaryType::Mul),
                         Address::Const(Constant::new(Type::I32, "3")),
                     ),
                 ),
@@ -123,7 +123,7 @@ mod tests {
                     Address::Name("y"),
                     Expression::Binary(
                         Address::Temp(TempVar::from(0)),
-                        BinaryType::I32Add,
+                        BinaryType::I32(IntBinaryType::Add),
                         Address::Const(Constant::new(Type::I32, "3")),
                     ),
                 ),
@@ -155,7 +155,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
                     Address::Name("x"),
-                    BinaryType::I32Eq,
+                    BinaryType::I32(IntBinaryType::Eq),
                     Address::Const(Constant::new(Type::I32, "0")),
                 ),
             ),
@@ -194,7 +194,7 @@ mod tests {
                         Address::Temp(TempVar::from(0)),
                         Expression::Binary(
                             Address::Name("x"),
-                            BinaryType::I32Eq,
+                            BinaryType::I32(IntBinaryType::Eq),
                             Address::Const(Constant::new(Type::I32, "0")),
                         ),
                     ),
@@ -243,7 +243,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
                     Address::Name("x"),
-                    BinaryType::I32Eq,
+                    BinaryType::I32(IntBinaryType::Eq),
                     Address::Const(Constant::new(Type::I32, "0")),
                 ),
             ),
@@ -289,7 +289,7 @@ mod tests {
                         Address::Temp(TempVar::from(0)),
                         Expression::Binary(
                             Address::Name("x"),
-                            BinaryType::I32Eq,
+                            BinaryType::I32(IntBinaryType::Eq),
                             Address::Const(Constant::new(Type::I32, "0")),
                         ),
                     ),

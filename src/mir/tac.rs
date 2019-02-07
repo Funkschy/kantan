@@ -1,8 +1,11 @@
 use std::fmt;
 
-use crate::types::Type;
+use crate::{parse::token::Token, types::Type};
 
-use super::blockmap::BlockMap;
+use super::{
+    address::{Address, CompilerConstant},
+    blockmap::BlockMap,
+};
 
 #[derive(Debug)]
 pub struct Func<'input> {
@@ -225,15 +228,10 @@ impl fmt::Display for UnaryType {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum BinaryType {
-    I32Add,
-    I32Sub,
-    I32Mul,
-    I32Div,
-    I32Eq,
-    I32Smaller,
-    I32SmallerEq,
+    I16(IntBinaryType),
+    I32(IntBinaryType),
 }
 
 impl fmt::Display for BinaryType {
@@ -241,97 +239,83 @@ impl fmt::Display for BinaryType {
         use BinaryType::*;
 
         let s = match self {
-            I32Add => "+",
-            I32Sub => "-",
-            I32Mul => "*",
-            I32Div => "/",
-            I32Eq => "==",
-            I32Smaller => "<",
-            I32SmallerEq => "<=",
+            I16(bt) | I32(bt) => bt.to_string(),
         };
 
         write!(f, "{}", s)
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
-pub enum Address<'input> {
-    Name(&'input str),
-    Const(Constant<'input>),
-    Temp(TempVar),
-    Global(Label),
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub enum IntBinaryType {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Smaller,
+    SmallerEq,
 }
 
-impl<'input> fmt::Display for Address<'input> {
+impl<'a> From<&Token<'a>> for Option<IntBinaryType> {
+    fn from(value: &Token) -> Self {
+        use IntBinaryType::*;
+
+        match value {
+            Token::Plus => Some(Add),
+            Token::Minus => Some(Sub),
+            Token::Star => Some(Mul),
+            Token::Slash => Some(Div),
+            Token::EqualsEquals => Some(Eq),
+            Token::Smaller => Some(Smaller),
+            Token::SmallerEquals => Some(SmallerEq),
+            _ => None,
+        }
+    }
+}
+
+macro_rules! boolean {
+    ($e:expr) => {
+        CompilerConstant::new(Type::Bool, ($e).to_string())
+    };
+}
+
+macro_rules! integer {
+    ($int_type:expr, $e:expr) => {
+        CompilerConstant::new($int_type, ($e).to_string())
+    };
+}
+
+impl IntBinaryType {
+    pub fn execute(&self, ty: Type, left: i128, right: i128) -> CompilerConstant {
+        use IntBinaryType::*;
+
+        match self {
+            Add => integer!(ty, left + right),
+            Sub => integer!(ty, left - right),
+            Mul => integer!(ty, left * right),
+            Div => integer!(ty, left / right),
+            Eq => boolean!(left == right),
+            Smaller => boolean!(left < right),
+            SmallerEq => boolean!(left <= right),
+        }
+    }
+}
+
+impl fmt::Display for IntBinaryType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use Address::*;
+        use IntBinaryType::*;
 
         let s = match self {
-            Name(n) => n.to_string(),
-            Const(c) => c.to_string(),
-            Temp(t) => t.to_string(),
-            Global(l) => l.to_string(),
+            Add => "+",
+            Sub => "-",
+            Mul => "*",
+            Div => "/",
+            Eq => "==",
+            Smaller => "<",
+            SmallerEq => "<=",
         };
 
         write!(f, "{}", s)
-    }
-}
-
-impl<'input> Into<Expression<'input>> for Address<'input> {
-    fn into(self) -> Expression<'input> {
-        Expression::Copy(self)
-    }
-}
-
-impl<'input> From<&'input str> for Address<'input> {
-    fn from(value: &'input str) -> Self {
-        Address::Name(value)
-    }
-}
-
-impl<'input> Address<'input> {
-    pub fn new_const(ty: Type, literal: &'input str) -> Self {
-        Address::Const(Constant::new(ty, literal))
-    }
-
-    pub fn new_global_ref(label: Label) -> Self {
-        Address::Global(label)
-    }
-
-    pub fn new_copy_name(name: &'input str) -> Self {
-        Address::Name(name)
-    }
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub struct TempVar(usize);
-
-impl From<usize> for TempVar {
-    fn from(value: usize) -> Self {
-        TempVar(value)
-    }
-}
-
-impl fmt::Display for TempVar {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "_t{}", self.0)
-    }
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub struct Constant<'input> {
-    ty: Type,
-    literal: &'input str,
-}
-
-impl<'input> fmt::Display for Constant<'input> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.literal)
-    }
-}
-
-impl<'input> Constant<'input> {
-    pub fn new(ty: Type, literal: &'input str) -> Self {
-        Constant { ty, literal }
     }
 }
