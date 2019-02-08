@@ -69,8 +69,8 @@ pub struct BasicBlock<'input> {
     pub terminator: Instruction<'input>,
 }
 
-impl<'input> BasicBlock<'input> {
-    pub fn new() -> Self {
+impl<'input> Default for BasicBlock<'input> {
+    fn default() -> Self {
         BasicBlock {
             instructions: vec![],
             terminator: Instruction::Nop,
@@ -287,7 +287,7 @@ macro_rules! integer {
 }
 
 impl IntBinaryType {
-    pub fn execute(&self, ty: Type, left: i128, right: i128) -> CompilerConstant {
+    pub fn execute(self, ty: Type, left: i128, right: i128) -> CompilerConstant {
         use IntBinaryType::*;
 
         match self {
