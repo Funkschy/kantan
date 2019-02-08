@@ -267,3 +267,74 @@ impl<'input, 'ast> Tac<'input, 'ast> {
         label
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{address::*, *};
+    use crate::{compile, Source};
+
+    use std::io::Cursor;
+
+    #[test]
+    fn test_mir_for_sequence_of_instructions_should_have_no_jumps() {
+        let mut cursor = Cursor::new(Vec::default());
+
+        let source = "
+            fn main(): void {
+                let x = 0;
+                let y = 2;
+
+                let z = x * y + 2;
+                x = z;
+            }
+        ";
+
+        let sources = vec![Source::new("main", source)];
+        let funcs = compile(&sources, &mut cursor).unwrap();
+
+        let mut bm = BlockMap::default();
+
+        bm.mappings.insert(Label::from(".entry0".to_string()), 0);
+
+        let mut bb = BasicBlock::default();
+        bb.instructions = vec![
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+            ),
+            Instruction::Assignment(
+                Address::Name("y"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+            ),
+            Instruction::Assignment(
+                Address::Temp(TempVar::from(0)),
+                Expression::Binary(
+                    Address::Name("x"),
+                    BinaryType::I32(IntBinaryType::Mul),
+                    Address::Name("y"),
+                ),
+            ),
+            Instruction::Assignment(
+                Address::Name("z"),
+                Expression::Binary(
+                    Address::Temp(TempVar::from(0)),
+                    BinaryType::I32(IntBinaryType::Add),
+                    Address::Const(Constant::new(Type::I32, "2")),
+                ),
+            ),
+            Instruction::Assignment(Address::Name("x"), Expression::Copy(Address::Name("z"))),
+        ];
+
+        bb.terminator = Instruction::Return(None);
+        bm.blocks = vec![bb];
+
+        let expected = vec![Func::new(
+            Label::from("main".to_string()),
+            vec![],
+            Type::Void,
+            bm,
+        )];
+
+        assert_eq!(expected, funcs);
+    }
+}

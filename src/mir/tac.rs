@@ -7,7 +7,7 @@ use super::{
     blockmap::BlockMap,
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Func<'input> {
     label: Label,
     params: Vec<(&'input str, Type)>,
