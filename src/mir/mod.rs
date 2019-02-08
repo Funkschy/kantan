@@ -10,7 +10,7 @@ use tac::*;
 
 mod address;
 mod blockmap;
-mod tac;
+pub mod tac;
 
 #[derive(Debug)]
 pub struct Tac<'input, 'ast> {
@@ -175,9 +175,7 @@ impl<'input, 'ast> Tac<'input, 'ast> {
                 let msg = "unexpected empty expression";
 
                 // TODO: find correct dec size
-                let bin_type = Option::from(&op.node)
-                    .map(|ty| BinaryType::I32(ty))
-                    .unwrap();
+                let bin_type = Option::from(&op.node).map(BinaryType::I32).unwrap();
 
                 let left = self.expr_instr(&l.node, block).expect(msg);
                 let right = self.expr_instr(&r.node, block).expect(msg);

@@ -12,7 +12,7 @@ impl<'input> BlockMap<'input> {
     pub fn from_instructions(block: InstructionBlock<'input>) -> Self {
         let mut mappings = HashMap::new();
         let mut blocks = vec![];
-        let mut bb = BasicBlock::new();
+        let mut bb = BasicBlock::default();
         let mut label = Label::from(".entry0".to_string());
         let mut label_count = 1;
 
@@ -31,7 +31,7 @@ impl<'input> BlockMap<'input> {
                         mappings.insert(label, idx);
                         // begin new block with this label
                         label = l.clone();
-                        bb = BasicBlock::new();
+                        bb = BasicBlock::default();
                         bb.instructions.push(instr);
                     } else {
                         label = l.clone();
@@ -46,7 +46,7 @@ impl<'input> BlockMap<'input> {
                     mappings.insert(label, idx);
                     label = Label::from(format!(".entry{}", label_count));
                     label_count += 1;
-                    bb = BasicBlock::new();
+                    bb = BasicBlock::default();
                 }
             }
         }

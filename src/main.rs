@@ -27,7 +27,16 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         })
         .collect::<Vec<Source>>();
 
-    compile(&sources, &mut err_writer)?;
+    let tac_functions = compile(&sources, &mut err_writer)?;
+
+    let funcs = tac_functions
+        .iter()
+        .map(|f| f.to_string())
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    println!("{}", funcs);
+
     Ok(())
 }
 
