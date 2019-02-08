@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use super::tac::*;
 
-#[derive(Debug)]
+#[derive(Default, Debug, PartialEq)]
 pub struct BlockMap<'input> {
-    mappings: HashMap<Label, usize>,
+    pub mappings: HashMap<Label, usize>,
     pub blocks: Vec<BasicBlock<'input>>,
 }
 
