@@ -117,6 +117,13 @@ impl From<String> for Label {
     }
 }
 
+impl From<&str> for Label {
+    #[inline]
+    fn from(value: &str) -> Self {
+        Label(value.to_owned())
+    }
+}
+
 impl<'input> Into<Instruction<'input>> for Label {
     fn into(self) -> Instruction<'input> {
         Instruction::Label(self)

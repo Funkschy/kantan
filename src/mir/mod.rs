@@ -328,10 +328,158 @@ mod tests {
         bb.terminator = Instruction::Return(None);
         bm.blocks = vec![bb];
 
+        let expected = vec![Func::new(Label::from("main"), vec![], Type::Void, bm)];
+
+        assert_eq!(expected, funcs);
+    }
+
+    #[test]
+    fn test_mir_with_if_should_continue_after_if_in_both_cases() {
+        let mut cursor = Cursor::new(Vec::default());
+
+        let source = "
+            fn main(): i32 {
+                let x = 0;
+                if x == 0 {
+                    x = 2;
+                }
+                return x;
+            }
+        ";
+
+        let sources = vec![Source::new("main", source)];
+        let funcs = compile(&sources, &mut cursor).unwrap();
+
+        let mut bm = BlockMap::default();
+
+        bm.mappings.insert(Label::from(".entry0".to_string()), 0);
+        bm.mappings.insert(Label::new(0), 2);
+        bm.mappings.insert(Label::new(1), 1);
+
+        let mut bb1 = BasicBlock::default();
+        bb1.instructions = vec![
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+            ),
+            Instruction::Assignment(
+                Address::Temp(TempVar::from(0)),
+                Expression::Binary(
+                    Address::Name("x"),
+                    BinaryType::I32(IntBinaryType::Eq),
+                    Address::Const(Constant::new(Type::I32, "0")),
+                ),
+            ),
+        ];
+        bb1.terminator = Instruction::JmpIf(
+            Address::Temp(TempVar::from(0)),
+            Label::new(1),
+            Label::new(0),
+        );
+
+        let mut bb2 = BasicBlock::default();
+        bb2.instructions = vec![
+            Instruction::Label(Label::new(1)),
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+            ),
+        ];
+        bb2.terminator = Instruction::Jmp(Label::new(0));
+
+        let mut bb3 = BasicBlock::default();
+        bb3.instructions = vec![Instruction::Label(Label::new(0))];
+        bb3.terminator = Instruction::Return(Some(Address::Name("x")));
+
+        bm.blocks = vec![bb1, bb2, bb3];
+
         let expected = vec![Func::new(
             Label::from("main".to_string()),
             vec![],
-            Type::Void,
+            Type::I32,
+            bm,
+        )];
+
+        assert_eq!(expected, funcs);
+    }
+
+    #[test]
+    fn test_mir_with_if_else_should_continue_after_if_in_both_cases() {
+        let mut cursor = Cursor::new(Vec::default());
+
+        let source = "
+            fn main(): i32 {
+                let x = 0;
+                if x == 0 {
+                    x = 2;
+                } else {
+                    x = 3;
+                }
+                return x;
+            }
+        ";
+
+        let sources = vec![Source::new("main", source)];
+        let funcs = compile(&sources, &mut cursor).unwrap();
+
+        let mut bm = BlockMap::default();
+
+        bm.mappings.insert(Label::from(".entry0".to_string()), 0);
+        bm.mappings.insert(Label::new(0), 3);
+        bm.mappings.insert(Label::new(1), 1);
+        bm.mappings.insert(Label::new(2), 2);
+
+        let mut bb1 = BasicBlock::default();
+        bb1.instructions = vec![
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+            ),
+            Instruction::Assignment(
+                Address::Temp(TempVar::from(0)),
+                Expression::Binary(
+                    Address::Name("x"),
+                    BinaryType::I32(IntBinaryType::Eq),
+                    Address::Const(Constant::new(Type::I32, "0")),
+                ),
+            ),
+        ];
+        bb1.terminator = Instruction::JmpIf(
+            Address::Temp(TempVar::from(0)),
+            Label::new(1),
+            Label::new(2),
+        );
+
+        let mut bb2 = BasicBlock::default();
+        bb2.instructions = vec![
+            Instruction::Label(Label::new(1)),
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+            ),
+        ];
+        bb2.terminator = Instruction::Jmp(Label::new(0));
+
+        let mut bb3 = BasicBlock::default();
+        bb3.instructions = vec![
+            Instruction::Label(Label::new(2)),
+            Instruction::Assignment(
+                Address::Name("x"),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "3"))),
+            ),
+        ];
+        bb3.terminator = Instruction::Jmp(Label::new(0));
+
+        let mut bb4 = BasicBlock::default();
+        bb4.instructions = vec![Instruction::Label(Label::new(0))];
+        bb4.terminator = Instruction::Return(Some(Address::Name("x")));
+
+        bm.blocks = vec![bb1, bb2, bb3, bb4];
+
+        let expected = vec![Func::new(
+            Label::from("main".to_string()),
+            vec![],
+            Type::I32,
             bm,
         )];
 
