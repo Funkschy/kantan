@@ -10,7 +10,7 @@ mod resolve;
 mod types;
 
 use self::{
-    mir::Tac,
+    mir::{tac::Func, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::{Resolver, TypeMap},
 };
@@ -127,7 +127,7 @@ fn parse<'input>(sources: &'input [Source]) -> (Vec<Program<'input>>, usize) {
         })
 }
 
-fn ast_sources<'input, 'ast>(sources: &'input [Source]) -> (PrgMap<'input>, usize) {
+fn ast_sources(sources: &[Source]) -> (PrgMap<'_>, usize) {
     let (parse_trees, err_count) = parse(sources);
     (
         sources
@@ -139,7 +139,7 @@ fn ast_sources<'input, 'ast>(sources: &'input [Source]) -> (PrgMap<'input>, usiz
     )
 }
 
-fn find_main<'input, 'ast>(ast_sources: &PrgMap<'input>) -> Option<&'input str> {
+fn find_main<'input>(ast_sources: &PrgMap<'input>) -> Option<&'input str> {
     ast_sources
         .iter()
         .find(|(_, (_, prg))| {
@@ -156,7 +156,7 @@ fn find_main<'input, 'ast>(ast_sources: &PrgMap<'input>) -> Option<&'input str> 
 
 fn type_check<'input, 'ast, W: Write>(
     main: &'input str,
-    ast_sources: &'input PrgMap<'input>,
+    ast_sources: &'ast PrgMap<'input>,
     writer: &mut W,
 ) -> Result<TypeMap<'input, 'ast>, CompilationError> {
     let mut resolver = Resolver::new(main, &ast_sources);
@@ -175,9 +175,9 @@ fn type_check<'input, 'ast, W: Write>(
 }
 
 fn tac_functions<'input, 'ast>(
-    types: &'input TypeMap<'input, 'ast>,
+    types: &TypeMap<'input, 'ast>,
     ast_sources: &PrgMap<'input>,
-) -> Tac<'input, 'ast> {
+) -> Vec<Func<'input>> {
     let mut tac = Tac::new(&types);
     for (_, (_, prg)) in ast_sources.iter() {
         for top_lvl in &prg.0 {
@@ -196,10 +196,13 @@ fn tac_functions<'input, 'ast>(
             }
         }
     }
-    tac
+    tac.functions
 }
 
-pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), CompilationError> {
+pub fn compile<'input, W: Write>(
+    sources: &'input [Source],
+    writer: &mut W,
+) -> Result<Vec<Func<'input>>, CompilationError> {
     init_ansi();
     let (ast_sources, err_count) = ast_sources(sources);
 
@@ -219,17 +222,8 @@ pub fn compile<W: Write>(sources: &[Source], writer: &mut W) -> Result<(), Compi
     }
 
     let main = main.unwrap();
-
     let types = type_check(main, &ast_sources, writer)?;
-    let tac = tac_functions(&types, &ast_sources);
+    let funcs = tac_functions(&types, &ast_sources);
 
-    let funcs = tac
-        .functions
-        .iter()
-        .map(|f| f.to_string())
-        .collect::<Vec<String>>()
-        .join("\n");
-
-    println!("{}", funcs);
-    Ok(())
+    Ok(funcs)
 }

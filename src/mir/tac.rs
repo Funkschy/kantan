@@ -7,7 +7,7 @@ use super::{
     blockmap::BlockMap,
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Func<'input> {
     label: Label,
     params: Vec<(&'input str, Type)>,
@@ -69,8 +69,8 @@ pub struct BasicBlock<'input> {
     pub terminator: Instruction<'input>,
 }
 
-impl<'input> BasicBlock<'input> {
-    pub fn new() -> Self {
+impl<'input> Default for BasicBlock<'input> {
+    fn default() -> Self {
         BasicBlock {
             instructions: vec![],
             terminator: Instruction::Nop,
@@ -114,6 +114,13 @@ impl From<String> for Label {
     #[inline]
     fn from(value: String) -> Self {
         Label(value)
+    }
+}
+
+impl From<&str> for Label {
+    #[inline]
+    fn from(value: &str) -> Self {
+        Label(value.to_owned())
     }
 }
 
@@ -287,7 +294,7 @@ macro_rules! integer {
 }
 
 impl IntBinaryType {
-    pub fn execute(&self, ty: Type, left: i128, right: i128) -> CompilerConstant {
+    pub fn execute(self, ty: Type, left: i128, right: i128) -> CompilerConstant {
         use IntBinaryType::*;
 
         match self {

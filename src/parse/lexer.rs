@@ -237,7 +237,7 @@ impl<'input> Lexer<'input> {
                 let span = Span::new(start, start);
                 Err(Spanned {
                     span,
-                    node: ParseError::LexError(LexError::new()),
+                    node: ParseError::LexError(LexError::default()),
                 })
             }
         };

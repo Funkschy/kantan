@@ -32,16 +32,12 @@ impl<'input> From<LexError> for ParseError<'input> {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Hash)]
+#[derive(Default, Eq, PartialEq, Clone, Hash)]
 pub struct LexError {
     cause: Option<String>,
 }
 
 impl LexError {
-    pub fn new() -> Self {
-        LexError { cause: None }
-    }
-
     pub fn with_cause(cause: &str) -> Self {
         LexError {
             cause: Some(cause.to_owned()),
