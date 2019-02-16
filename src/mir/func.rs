@@ -1,0 +1,60 @@
+use std::fmt;
+
+use super::{blockmap::BlockMap, tac::*};
+use crate::types::Type;
+
+#[derive(PartialEq, Debug)]
+pub struct Func<'input> {
+    label: Label,
+    params: Vec<(&'input str, Type)>,
+    ret: Type,
+    blocks: BlockMap<'input>,
+}
+
+impl<'input> Func<'input> {
+    pub fn new(
+        label: Label,
+        params: Vec<(&'input str, Type)>,
+        ret: Type,
+        blocks: BlockMap<'input>,
+    ) -> Self {
+        Func {
+            label,
+            params,
+            ret,
+            blocks,
+        }
+    }
+}
+
+impl<'input> fmt::Display for Func<'input> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let params = self
+            .params
+            .iter()
+            .map(|(n, t)| format!("{}: t_{}", n, t))
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        dbg!(&self.blocks);
+
+        let instructions = self
+            .blocks
+            .blocks
+            .iter()
+            .map(|b| (b.instructions.iter(), &b.terminator))
+            .flat_map(|(is, t)| {
+                let mut instrs = is.map(|i| format!("\t{}", i)).collect::<Vec<String>>();
+                instrs.push(format!("\t{}", t));
+                instrs
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        write!(
+            f,
+            "fn {}({}): {} {{\n{}\n}}",
+            self.label, params, self.ret, instructions
+        )
+    }
+}

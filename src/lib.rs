@@ -10,7 +10,7 @@ mod resolve;
 mod types;
 
 use self::{
-    mir::{tac::Func, Tac},
+    mir::{func::Func, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::{Resolver, TypeMap},
 };
@@ -175,11 +175,12 @@ fn type_check<'input, 'ast, W: Write>(
 }
 
 fn tac_functions<'input, 'ast>(
+    main: &'input str,
     types: &TypeMap<'input, 'ast>,
     ast_sources: &PrgMap<'input>,
 ) -> Vec<Func<'input>> {
     let mut tac = Tac::new(&types);
-    for (_, (_, prg)) in ast_sources.iter() {
+    for (src_name, (_, prg)) in ast_sources.iter() {
         for top_lvl in &prg.0 {
             if let TopLvl::FnDecl {
                 name,
@@ -188,11 +189,16 @@ fn tac_functions<'input, 'ast>(
                 ret_type,
             } = top_lvl
             {
-                let name = name.node;
+                let name = if *src_name != main {
+                    format!("{}.{}", src_name, name.node)
+                } else {
+                    name.node.to_owned()
+                };
+
                 let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
                 let ret_type = ret_type.node;
 
-                tac.add_function(name.to_owned(), params, &body, ret_type);
+                tac.add_function(name, params, &body, ret_type);
             }
         }
     }
@@ -223,7 +229,7 @@ pub fn compile<'input, W: Write>(
 
     let main = main.unwrap();
     let types = type_check(main, &ast_sources, writer)?;
-    let funcs = tac_functions(&types, &ast_sources);
+    let funcs = tac_functions(main, &types, &ast_sources);
 
     Ok(funcs)
 }

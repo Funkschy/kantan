@@ -1,5 +1,6 @@
-#[cfg(feature = "llvm")]
+// #[cfg(feature = "llvm")]
+#[allow(dead_code)]
 mod llvm;
 
-#[cfg(not(feature = "llvm"))]
-mod custom;
+// #[cfg(not(feature = "llvm"))]
+// mod custom;

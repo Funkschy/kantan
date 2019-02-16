@@ -6,11 +6,13 @@ use std::collections::HashMap;
 use super::{parse::ast::*, resolve::TypeMap, types::Type, Spanned};
 use address::Address;
 use blockmap::BlockMap;
+use func::Func;
 use tac::*;
 
 mod address;
 mod blockmap;
-pub mod tac;
+pub(crate) mod func;
+mod tac;
 
 #[derive(Debug)]
 pub struct Tac<'input, 'ast> {
