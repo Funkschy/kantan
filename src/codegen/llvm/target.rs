@@ -1,15 +1,32 @@
 use std::{ffi::CString, ptr};
 
-use llvm_sys::{core::LLVMDisposeMessage, target_machine::*};
+use llvm_sys::{core::LLVMDisposeMessage, prelude::*, target::*, target_machine::*};
 
 pub enum ArchType {
     X86_64,
 }
 
+impl ArchType {
+    pub fn register(&self) {
+        match self {
+            ArchType::X86_64 => Self::register_x86(),
+        }
+    }
+
+    fn register_x86() {
+        unsafe {
+            LLVMInitializeX86TargetInfo();
+            LLVMInitializeX86Target();
+            LLVMInitializeX86TargetMC();
+            LLVMInitializeX86AsmPrinter();
+        }
+    }
+}
+
 impl Into<&'static str> for ArchType {
     fn into(self) -> &'static str {
         match self {
-            ArchType::X86_64 => "x86",
+            ArchType::X86_64 => "x86_64",
         }
     }
 }
@@ -27,13 +44,25 @@ impl Into<&'static str> for VendorType {
 }
 
 pub enum OsType {
-    Linux,
+    GnuLinux,
 }
 
 impl Into<&'static str> for OsType {
     fn into(self) -> &'static str {
         match self {
-            OsType::Linux => "Linux",
+            OsType::GnuLinux => "linux-gnu",
+        }
+    }
+}
+
+pub enum CpuType {
+    Generic,
+}
+
+impl Into<&'static str> for CpuType {
+    fn into(self) -> &'static str {
+        match self {
+            CpuType::Generic => "generic",
         }
     }
 }
@@ -67,28 +96,134 @@ impl Into<Vec<u8>> for TargetTriple {
     }
 }
 
+pub enum CodeGenOptLevel {
+    OptNone,
+    OptLess,
+    OptDefault,
+    OptAggressive,
+}
+
+impl Into<LLVMCodeGenOptLevel> for CodeGenOptLevel {
+    fn into(self) -> LLVMCodeGenOptLevel {
+        use LLVMCodeGenOptLevel::*;
+
+        match self {
+            CodeGenOptLevel::OptNone => LLVMCodeGenLevelNone,
+            CodeGenOptLevel::OptLess => LLVMCodeGenLevelLess,
+            CodeGenOptLevel::OptDefault => LLVMCodeGenLevelDefault,
+            CodeGenOptLevel::OptAggressive => LLVMCodeGenLevelAggressive,
+        }
+    }
+}
+
 pub struct Target {
-    target_ref: Box<LLVMTarget>,
+    target_ref: LLVMTargetRef,
+    triple: *mut i8,
 }
 
 impl Target {
-    pub fn new(triple: TargetTriple) -> Result<Self, CString> {
+    pub fn new(triple: TargetTriple) -> Result<Self, *mut i8> {
         unsafe {
-            let target = ptr::null_mut();
+            let mut target = ptr::null_mut();
             let mut error = ptr::null_mut();
 
-            let cstr = CString::new(triple).unwrap().into_raw() as *mut _;
+            triple.arch.register();
 
-            if LLVMGetTargetFromTriple(cstr, target, &mut error as *mut *mut _) != 0 {
-                LLVMDisposeMessage(cstr);
-                return Err(CString::from_raw(error));
+            let cstring = CString::new(triple).unwrap();
+            let triple = cstring.into_raw();
+
+            if LLVMGetTargetFromTriple(triple, &mut target, &mut error) != 0 {
+                LLVMDisposeMessage(triple);
+                return Err(error);
             }
 
-            LLVMDisposeMessage(cstr);
-
             Ok(Target {
-                target_ref: Box::from_raw(*target),
+                target_ref: target,
+                triple: triple,
             })
+        }
+    }
+}
+
+impl Drop for Target {
+    fn drop(&mut self) {
+        unsafe {
+            LLVMDisposeMessage(self.triple);
+        }
+    }
+}
+
+pub struct TargetMachine {
+    tm_ref: LLVMTargetMachineRef,
+    target: Target,
+    features: *mut i8,
+    cpu: *mut i8,
+}
+
+impl TargetMachine {
+    pub fn new(target: Target, cpu: CpuType, level: CodeGenOptLevel) -> Self {
+        unsafe {
+            let features = CString::new("").unwrap().into_raw();
+
+            let cpu_string: &str = cpu.into();
+            let cpu = CString::new(cpu_string).unwrap().into_raw();
+
+            let machine = LLVMCreateTargetMachine(
+                target.target_ref,
+                target.triple,
+                cpu,
+                features,
+                level.into(),
+                LLVMRelocMode::LLVMRelocDefault,
+                LLVMCodeModel::LLVMCodeModelDefault,
+            );
+
+            if machine == ptr::null_mut() {
+                panic!("TargetMachine is null");
+            }
+
+            TargetMachine {
+                tm_ref: machine,
+                target,
+                features,
+                cpu,
+            }
+        }
+    }
+
+    pub fn emit_to_file(
+        self,
+        module: LLVMModuleRef,
+        filename: &str,
+        asm: bool,
+    ) -> Result<(), *mut i8> {
+        let ty = if asm {
+            LLVMCodeGenFileType::LLVMAssemblyFile
+        } else {
+            LLVMCodeGenFileType::LLVMObjectFile
+        };
+
+        unsafe {
+            let mut error = ptr::null_mut();
+            let filename = CString::new(filename).unwrap().into_raw();
+            if LLVMTargetMachineEmitToFile(self.tm_ref, module, filename, ty, &mut error) != 0 {
+                LLVMDisposeMessage(filename);
+                return Err(error);
+            }
+
+            LLVMDisposeMessage(filename);
+        }
+
+        Ok(())
+    }
+}
+
+impl Drop for TargetMachine {
+    fn drop(&mut self) {
+        unsafe {
+            LLVMDisposeTargetMachine(self.tm_ref);
+            LLVMDisposeMessage(self.features);
+            LLVMDisposeMessage(self.cpu);
         }
     }
 }

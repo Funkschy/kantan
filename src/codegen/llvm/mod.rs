@@ -1,19 +1,25 @@
 use crate::mir::func::Func;
 
+mod context;
 mod target;
-mod wrapper;
 
+use context::*;
 use target::*;
-use wrapper::*;
 
-pub fn emit_to_file(functions: &[Func], filename: &str) {
+pub fn emit_to_file(_functions: &[Func], filename: &str) {
     let ctx = KantanLLVMContext::new("main");
 
     let arch = ArchType::X86_64;
     let vendor = VendorType::PC;
-    let os = OsType::Linux;
+    let os = OsType::GnuLinux;
 
-    // let target = Target::new(TargetTriple::new(arch, vendor, os)).unwrap();
+    ctx.verify_module().unwrap();
+    ctx.dump_module();
+
+    let target = Target::new(TargetTriple::new(arch, vendor, os)).unwrap();
+    let tm = TargetMachine::new(target, CpuType::Generic, CodeGenOptLevel::OptNone);
+
+    tm.emit_to_file(ctx.module(), filename, true).unwrap();
 }
 
 #[cfg(test)]
@@ -22,6 +28,6 @@ mod tests {
 
     #[test]
     fn test_emit_to_file() {
-        emit_to_file(&vec![], "");
+        emit_to_file(&vec![], "target/test.asm");
     }
 }
