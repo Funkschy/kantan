@@ -5,10 +5,10 @@ use crate::types::Type;
 
 #[derive(PartialEq, Debug)]
 pub struct Func<'input> {
-    label: Label,
-    params: Vec<(&'input str, Type)>,
-    ret: Type,
-    blocks: BlockMap<'input>,
+    pub(crate) label: Label,
+    pub(crate) params: Vec<(&'input str, Type)>,
+    pub(crate) ret: Type,
+    pub(crate) blocks: BlockMap<'input>,
 }
 
 impl<'input> Func<'input> {
@@ -35,8 +35,6 @@ impl<'input> fmt::Display for Func<'input> {
             .map(|(n, t)| format!("{}: t_{}", n, t))
             .collect::<Vec<String>>()
             .join(", ");
-
-        dbg!(&self.blocks);
 
         let instructions = self
             .blocks

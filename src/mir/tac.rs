@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{borrow::Borrow, fmt};
 
 use crate::{parse::token::Token, types::Type};
 
@@ -62,6 +62,12 @@ impl From<&str> for Label {
     #[inline]
     fn from(value: &str) -> Self {
         Label(value.to_owned())
+    }
+}
+
+impl Borrow<str> for Label {
+    fn borrow(&self) -> &str {
+        &self.0
     }
 }
 

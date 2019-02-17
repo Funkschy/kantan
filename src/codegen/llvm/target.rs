@@ -139,7 +139,7 @@ impl Target {
 
             Ok(Target {
                 target_ref: target,
-                triple: triple,
+                triple,
             })
         }
     }
@@ -178,7 +178,7 @@ impl TargetMachine {
                 LLVMCodeModel::LLVMCodeModelDefault,
             );
 
-            if machine == ptr::null_mut() {
+            if machine.is_null() {
                 panic!("TargetMachine is null");
             }
 
