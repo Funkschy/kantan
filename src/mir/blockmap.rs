@@ -13,7 +13,7 @@ impl<'input> BlockMap<'input> {
         let mut mappings = HashMap::new();
         let mut blocks = vec![];
         let mut bb = BasicBlock::default();
-        let mut label = Label::from(".entry0".to_string());
+        let mut label = Label::from(BlockMap::entry_name());
         let mut label_count = 1;
 
         for instr in block.0 {
@@ -52,6 +52,10 @@ impl<'input> BlockMap<'input> {
         }
 
         BlockMap { mappings, blocks }
+    }
+
+    pub fn entry_name() -> String {
+        ".entry0".to_string()
     }
 }
 

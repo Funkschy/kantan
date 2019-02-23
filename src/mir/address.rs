@@ -71,8 +71,8 @@ impl fmt::Display for TempVar {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Constant<'input> {
-    ty: Type,
-    literal: &'input str,
+    pub ty: Type,
+    pub literal: &'input str,
 }
 
 impl<'input> fmt::Display for Constant<'input> {
@@ -89,7 +89,7 @@ impl<'input> Constant<'input> {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CompilerConstant {
-    ty: Type,
+    pub ty: Type,
     pub literal: String,
 }
 

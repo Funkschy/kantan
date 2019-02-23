@@ -9,10 +9,10 @@ use blockmap::BlockMap;
 use func::Func;
 use tac::*;
 
-mod address;
+pub(crate) mod address;
 mod blockmap;
 pub(crate) mod func;
-mod tac;
+pub(crate) mod tac;
 
 #[derive(Debug)]
 pub struct Tac<'input, 'ast> {
