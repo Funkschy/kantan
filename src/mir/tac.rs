@@ -182,6 +182,15 @@ impl fmt::Display for UnaryType {
     }
 }
 
+impl<'a> From<&Token<'a>> for Option<UnaryType> {
+    fn from(value: &Token) -> Self {
+        match value {
+            Token::Minus => Some(UnaryType::I32Negate),
+            _ => None,
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum BinaryType {
     I16(IntBinaryType),

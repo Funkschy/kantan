@@ -1,6 +1,6 @@
 use std::{env, error, fs, io};
 
-use kantan::{compile, Source};
+use kantan::{codegen::llvm::emit_to_file, compile, Source};
 
 fn main() -> Result<(), Box<dyn error::Error>> {
     let args: Vec<String> = env::args().collect();
@@ -36,6 +36,8 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         .join("\n");
 
     println!("{}", funcs);
+
+    emit_to_file(&tac_functions, "target/test.s", &mut err_writer);
 
     Ok(())
 }

@@ -32,7 +32,8 @@ impl<'input> fmt::Display for Func<'input> {
         let params = self
             .params
             .iter()
-            .map(|(n, t)| format!("{}: t_{}", n, t))
+            .enumerate()
+            .map(|(i, (_, t))| format!("_arg{}: {}", i, t))
             .collect::<Vec<String>>()
             .join(", ");
 

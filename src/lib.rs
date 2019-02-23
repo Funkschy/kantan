@@ -2,7 +2,7 @@ use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
 
 mod cli;
 #[allow(dead_code)]
-mod codegen;
+pub mod codegen;
 #[allow(dead_code)]
 mod mir;
 mod parse;

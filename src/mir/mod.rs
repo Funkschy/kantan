@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use super::{parse::ast::*, resolve::TypeMap, types::Type, Spanned};
-use address::Address;
+use address::{Address, Argument};
 use blockmap::BlockMap;
 use func::Func;
 use tac::*;
@@ -21,6 +21,7 @@ pub struct Tac<'input, 'ast> {
     literals: HashMap<Label, &'input str>,
     temp_count: usize,
     label_count: usize,
+    current_params: Option<Vec<&'input str>>,
 }
 
 impl<'input, 'ast> Tac<'input, 'ast> {
@@ -31,6 +32,7 @@ impl<'input, 'ast> Tac<'input, 'ast> {
             literals: HashMap::new(),
             temp_count: 0,
             label_count: 0,
+            current_params: None,
         }
     }
 }
@@ -43,6 +45,7 @@ impl<'input, 'ast> Tac<'input, 'ast> {
         body: &Block<'input>,
         ret_type: Type,
     ) {
+        self.current_params = Some(params.iter().map(|(n, _)| *n).collect());
         let mut block = self.create_block(&body.0);
         let add_ret = match block.last() {
             Some(Instruction::Return(_)) => false,
@@ -206,6 +209,13 @@ impl<'input, 'ast> Tac<'input, 'ast> {
                 self.assign(address, expr, block);
                 Expression::Empty
             }
+            Expr::Negate(op, expr) => {
+                // TODO: find correct dec size
+                let u_type = Option::from(&op.node).unwrap();
+                let expr = self.expr_instr(&expr.node, block).unwrap();
+
+                Expression::Unary(u_type, expr)
+            }
             _ => unimplemented!(),
         }
     }
@@ -244,9 +254,22 @@ impl<'input, 'ast> Tac<'input, 'ast> {
         Some(match expr {
             Expr::DecLit(lit) => Address::new_const(Type::I32, lit),
             Expr::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
-            Expr::Ident(ident) => Address::new_copy_name(ident),
+            Expr::Ident(ident) => {
+                if let Some(arg) = self.find_param(ident) {
+                    Address::new_arg(arg)
+                } else {
+                    Address::new_copy_name(ident)
+                }
+            }
             _ => return None,
         })
+    }
+
+    fn find_param(&self, ident: &str) -> Option<Argument> {
+        self.current_params
+            .as_ref()
+            .and_then(|params| params.iter().position(|p| *p == ident))
+            .map(Argument::from)
     }
 
     fn string_lit(&mut self, lit: &'input str) -> Label {

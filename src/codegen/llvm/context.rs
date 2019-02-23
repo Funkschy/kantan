@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, collections::HashMap, ffi::CString, ptr};
 
-use llvm_sys::{analysis::*, core::*, prelude::*};
+use llvm_sys::{analysis::*, core::*, prelude::*, LLVMIntPredicate};
 
 use crate::{
     mir::{address::*, func::Func, tac::*},
@@ -15,6 +15,8 @@ pub struct KantanLLVMContext {
     temp_var_counter: usize,
     // TODO: scopes
     name_table: HashMap<String, LLVMValueRef>,
+    functions: HashMap<String, LLVMValueRef>,
+    current_function: Option<LLVMValueRef>,
     strings: Vec<CString>,
 }
 
@@ -28,6 +30,7 @@ impl KantanLLVMContext {
             let builder = LLVMCreateBuilderInContext(context);
 
             let name_table = HashMap::new();
+            let functions = HashMap::new();
 
             KantanLLVMContext {
                 context,
@@ -35,6 +38,8 @@ impl KantanLLVMContext {
                 module,
                 temp_var_counter: 0,
                 name_table,
+                functions,
+                current_function: None,
                 strings: vec![CString::from_raw(name)],
             }
         }
@@ -80,8 +85,8 @@ impl KantanLLVMContext {
     }
 
     // TODO: params
-    unsafe fn func_type(&self, ret: LLVMTypeRef, _params: &[(&str, Type)]) -> LLVMTypeRef {
-        LLVMFunctionType(ret, ptr::null_mut(), 0, 0)
+    unsafe fn func_type(&mut self, ret: LLVMTypeRef, mut params: Vec<LLVMTypeRef>) -> LLVMTypeRef {
+        LLVMFunctionType(ret, params.as_mut_ptr(), params.len() as u32, 0)
     }
 }
 
@@ -91,7 +96,14 @@ impl KantanLLVMContext {
         unsafe {
             let ret_type = self.convert(function.ret);
             // TODO: params
-            let func_type = self.func_type(ret_type, &[]);
+
+            let params: Vec<LLVMTypeRef> = function
+                .params
+                .iter()
+                .map(|(_, t)| self.convert(*t))
+                .collect();
+
+            let func_type = self.func_type(ret_type, params);
 
             let f = self.add_func(func_type, &function.label);
             self.add_entry_bb(f);
@@ -110,8 +122,12 @@ impl KantanLLVMContext {
         func_type: LLVMTypeRef,
         name: &T,
     ) -> LLVMValueRef {
-        let name = CString::new(name.borrow()).unwrap().into_raw();
+        let n = name.borrow();
+        let name = CString::new(n).unwrap().into_raw();
+
         let f = LLVMAddFunction(self.module, name, func_type);
+        self.current_function = Some(f);
+        self.functions.insert(n.to_owned(), f);
         self.strings.push(CString::from_raw(name));
         f
     }
@@ -131,15 +147,11 @@ impl KantanLLVMContext {
             Instruction::Return(None) => {
                 LLVMBuildRetVoid(self.builder);
             }
-            Instruction::Assignment(a, e) => match a {
-                Address::Name(n) => {
-                    self.translate_mir_expr(e, n);
-                }
-                Address::Temp(t) => {
-                    self.translate_mir_expr(e, &t.to_string());
-                }
-                _ => unimplemented!(),
-            },
+            Instruction::Assignment(a, e) => {
+                let n = a.to_string();
+                let expr = self.translate_mir_expr(e, &n);
+                self.name_table.insert(n.to_owned(), expr);
+            }
             _ => unimplemented!(),
         }
     }
@@ -148,6 +160,7 @@ impl KantanLLVMContext {
         match a {
             Address::Name(n) => self.name_table[n.to_owned()],
             Address::Temp(t) => self.name_table[&t.to_string()],
+            Address::Arg(arg) => LLVMGetParam(self.current_function.unwrap(), arg.into()),
             // TODO: other types
             Address::Const(c) => LLVMConstInt(self.convert(c.ty), c.literal.parse().unwrap(), 1),
             _ => unimplemented!(),
@@ -161,30 +174,69 @@ impl KantanLLVMContext {
                 let left = self.translate_mir_address(l);
                 let right = self.translate_mir_address(r);
                 match ty {
-                    BinaryType::I32(ty) => match ty {
-                        IntBinaryType::Add => {
-                            let n = CString::new(name).unwrap().into_raw();
-                            let add = LLVMBuildAdd(self.builder, left, right, n);
-                            self.strings.push(CString::from_raw(n));
-                            self.name_table.insert(name.to_owned(), add);
-                            add
-                        }
-                        _ => unimplemented!(),
-                    },
-                    _ => unimplemented!(),
+                    BinaryType::I16(ty) | BinaryType::I32(ty) => {
+                        self.int_binary(left, right, *ty, name)
+                    }
                 }
             }
+            Expression::Unary(uop, a) => {
+                let a = self.translate_mir_address(a);
+                let n = CString::new(name).unwrap().into_raw();
+
+                let op = match uop {
+                    UnaryType::I32Negate => LLVMBuildNeg(self.builder, a, n),
+                    UnaryType::BoolNegate => LLVMBuildNot(self.builder, a, n),
+                };
+
+                self.strings.push(CString::from_raw(n));
+                op
+            }
+            Expression::Call(label, args) => {
+                let n = CString::new(name).unwrap().into_raw();
+                let num_args = args.len() as u32;
+
+                let mut args: Vec<LLVMValueRef> =
+                    args.iter().map(|a| self.translate_mir_address(a)).collect();
+
+                let f = self.functions[&label.to_string()];
+                let op = LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, n);
+
+                self.strings.push(CString::from_raw(n));
+                op
+            }
+            Expression::Empty => panic!("Unexpected empty expression"),
             _ => unimplemented!(),
         }
     }
 
-    unsafe fn temp_var(&mut self) -> *mut i8 {
-        let cstr = CString::new(format!("tmp{}", self.temp_var_counter))
-            .unwrap()
-            .into_raw();
-        self.temp_var_counter += 1;
-        self.strings.push(CString::from_raw(cstr));
-        cstr
+    unsafe fn int_binary(
+        &mut self,
+        left: LLVMValueRef,
+        right: LLVMValueRef,
+        ty: IntBinaryType,
+        name: &str,
+    ) -> LLVMValueRef {
+        let n = CString::new(name).unwrap().into_raw();
+
+        let op = match ty {
+            IntBinaryType::Add => LLVMBuildAdd(self.builder, left, right, n),
+            IntBinaryType::Sub => LLVMBuildSub(self.builder, left, right, n),
+            IntBinaryType::Mul => LLVMBuildMul(self.builder, left, right, n),
+            // TODO: signed vs unsigned
+            IntBinaryType::Div => LLVMBuildSDiv(self.builder, left, right, n),
+            IntBinaryType::Eq => {
+                LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntEQ, left, right, n)
+            }
+            IntBinaryType::Smaller => {
+                LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntSLT, left, right, n)
+            }
+            IntBinaryType::SmallerEq => {
+                LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntSLE, left, right, n)
+            }
+        };
+
+        self.strings.push(CString::from_raw(n));
+        op
     }
 }
 

@@ -48,10 +48,16 @@ mod tests {
         let mut cursor = Cursor::new(Vec::default());
 
         let source = "
-            fn main(): i32 {
+            fn f(i: i32): i32 {
                 let x = 20 + 0;
                 let y = x + 20 + 2;
-                return y;
+                let z = y;
+                let v = -i;
+                return z + v;
+            }
+
+            fn main(): i32 {
+                return f(2);
             }
         ";
 
@@ -69,7 +75,7 @@ mod tests {
 
         println!("----------");
 
-        emit_to_file(&funcs, "target/test.asm", &mut cursor);
+        emit_to_file(&funcs, "target/test.s", &mut cursor);
         let inner = cursor.into_inner();
         let len = inner.len();
 
