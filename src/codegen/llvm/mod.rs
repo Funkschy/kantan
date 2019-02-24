@@ -40,7 +40,7 @@ pub fn emit_to_file<W: Write>(functions: &[Func], filename: &str, err_writer: &m
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{compile, Source};
+    use crate::{compile, stdlib, Source};
     use std::io::Cursor;
 
     #[test]
@@ -48,8 +48,10 @@ mod tests {
         let mut cursor = Cursor::new(Vec::default());
 
         let source = "
+            import io
+
             fn f(i: i32): i32 {
-                let x = 20 + 0;
+                let x = 20 + 2;
                 let y = x + 20 + 2;
                 let z = y;
                 let v = -i;
@@ -57,12 +59,22 @@ mod tests {
             }
 
             fn main(): i32 {
+                io.putchar(65);
                 return f(2);
             }
         ";
 
-        let sources = vec![Source::new("main", source)];
-        let funcs = compile(&sources, &mut cursor).unwrap();
+        let io = stdlib().remove(0);
+        let sources = vec![Source::new("main", source), io];
+        let compile_result = compile(&sources, &mut cursor);
+
+        if let Err(err) = compile_result {
+            println!("{}", err);
+            println!("{}", String::from_utf8(cursor.into_inner()).unwrap());
+            panic!("Compilation error");
+        }
+
+        let funcs = compile_result.unwrap();
 
         println!(
             "{}",

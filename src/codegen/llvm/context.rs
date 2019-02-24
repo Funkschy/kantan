@@ -83,15 +83,15 @@ impl KantanLLVMContext {
             _ => unimplemented!("TODO: implement strings"),
         }
     }
-
-    // TODO: params
-    unsafe fn func_type(&mut self, ret: LLVMTypeRef, mut params: Vec<LLVMTypeRef>) -> LLVMTypeRef {
-        LLVMFunctionType(ret, params.as_mut_ptr(), params.len() as u32, 0)
-    }
 }
 
 // TODO: run "memory to register promotion" pass
 impl KantanLLVMContext {
+    // TODO: params
+    unsafe fn func_type(&mut self, ret: LLVMTypeRef, mut params: Vec<LLVMTypeRef>) -> LLVMTypeRef {
+        LLVMFunctionType(ret, params.as_mut_ptr(), params.len() as u32, 0)
+    }
+
     pub fn generate(&mut self, function: &Func) {
         unsafe {
             let ret_type = self.convert(function.ret);
@@ -105,14 +105,17 @@ impl KantanLLVMContext {
 
             let func_type = self.func_type(ret_type, params);
 
-            let f = self.add_func(func_type, &function.label);
-            self.add_entry_bb(f);
+            let f = self.add_func(func_type, &function.label, function.is_extern);
 
-            for b in &function.blocks.blocks {
-                for inst in &b.instructions {
-                    self.translate_mir_instr(inst);
+            if !function.is_extern {
+                self.add_entry_bb(f);
+
+                for b in &function.blocks.blocks {
+                    for inst in &b.instructions {
+                        self.translate_mir_instr(inst);
+                    }
+                    self.translate_mir_instr(&b.terminator);
                 }
-                self.translate_mir_instr(&b.terminator);
             }
         }
     }
@@ -121,14 +124,23 @@ impl KantanLLVMContext {
         &mut self,
         func_type: LLVMTypeRef,
         name: &T,
+        is_extern: bool,
     ) -> LLVMValueRef {
         let n = name.borrow();
-        let name = CString::new(n).unwrap().into_raw();
 
-        let f = LLVMAddFunction(self.module, name, func_type);
+        // TODO: find better solution
+        let real_name = if is_extern {
+            n.split('.').skip(1).nth(0).unwrap()
+        } else {
+            n
+        };
+
+        let real_name = CString::new(real_name).unwrap().into_raw();
+
+        let f = LLVMAddFunction(self.module, real_name, func_type);
         self.current_function = Some(f);
         self.functions.insert(n.to_owned(), f);
-        self.strings.push(CString::from_raw(name));
+        self.strings.push(CString::from_raw(real_name));
         f
     }
 

@@ -48,7 +48,9 @@ where
         let mut top_lvl_decls = vec![];
 
         while self.scanner.peek().is_some() {
-            let decl = self.top_lvl_decl();
+            let is_extern = self.peek_eq(Token::Extern);
+
+            let decl = self.top_lvl_decl(is_extern);
             if let Ok(decl) = decl {
                 top_lvl_decls.push(decl);
             } else if let Err(err) = decl {
@@ -61,11 +63,15 @@ where
         Program(top_lvl_decls)
     }
 
-    fn top_lvl_decl(&mut self) -> TopLvlResult<'input> {
+    fn top_lvl_decl(&mut self, is_extern: bool) -> TopLvlResult<'input> {
         // TODO: error collection
 
         if self.peek_eq(Token::Import) {
             return self.import();
+        }
+
+        if is_extern {
+            self.consume(Token::Extern)?;
         }
 
         self.consume(Token::Fn)?;
@@ -75,12 +81,19 @@ where
         self.consume(Token::Colon)?;
         let ret_type = self.consume_type()?;
 
-        let body = self.block()?;
+        let body = if !is_extern {
+            self.block()?
+        } else {
+            self.consume(Token::Semi)?;
+            Block::default()
+        };
+
         Ok(TopLvl::FnDecl {
             name,
             params,
             body,
             ret_type,
+            is_extern,
         })
     }
 
@@ -549,6 +562,7 @@ mod tests {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 ret_type: Spanned::new(11, 14, Type::Void),
+                is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     28,
@@ -583,6 +597,7 @@ mod tests {
                 },
                 TopLvl::FnDecl {
                     name: Spanned::new(15, 18, "main"),
+                    is_extern: false,
                     ret_type: Spanned::new(23, 26, Type::Void),
                     params: ParamList(vec![]),
                     body: Block(vec![])
@@ -603,6 +618,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
+                is_extern: false,
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
@@ -635,6 +651,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
+                is_extern: false,
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
@@ -660,6 +677,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 5, "err"),
                 ret_type: Spanned::new(10, 13, Type::Void),
+                is_extern: false,
                 params: ParamList(vec![]),
                 body: Block(vec![
                     Stmt::Expr(Spanned {
@@ -693,6 +711,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
+                is_extern: false,
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::VarDecl {
                     name: Spanned::new(22, 24, "var"),
@@ -717,6 +736,7 @@ mod tests {
         assert_eq!(
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
+                is_extern: false,
                 ret_type: Spanned::new(11, 14, Type::Void),
                 params: ParamList(vec![]),
                 body: Block(vec![])
@@ -737,6 +757,7 @@ mod tests {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
                 params: ParamList(vec![]),
+                is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     17,
                     21,

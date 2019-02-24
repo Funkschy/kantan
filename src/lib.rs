@@ -187,6 +187,7 @@ fn tac_functions<'input, 'ast>(
                 body,
                 params,
                 ret_type,
+                is_extern,
             } = top_lvl
             {
                 let name = if *src_name != main {
@@ -198,11 +199,17 @@ fn tac_functions<'input, 'ast>(
                 let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
                 let ret_type = ret_type.node;
 
-                tac.add_function(name, params, &body, ret_type);
+                tac.add_function(name, params, &body, ret_type, *is_extern);
             }
         }
     }
     tac.functions
+}
+
+// TODO: do properly
+pub fn stdlib() -> Vec<Source> {
+    let io = Source::new("io", "extern fn putchar(i: i32): i32;");
+    vec![io]
 }
 
 pub fn compile<'input, W: Write>(

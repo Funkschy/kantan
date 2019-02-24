@@ -44,24 +44,31 @@ impl<'input, 'ast> Tac<'input, 'ast> {
         params: Vec<(&'input str, Type)>,
         body: &Block<'input>,
         ret_type: Type,
+        is_extern: bool,
     ) {
         self.current_params = Some(params.iter().map(|(n, _)| *n).collect());
-        let mut block = self.create_block(&body.0);
-        let add_ret = match block.last() {
-            Some(Instruction::Return(_)) => false,
-            _ => true,
+
+        let f = if !is_extern {
+            let mut block = self.create_block(&body.0);
+            let add_ret = match block.last() {
+                Some(Instruction::Return(_)) => false,
+                _ => true,
+            };
+
+            if add_ret {
+                block.push(Instruction::Return(None));
+            }
+
+            Func::new(
+                name.into(),
+                params,
+                ret_type,
+                BlockMap::from_instructions(block),
+                false,
+            )
+        } else {
+            Func::new(name.into(), params, ret_type, BlockMap::default(), true)
         };
-
-        if add_ret {
-            block.push(Instruction::Return(None));
-        }
-
-        let f = Func::new(
-            name.into(),
-            params,
-            ret_type,
-            BlockMap::from_instructions(block),
-        );
 
         self.functions.push(f);
     }
@@ -353,7 +360,13 @@ mod tests {
         bb.terminator = Instruction::Return(None);
         bm.blocks = vec![bb];
 
-        let expected = vec![Func::new(Label::from("main"), vec![], Type::Void, bm)];
+        let expected = vec![Func::new(
+            Label::from("main"),
+            vec![],
+            Type::Void,
+            bm,
+            false,
+        )];
 
         assert_eq!(expected, funcs);
     }
@@ -423,6 +436,7 @@ mod tests {
             vec![],
             Type::I32,
             bm,
+            false,
         )];
 
         assert_eq!(expected, funcs);
@@ -506,6 +520,7 @@ mod tests {
             vec![],
             Type::I32,
             bm,
+            false,
         )];
 
         assert_eq!(expected, funcs);

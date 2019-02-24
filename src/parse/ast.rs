@@ -15,6 +15,7 @@ pub enum TopLvl<'input> {
         params: ParamList<'input>,
         body: Block<'input>,
         ret_type: Spanned<Type>,
+        is_extern: bool,
     },
     Import {
         name: Spanned<&'input str>,
@@ -46,7 +47,7 @@ pub enum Else<'input> {
     Block(Block<'input>),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Default, Debug, Eq, PartialEq)]
 pub struct Block<'input>(pub Vec<Stmt<'input>>);
 
 #[derive(Debug, Eq, PartialEq)]

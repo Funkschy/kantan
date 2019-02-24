@@ -164,19 +164,20 @@ impl<'input> Lexer<'input> {
         start: CharPos,
         slice: &'input str,
     ) -> Option<Spanned<Token<'input>>> {
-        match slice {
-            "i32" => Some(self.spanned(start, Token::TypeIdent(Type::I32))),
-            "string" => Some(self.spanned(start, Token::TypeIdent(Type::String))),
-            "bool" => Some(self.spanned(start, Token::TypeIdent(Type::Bool))),
-            "void" => Some(self.spanned(start, Token::TypeIdent(Type::Void))),
-            "return" => Some(self.spanned(start, Token::Return)),
-            "let" => Some(self.spanned(start, Token::Let)),
-            "fn" => Some(self.spanned(start, Token::Fn)),
-            "if" => Some(self.spanned(start, Token::If)),
-            "else" => Some(self.spanned(start, Token::Else)),
-            "import" => Some(self.spanned(start, Token::Import)),
-            _ => None,
-        }
+        Some(match slice {
+            "i32" => self.spanned(start, Token::TypeIdent(Type::I32)),
+            "string" => self.spanned(start, Token::TypeIdent(Type::String)),
+            "bool" => self.spanned(start, Token::TypeIdent(Type::Bool)),
+            "void" => self.spanned(start, Token::TypeIdent(Type::Void)),
+            "return" => self.spanned(start, Token::Return),
+            "let" => self.spanned(start, Token::Let),
+            "fn" => self.spanned(start, Token::Fn),
+            "if" => self.spanned(start, Token::If),
+            "else" => self.spanned(start, Token::Else),
+            "import" => self.spanned(start, Token::Import),
+            "extern" => self.spanned(start, Token::Extern),
+            _ => return None,
+        })
     }
 
     fn scan_dec_num(&mut self) -> Scanned<'input> {

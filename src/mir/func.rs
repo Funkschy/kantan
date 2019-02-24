@@ -9,6 +9,7 @@ pub struct Func<'input> {
     pub(crate) params: Vec<(&'input str, Type)>,
     pub(crate) ret: Type,
     pub(crate) blocks: BlockMap<'input>,
+    pub(crate) is_extern: bool,
 }
 
 impl<'input> Func<'input> {
@@ -17,12 +18,14 @@ impl<'input> Func<'input> {
         params: Vec<(&'input str, Type)>,
         ret: Type,
         blocks: BlockMap<'input>,
+        is_extern: bool,
     ) -> Self {
         Func {
             label,
             params,
             ret,
             blocks,
+            is_extern,
         }
     }
 }

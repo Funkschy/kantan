@@ -1,6 +1,6 @@
 use std::{env, error, fs, io};
 
-use kantan::{codegen::llvm::emit_to_file, compile, Source};
+use kantan::{codegen::llvm::emit_to_file, compile, stdlib, Source};
 
 fn main() -> Result<(), Box<dyn error::Error>> {
     let args: Vec<String> = env::args().collect();
@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     let stderr = io::stderr();
     let mut err_writer = stderr.lock();
 
-    let sources = args
+    let mut sources = args
         .iter()
         .skip(1)
         .map(|file_name| {
@@ -26,6 +26,9 @@ fn main() -> Result<(), Box<dyn error::Error>> {
             code,
         })
         .collect::<Vec<Source>>();
+
+    let mut stdlib = stdlib();
+    sources.append(&mut stdlib);
 
     let tac_functions = compile(&sources, &mut err_writer)?;
 

@@ -114,6 +114,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             params,
             body,
             ret_type,
+            is_extern,
             ..
         } = top_lvl
         {
@@ -124,8 +125,10 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 self.sym_table.bind(p.0.node, p.0.span, p.1, true);
             }
 
-            for stmt in &body.0 {
-                self.resolve_stmt(&stmt, errors);
+            if !is_extern {
+                for stmt in &body.0 {
+                    self.resolve_stmt(&stmt, errors);
+                }
             }
 
             self.sym_table.scope_exit();
@@ -440,6 +443,7 @@ mod tests {
                 name: Spanned::new(16, 19, "main"),
                 ret_type: Spanned::new(24, 27, Type::Void),
                 params: ParamList(vec![]),
+                is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     32,
                     34,
@@ -461,6 +465,7 @@ mod tests {
         let test_ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "func"),
             ret_type: Spanned::new(11, 14, Type::Void),
+            is_extern: false,
             params: ParamList(vec![]),
             body: Block(vec![]),
         }]);
@@ -485,6 +490,7 @@ mod tests {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
                 params: ParamList(vec![]),
+                is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     23,
@@ -498,6 +504,7 @@ mod tests {
                 name: Spanned::new(25, 28, "test"),
                 ret_type: Spanned::new(39, 42, Type::Void),
                 params: ParamList(vec![]),
+                is_extern: false,
                 body: Block(vec![]),
             },
         ]);
@@ -520,6 +527,7 @@ mod tests {
             name: Spanned::new(3, 6, "main"),
             ret_type: Spanned::new(11, 14, Type::Void),
             params: ParamList(vec![]),
+            is_extern: false,
             body: Block(vec![Stmt::VarDecl {
                 name: Spanned::new(22, 22, "x"),
                 value: Spanned::new(26, 28, Expr::DecLit("10")),
@@ -546,6 +554,7 @@ mod tests {
             name: Spanned::new(3, 6, "main"),
             ret_type: Spanned::new(11, 14, Type::Void),
             params: ParamList(vec![]),
+            is_extern: false,
             body: Block(vec![
                 Stmt::VarDecl {
                     name: Spanned::new(22, 22, "x"),

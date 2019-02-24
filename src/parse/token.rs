@@ -16,6 +16,7 @@ pub enum Token<'input> {
     Else,
     Import,
     Return,
+    Extern,
 
     // Operators
     Equals, // =
@@ -80,6 +81,8 @@ impl<'input> fmt::Display for Token<'input> {
             Token::Else => write!(f, "else"),
             Token::Import => write!(f, "import"),
             Token::Return => write!(f, "return"),
+            Token::Extern => write!(f, "extern"),
+
             // Operators
             Token::Equals => write!(f, "="),
             Token::Plus => write!(f, "+"),
