@@ -10,10 +10,7 @@ use target::*;
 
 pub fn emit_to_file<W: Write>(functions: &[Func], filename: &str, err_writer: &mut W) {
     let mut ctx = KantanLLVMContext::new("main");
-
-    for function in functions {
-        ctx.generate(function);
-    }
+    ctx.generate(functions);
 
     let arch = ArchType::X86_64;
     let vendor = VendorType::PC;
@@ -24,6 +21,7 @@ pub fn emit_to_file<W: Write>(functions: &[Func], filename: &str, err_writer: &m
             let cstr = CString::from_raw(msg);
             let msg = cstr.to_str().unwrap();
             print_error(msg, err_writer).unwrap();
+            ctx.dump_module();
         }
         return;
     }
