@@ -57,7 +57,18 @@ mod tests {
             }
 
             fn main(): i32 {
-                io.putchar(65);
+                io.putchar(72);
+                io.putchar(101);
+                io.putchar(108);
+                io.putchar(108);
+                io.putchar(111);
+                io.putchar(32);
+                io.putchar(87);
+                io.putchar(111);
+                io.putchar(114);
+                io.putchar(108);
+                io.putchar(100);
+                io.putchar(10);
                 return f(2);
             }
         ";
