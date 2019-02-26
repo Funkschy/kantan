@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
 
     println!("{}", funcs);
 
-    emit_to_file(&tac_functions, "target/test.s", &mut err_writer);
+    emit_to_file(&tac_functions, "test.s", &mut err_writer);
 
     Ok(())
 }
