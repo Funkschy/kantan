@@ -1,6 +1,6 @@
 use std::{ffi::CString, io::Write};
 
-use crate::{mir::func::Func, print_error};
+use crate::{print_error, Mir};
 
 mod context;
 mod target;
@@ -8,9 +8,9 @@ mod target;
 use context::*;
 use target::*;
 
-pub fn emit_to_file<W: Write>(functions: &[Func], filename: &str, err_writer: &mut W) {
+pub fn emit_to_file<W: Write>(mir: &Mir, filename: &str, err_writer: &mut W) {
     let mut ctx = KantanLLVMContext::new("main");
-    ctx.generate(functions);
+    ctx.generate(&mir);
 
     let arch = ArchType::X86_64;
     let vendor = VendorType::PC;
@@ -45,8 +45,10 @@ mod tests {
     fn test_emit_to_file() {
         let mut cursor = Cursor::new(Vec::default());
 
-        let source = "
+        let source = r#"
             import io
+
+            extern fn puts(s: string): i32;
 
             fn f(i: i32): i32 {
                 let x = 20 + 2;
@@ -69,9 +71,12 @@ mod tests {
                 io.putchar(108);
                 io.putchar(100);
                 io.putchar(10);
+                let s = "Hello World";
+                puts(s);
+                puts("test");
                 return f(2);
             }
-        ";
+        "#;
 
         let io = stdlib().remove(0);
         let sources = vec![Source::new("main", source), io];
@@ -83,20 +88,27 @@ mod tests {
             panic!("Compilation error");
         }
 
-        let funcs = compile_result.unwrap();
+        let mir = compile_result.unwrap();
 
-        println!(
-            "{}",
-            funcs
-                .iter()
-                .map(|f| f.to_string())
-                .collect::<Vec<String>>()
-                .join("\n")
-        );
+        let globals = mir
+            .globals
+            .iter()
+            .map(|(k, v)| format!("{} {}", k, v))
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        let funcs = mir
+            .functions
+            .iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        println!("{}\n{}", globals, funcs);
 
         println!("----------");
 
-        emit_to_file(&funcs, "target/test.s", &mut cursor);
+        emit_to_file(&mir, "target/test.s", &mut cursor);
         let inner = cursor.into_inner();
         let len = inner.len();
 

@@ -18,7 +18,7 @@ pub(crate) mod tac;
 pub struct Tac<'input, 'ast> {
     types: &'ast TypeMap<'input, 'ast>,
     pub(crate) functions: Vec<Func<'input>>,
-    literals: HashMap<Label, &'input str>,
+    pub(crate) literals: HashMap<Label, &'input str>,
     temp_count: usize,
     label_count: usize,
     current_params: Option<Vec<&'input str>>,
@@ -322,7 +322,7 @@ mod tests {
         ";
 
         let sources = vec![Source::new("main", source)];
-        let funcs = compile(&sources, &mut cursor).unwrap();
+        let funcs = compile(&sources, &mut cursor).unwrap().functions;
 
         let mut bm = BlockMap::default();
 
@@ -386,7 +386,7 @@ mod tests {
         ";
 
         let sources = vec![Source::new("main", source)];
-        let funcs = compile(&sources, &mut cursor).unwrap();
+        let funcs = compile(&sources, &mut cursor).unwrap().functions;
 
         let mut bm = BlockMap::default();
 
@@ -459,7 +459,7 @@ mod tests {
         ";
 
         let sources = vec![Source::new("main", source)];
-        let funcs = compile(&sources, &mut cursor).unwrap();
+        let funcs = compile(&sources, &mut cursor).unwrap().functions;
 
         let mut bm = BlockMap::default();
 

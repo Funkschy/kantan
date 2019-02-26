@@ -30,17 +30,25 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     let mut stdlib = stdlib();
     sources.append(&mut stdlib);
 
-    let tac_functions = compile(&sources, &mut err_writer)?;
+    let mir = compile(&sources, &mut err_writer)?;
 
-    let funcs = tac_functions
+    let globals = mir
+        .globals
+        .iter()
+        .map(|(k, v)| format!("{} {}", k, v))
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    let funcs = mir
+        .functions
         .iter()
         .map(|f| f.to_string())
         .collect::<Vec<String>>()
         .join("\n");
 
-    println!("{}", funcs);
+    println!("{}\n{}", globals, funcs);
 
-    emit_to_file(&tac_functions, "test.s", &mut err_writer);
+    emit_to_file(&mir, "test.s", &mut err_writer);
 
     Ok(())
 }

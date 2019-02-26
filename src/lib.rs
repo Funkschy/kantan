@@ -1,4 +1,4 @@
-use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
+use std::{borrow::Borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
 
 mod cli;
 #[allow(dead_code)]
@@ -10,7 +10,7 @@ mod resolve;
 mod types;
 
 use self::{
-    mir::{func::Func, Tac},
+    mir::{func::Func, tac::Label, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::{Resolver, TypeMap},
 };
@@ -39,7 +39,7 @@ impl cmp::PartialEq for Source {
 
 impl cmp::Eq for Source {}
 
-impl borrow::Borrow<str> for &Source {
+impl Borrow<str> for &Source {
     fn borrow(&self) -> &str {
         self.name.as_str()
     }
@@ -174,11 +174,17 @@ fn type_check<'input, 'ast, W: Write>(
     Ok(resolver.expr_types)
 }
 
-fn tac_functions<'input, 'ast>(
+#[derive(Debug)]
+pub struct Mir<'input> {
+    pub globals: HashMap<Label, &'input str>,
+    pub functions: Vec<Func<'input>>,
+}
+
+fn construct_tac<'input, 'ast>(
     main: &'input str,
     types: &TypeMap<'input, 'ast>,
     ast_sources: &PrgMap<'input>,
-) -> Vec<Func<'input>> {
+) -> Mir<'input> {
     let mut tac = Tac::new(&types);
     for (src_name, (_, prg)) in ast_sources.iter() {
         for top_lvl in &prg.0 {
@@ -203,7 +209,10 @@ fn tac_functions<'input, 'ast>(
             }
         }
     }
-    tac.functions
+    Mir {
+        globals: tac.literals,
+        functions: tac.functions,
+    }
 }
 
 // TODO: do properly
@@ -215,7 +224,7 @@ pub fn stdlib() -> Vec<Source> {
 pub fn compile<'input, W: Write>(
     sources: &'input [Source],
     writer: &mut W,
-) -> Result<Vec<Func<'input>>, CompilationError> {
+) -> Result<Mir<'input>, CompilationError> {
     init_ansi();
     let (ast_sources, err_count) = ast_sources(sources);
 
@@ -236,7 +245,8 @@ pub fn compile<'input, W: Write>(
 
     let main = main.unwrap();
     let types = type_check(main, &ast_sources, writer)?;
-    let funcs = tac_functions(main, &types, &ast_sources);
 
-    Ok(funcs)
+    let mir = construct_tac(main, &types, &ast_sources);
+
+    Ok(mir)
 }

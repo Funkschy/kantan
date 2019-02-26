@@ -1,11 +1,14 @@
 use std::{borrow::Borrow, collections::HashMap, ffi::CString, ptr};
 
-use llvm_sys::{analysis::*, core::*, prelude::*, LLVMIntPredicate};
+use llvm_sys::{analysis::*, core::*, prelude::*, LLVMIntPredicate, LLVMLinkage, LLVMUnnamedAddr};
 
 use crate::{
-    mir::{address::*, func::Func, tac::*},
+    mir::{address::*, tac::*},
     types::Type,
+    Mir,
 };
+
+const ADDRESS_SPACE: u32 = 0;
 
 pub struct KantanLLVMContext {
     context: LLVMContextRef,
@@ -17,6 +20,8 @@ pub struct KantanLLVMContext {
     name_table: HashMap<String, LLVMValueRef>,
     functions: HashMap<String, LLVMValueRef>,
     current_function: Option<LLVMValueRef>,
+    globals: HashMap<Label, LLVMValueRef>,
+    // TODO: make hashmap to save memory
     strings: Vec<CString>,
 }
 
@@ -31,6 +36,7 @@ impl KantanLLVMContext {
 
             let name_table = HashMap::new();
             let functions = HashMap::new();
+            let globals = HashMap::new();
 
             KantanLLVMContext {
                 context,
@@ -39,6 +45,7 @@ impl KantanLLVMContext {
                 temp_var_counter: 0,
                 name_table,
                 functions,
+                globals,
                 current_function: None,
                 strings: vec![CString::from_raw(name)],
             }
@@ -80,24 +87,34 @@ impl KantanLLVMContext {
             Type::I32 => LLVMInt32TypeInContext(self.context),
             Type::Bool => LLVMInt8TypeInContext(self.context),
             Type::Void => LLVMVoidTypeInContext(self.context),
-            _ => unimplemented!("TODO: implement strings"),
+            Type::String => LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
         }
     }
 }
 
 // TODO: run "memory to register promotion" pass
 impl KantanLLVMContext {
+    unsafe fn cstring(&mut self, string: &str) -> *mut i8 {
+        let cstr = CString::new(string).unwrap().into_raw();
+        self.strings.push(CString::from_raw(cstr));
+        cstr
+    }
+
     // TODO: params
     unsafe fn func_type(&mut self, ret: LLVMTypeRef, mut params: Vec<LLVMTypeRef>) -> LLVMTypeRef {
         LLVMFunctionType(ret, params.as_mut_ptr(), params.len() as u32, 0)
     }
 
-    pub fn generate(&mut self, functions: &[Func]) {
+    pub fn generate(&mut self, mir: &Mir) {
         unsafe {
-            let mut llvm_funcs = Vec::with_capacity(functions.len());
+            for (label, string) in &mir.globals {
+                self.add_global_string(label, string);
+            }
+
+            let mut llvm_funcs = Vec::with_capacity(mir.functions.len());
 
             // Function definitions need to be evaluated first
-            for function in functions {
+            for function in &mir.functions {
                 let ret_type = self.convert(function.ret);
 
                 let params: Vec<LLVMTypeRef> = function
@@ -111,17 +128,17 @@ impl KantanLLVMContext {
                 llvm_funcs.push(f);
             }
 
-            for i in 0..functions.len() {
-                let function = &functions[i];
+            for i in 0..mir.functions.len() {
+                let function = &mir.functions[i];
                 if function.is_extern {
                     continue;
                 }
 
                 let f = llvm_funcs[i];
                 self.current_function = Some(f);
-                self.add_entry_bb(f);
 
                 for b in &function.blocks.blocks {
+                    self.add_entry_bb(f);
                     for inst in &b.instructions {
                         self.translate_mir_instr(inst);
                     }
@@ -129,6 +146,32 @@ impl KantanLLVMContext {
                 }
             }
         }
+    }
+
+    unsafe fn global_string_name(&mut self) -> *mut i8 {
+        let num = self.globals.len();
+        let s = format!(".str{}", num);
+        self.cstring(&s)
+    }
+
+    unsafe fn add_global_string(&mut self, label: &Label, string: &str) {
+        let length = string.len() as u32;
+        let name = self.global_string_name();
+        let string = self.cstring(string);
+
+        let glob_str = LLVMAddGlobal(
+            self.module,
+            LLVMArrayType(LLVMInt8TypeInContext(self.context), length + 1),
+            name,
+        );
+        LLVMSetGlobalConstant(glob_str, true as i32);
+        LLVMSetLinkage(glob_str, LLVMLinkage::LLVMLinkerPrivateLinkage);
+        LLVMSetUnnamedAddress(glob_str, LLVMUnnamedAddr::LLVMGlobalUnnamedAddr);
+
+        let const_string = LLVMConstStringInContext(self.context, string, length, false as i32);
+        LLVMSetInitializer(glob_str, const_string);
+
+        self.globals.insert(label.clone(), glob_str);
     }
 
     unsafe fn add_func<T: Borrow<str>>(
@@ -185,6 +228,20 @@ impl KantanLLVMContext {
             Address::Arg(arg) => LLVMGetParam(self.current_function.unwrap(), arg.into()),
             // TODO: other types
             Address::Const(c) => LLVMConstInt(self.convert(c.ty), c.literal.parse().unwrap(), 1),
+            Address::Global(g) => {
+                let string: LLVMValueRef = self.globals[g];
+
+                let gep = LLVMBuildGEP(
+                    self.builder,
+                    string,
+                    ptr::null_mut(),
+                    0,
+                    self.cstring("geptmp"),
+                );
+
+                let ptr = LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE);
+                LLVMBuildPointerCast(self.builder, gep, ptr, self.cstring("tmpstring"))
+            }
             _ => unimplemented!(),
         }
     }
@@ -264,6 +321,8 @@ impl KantanLLVMContext {
 
 impl Drop for KantanLLVMContext {
     fn drop(&mut self) {
+        // TODO: remove
+        println!("Dropping the bass");
         unsafe {
             LLVMDisposeBuilder(self.builder);
             LLVMDisposeModule(self.module);

@@ -40,6 +40,10 @@ impl<'input> fmt::Display for Func<'input> {
             .collect::<Vec<String>>()
             .join(", ");
 
+        if self.is_extern {
+            return write!(f, "extern fn {}({}): {};", self.label, params, self.ret);
+        }
+
         let instructions = self
             .blocks
             .blocks
