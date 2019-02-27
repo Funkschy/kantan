@@ -1,8 +1,6 @@
-use std::str::CharIndices;
+use std::{iter::Peekable, str::CharIndices};
 
-use super::error::*;
-use super::token::*;
-use super::*;
+use super::{error::*, token::*, *};
 use crate::types::Type;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -21,14 +19,14 @@ impl InputPos {
 
 pub struct Lexer<'input> {
     src: &'input str,
-    chars: CharIndices<'input>,
+    chars: Peekable<CharIndices<'input>>,
     current: Option<InputPos>,
     prev: Option<char>,
 }
 
 impl<'input> Lexer<'input> {
     pub fn new(src: &'input str) -> Self {
-        let mut chars = src.char_indices();
+        let mut chars = src.char_indices().peekable();
 
         Lexer {
             src,
@@ -222,7 +220,13 @@ impl<'input> Lexer<'input> {
             '+' => consume_single!(self, start, Token::Plus),
             '-' => consume_single!(self, start, Token::Minus),
             '*' => consume_single!(self, start, Token::Star),
-            '/' => consume_single!(self, start, Token::Slash),
+            '/' => {
+                if let Some((_, '/')) = self.chars.peek() {
+                    self.read_while(|c| c != '\n');
+                    return self.scan_token();
+                }
+                consume_single!(self, start, Token::Slash)
+            }
             ':' => consume_single!(self, start, Token::Colon),
             ';' => consume_single!(self, start, Token::Semi),
             '(' => consume_single!(self, start, Token::LParen),
@@ -258,6 +262,24 @@ impl<'input> Iterator for Lexer<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_comments_are_ignored() {
+        let source = "1 + //
+            2";
+
+        let lexer = Lexer::new(&source);
+
+        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        assert_eq!(
+            vec![
+                Spanned::new(0, 1, Token::DecLit("1")),
+                Spanned::new(2, 2, Token::Plus),
+                Spanned::new(19, 19, Token::DecLit("2")),
+            ],
+            tokens
+        );
+    }
 
     #[test]
     fn test_scan_smaller_and_smaller_equals() {
