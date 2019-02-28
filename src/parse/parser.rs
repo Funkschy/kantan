@@ -1,4 +1,4 @@
-use std::iter::Peekable;
+use std::{cell::Cell, iter::Peekable};
 
 use super::{ast::*, error::LexError, token::*, *};
 use crate::types::Type;
@@ -220,6 +220,8 @@ where
         } else {
             None
         };
+
+        let ty = Cell::new(ty);
 
         let eq = self.consume(Token::Equals)?;
 
@@ -717,7 +719,7 @@ mod tests {
                     name: Spanned::new(22, 24, "var"),
                     value: Spanned::new(28, 28, Expr::DecLit("5")),
                     eq: Spanned::new(26, 26, Token::Equals),
-                    ty: None
+                    ty: Cell::new(None)
                 }])
             }]),
             prg

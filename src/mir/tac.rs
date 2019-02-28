@@ -79,6 +79,8 @@ impl<'input> Into<Instruction<'input>> for Label {
 
 #[derive(PartialEq, Debug)]
 pub enum Instruction<'input> {
+    /// let x: i32
+    Decl(Address<'input>, Type),
     /// x = <expr>
     Assignment(Address<'input>, Expression<'input>),
     /// goto l
@@ -98,6 +100,7 @@ impl<'input> fmt::Display for Instruction<'input> {
         use Instruction::*;
 
         let s = match self {
+            Decl(name, ty) => format!("let {}: {};", name, ty),
             Assignment(a, e) => format!("{} = {};", a, e),
             Jmp(l) => format!("goto {};", l),
             JmpIf(a, l0, l1) => format!("if {} goto {} else goto {};", a, l0, l1),

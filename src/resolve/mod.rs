@@ -15,14 +15,10 @@ mod error;
 #[allow(dead_code)]
 pub mod symbol;
 
-pub type TypeMap<'input, 'ast> = HashMap<(Span, &'ast Expr<'input>), Type>;
-
 pub(crate) struct Resolver<'input, 'ast> {
     current_name: &'input str,
     programs: &'ast PrgMap<'input>,
     resolved: HashSet<&'input str>,
-    // use tuple, because Spanned::hash only considers node
-    pub expr_types: TypeMap<'input, 'ast>,
     sym_table: SymbolTable<'input>,
     functions: HashMap<String, Type>,
     current_func_ret_type: Spanned<Type>,
@@ -33,7 +29,6 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         Resolver {
             current_name: main_file,
             programs,
-            expr_types: HashMap::new(),
             resolved: HashSet::new(),
             sym_table: SymbolTable::new(),
             functions: HashMap::new(),
@@ -44,15 +39,11 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
 impl<'input, 'ast> Resolver<'input, 'ast> {
     pub fn resolve(&mut self) -> Vec<ResolveError<'input>> {
-        let (_, prg) = &self.programs[self.current_name];
-        self.resolve_prg(prg, None)
+        self.resolve_prg(self.current_name, None)
     }
 
-    fn resolve_prg(
-        &mut self,
-        prg: &'ast Program<'input>,
-        prefix: Option<&str>,
-    ) -> Vec<ResolveError<'input>> {
+    fn resolve_prg(&mut self, name: &str, prefix: Option<&str>) -> Vec<ResolveError<'input>> {
+        let (_, prg) = self.programs.get(name).unwrap();
         let mut errors = vec![];
 
         for top_lvl in &prg.0 {
@@ -90,11 +81,11 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                         expr_span: name.span,
                     });
                 } else if !self.resolved.contains(name.node) {
-                    if let Some((_, prg)) = self.programs.get(name.node) {
+                    if self.programs.contains_key(name.node) {
                         let current_name = self.current_name;
                         self.current_name = name.node;
                         self.resolved.insert(name.node);
-                        self.resolve_prg(prg, Some(name.node));
+                        self.resolve_prg(name.node, Some(name.node));
                         self.current_name = current_name;
                     }
                 } else {
@@ -107,12 +98,12 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
     fn resolve_top_lvl(
         &mut self,
-        top_lvl: &'ast TopLvl<'input>,
+        top_lvl: &TopLvl<'input>,
         errors: &mut Vec<ResolveError<'input>>,
     ) {
         if let TopLvl::FnDecl {
             params,
-            body,
+            ref body,
             ret_type,
             is_extern,
             ..
@@ -125,7 +116,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 self.sym_table.bind(p.0.node, p.0.span, p.1, true);
             }
 
-            if !is_extern {
+            if !*is_extern {
                 for stmt in &body.0 {
                     self.resolve_stmt(&stmt, errors);
                 }
@@ -135,22 +126,22 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         }
     }
 
-    fn resolve_stmt(&mut self, stmt: &'ast Stmt<'input>, errors: &mut Vec<ResolveError<'input>>) {
+    fn resolve_stmt(&mut self, stmt: &Stmt<'input>, errors: &mut Vec<ResolveError<'input>>) {
         match stmt {
             Stmt::VarDecl {
                 name,
                 ref value,
                 eq,
-                ty: var_type,
+                ty: ref var_type,
             } => {
                 match self.resolve_expr(value.span, &value.node) {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => {
-                        if let Some(var_type) = var_type {
+                        if let Some(var_type) = var_type.get() {
                             let expr_span = Span::new(name.span.start, value.span.end);
                             // If a type was provided, check if it's one of the builtin types
                             if let Err(err) = self
-                                .compare_types(eq.span, expr_span, var_type.node, ty)
+                                .compare_types(eq.span, expr_span, var_type.borrow().node, ty)
                                 .map(|_| self.sym_table.bind(name.node, name.span, ty, false))
                                 .map_err(
                                     |ResolveError {
@@ -168,6 +159,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                                 errors.push(err);
                             }
                         } else {
+                            let insert_ty = Some(Spanned::new(0, 0, ty));
+                            var_type.set(insert_ty);
                             self.sym_table.bind(name.node, name.span, ty, false)
                         }
                     }
@@ -233,9 +226,9 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
     fn resolve_expr(
         &mut self,
         span: Span,
-        expr: &'ast Expr<'input>,
+        expr: &Expr<'input>,
     ) -> Result<Type, ResolveError<'input>> {
-        let ty = match &expr {
+        match &expr {
             Expr::Error(_) => {
                 unreachable!("If errors occur during parsing, the program should not be resolved")
             }
@@ -318,13 +311,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
                 Ok(*func_type)
             }
-        };
-
-        if let Ok(ty) = ty {
-            self.expr_types.insert((span, expr), ty);
         }
-
-        ty
     }
 }
 
@@ -429,6 +416,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 mod tests {
     use super::*;
     use crate::parse::token::Token;
+    use std::cell::Cell;
 
     #[test]
     fn test_resolve_should_find_imported_fn() {
@@ -532,7 +520,7 @@ mod tests {
                 name: Spanned::new(22, 22, "x"),
                 value: Spanned::new(26, 28, Expr::DecLit("10")),
                 eq: Spanned::new(24, 24, Token::Equals),
-                ty: None,
+                ty: Cell::new(None),
             }]),
         }]);
 
@@ -560,7 +548,7 @@ mod tests {
                     name: Spanned::new(22, 22, "x"),
                     value: Spanned::new(26, 28, Expr::DecLit("10")),
                     eq: Spanned::new(24, 24, Token::Equals),
-                    ty: None,
+                    ty: Cell::new(None),
                 },
                 Stmt::Expr(Spanned::new(
                     30,

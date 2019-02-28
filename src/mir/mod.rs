@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use super::{parse::ast::*, resolve::TypeMap, types::Type, Spanned};
+use super::{parse::ast::*, types::Type, Spanned};
 use address::{Address, Argument};
 use blockmap::BlockMap;
 use func::Func;
@@ -15,8 +15,7 @@ pub(crate) mod func;
 pub(crate) mod tac;
 
 #[derive(Debug)]
-pub struct Tac<'input, 'ast> {
-    types: &'ast TypeMap<'input, 'ast>,
+pub struct Tac<'input> {
     pub(crate) functions: Vec<Func<'input>>,
     pub(crate) literals: HashMap<Label, &'input str>,
     temp_count: usize,
@@ -24,10 +23,9 @@ pub struct Tac<'input, 'ast> {
     current_params: Option<Vec<&'input str>>,
 }
 
-impl<'input, 'ast> Tac<'input, 'ast> {
-    pub fn new(types: &'ast TypeMap<'input, 'ast>) -> Self {
+impl<'input> Tac<'input> {
+    pub fn new() -> Self {
         Tac {
-            types,
             functions: vec![],
             literals: HashMap::new(),
             temp_count: 0,
@@ -37,7 +35,7 @@ impl<'input, 'ast> Tac<'input, 'ast> {
     }
 }
 
-impl<'input, 'ast> Tac<'input, 'ast> {
+impl<'input> Tac<'input> {
     pub fn add_function(
         &mut self,
         name: String,
@@ -81,14 +79,19 @@ impl<'input, 'ast> Tac<'input, 'ast> {
                 Stmt::Expr(e) => {
                     self.expr_instr(&e.node, &mut block);
                 }
-                Stmt::VarDecl { name, value, .. } => {
+                Stmt::VarDecl {
+                    name, value, ty, ..
+                } => {
                     let expr = if let Some(rval) = self.rvalue(&value.node) {
                         rval.into()
                     } else {
                         self.expr(&value.node, &mut block)
                     };
 
-                    let address = name.node.into();
+                    let address: Address = name.node.into();
+                    // Unwrapping is safe, because the typechecker inserted the type
+                    block.push(Instruction::Decl(address.clone(), ty.get().unwrap().node));
+
                     self.assign(address, expr, &mut block);
                 }
                 Stmt::Return(e) => {
@@ -330,10 +333,12 @@ mod tests {
 
         let mut bb = BasicBlock::default();
         bb.instructions = vec![
+            Instruction::Decl(Address::Name("x"), Type::I32),
             Instruction::Assignment(
                 Address::Name("x"),
                 Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
             ),
+            Instruction::Decl(Address::Name("y"), Type::I32),
             Instruction::Assignment(
                 Address::Name("y"),
                 Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
@@ -346,6 +351,7 @@ mod tests {
                     Address::Name("y"),
                 ),
             ),
+            Instruction::Decl(Address::Name("z"), Type::I32),
             Instruction::Assignment(
                 Address::Name("z"),
                 Expression::Binary(
@@ -396,6 +402,7 @@ mod tests {
 
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
+            Instruction::Decl(Address::Name("x"), Type::I32),
             Instruction::Assignment(
                 Address::Name("x"),
                 Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
@@ -470,6 +477,7 @@ mod tests {
 
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
+            Instruction::Decl(Address::Name("x"), Type::I32),
             Instruction::Assignment(
                 Address::Name("x"),
                 Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),

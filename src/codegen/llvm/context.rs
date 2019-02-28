@@ -21,6 +21,7 @@ pub struct KantanLLVMContext {
     functions: HashMap<String, LLVMValueRef>,
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
+    blocks: HashMap<Label, LLVMBasicBlockRef>,
     // TODO: make hashmap to save memory
     strings: Vec<CString>,
 }
@@ -37,6 +38,7 @@ impl KantanLLVMContext {
             let name_table = HashMap::new();
             let functions = HashMap::new();
             let globals = HashMap::new();
+            let blocks = HashMap::new();
 
             KantanLLVMContext {
                 context,
@@ -46,6 +48,7 @@ impl KantanLLVMContext {
                 name_table,
                 functions,
                 globals,
+                blocks,
                 current_function: None,
                 strings: vec![CString::from_raw(name)],
             }
@@ -128,8 +131,7 @@ impl KantanLLVMContext {
                 llvm_funcs.push(f);
             }
 
-            for i in 0..mir.functions.len() {
-                let function = &mir.functions[i];
+            for (i, function) in mir.functions.iter().enumerate() {
                 if function.is_extern {
                     continue;
                 }
@@ -137,8 +139,23 @@ impl KantanLLVMContext {
                 let f = llvm_funcs[i];
                 self.current_function = Some(f);
 
-                for b in &function.blocks.blocks {
-                    self.add_entry_bb(f);
+                let mut bbs = Vec::with_capacity(function.blocks.blocks.len());
+                bbs.push(self.add_bb(f, "entry"));
+
+                for b in function.blocks.blocks.iter().skip(1) {
+                    if let Instruction::Label(label) = &b.instructions[0] {
+                        let name: &str = label.borrow();
+                        let bb_ref = self.add_bb(f, name);
+                        self.blocks.insert(label.clone(), bb_ref);
+                        bbs.push(bb_ref);
+                    } else {
+                        panic!("No label");
+                    }
+                }
+
+                for (j, b) in function.blocks.blocks.iter().enumerate() {
+                    LLVMPositionBuilderAtEnd(self.builder, bbs[j]);
+
                     for inst in &b.instructions {
                         self.translate_mir_instr(inst);
                     }
@@ -189,19 +206,16 @@ impl KantanLLVMContext {
             n
         };
 
-        let real_name = CString::new(real_name).unwrap().into_raw();
+        let real_name = self.cstring(real_name);
 
         let f = LLVMAddFunction(self.module, real_name, func_type);
         self.functions.insert(n.to_owned(), f);
-        self.strings.push(CString::from_raw(real_name));
         f
     }
 
-    unsafe fn add_entry_bb(&mut self, f: LLVMValueRef) {
-        let entry = CString::new("entry").unwrap().into_raw();
-        let bb = LLVMAppendBasicBlockInContext(self.context, f, entry);
-        LLVMPositionBuilderAtEnd(self.builder, bb);
-        self.strings.push(CString::from_raw(entry));
+    unsafe fn add_bb(&mut self, f: LLVMValueRef, name: &str) -> LLVMBasicBlockRef {
+        let name = self.cstring(name);
+        LLVMAppendBasicBlockInContext(self.context, f, name)
     }
 
     unsafe fn translate_mir_instr(&mut self, instr: &Instruction) {
@@ -212,18 +226,46 @@ impl KantanLLVMContext {
             Instruction::Return(None) => {
                 LLVMBuildRetVoid(self.builder);
             }
+            Instruction::Decl(a, ty) => {
+                let ty = self.convert(*ty);
+                let n = a.to_string();
+
+                let stack = LLVMBuildAlloca(self.builder, ty, self.cstring(&n));
+
+                self.name_table.insert(n, stack);
+            }
             Instruction::Assignment(a, e) => {
                 let n = a.to_string();
                 let expr = self.translate_mir_expr(e, &n);
-                self.name_table.insert(n.to_owned(), expr);
+
+                if let Some(ptr) = self.name_table.get(&n) {
+                    LLVMBuildStore(self.builder, expr, *ptr);
+                } else {
+                    self.name_table.insert(n, expr);
+                }
             }
-            _ => unimplemented!(),
+            Instruction::Jmp(l) => {
+                let bb_ref = self.blocks[l];
+                LLVMBuildBr(self.builder, bb_ref);
+            }
+            Instruction::JmpIf(a, then_label, else_label) => {
+                let cond = self.translate_mir_address(a);
+                let then_bb_ref = self.blocks[then_label];
+                let else_bb_ref = self.blocks[else_label];
+                LLVMBuildCondBr(self.builder, cond, then_bb_ref, else_bb_ref);
+            }
+            Instruction::Label(_) => {}
+            _ => unimplemented!("{}", instr),
         }
     }
 
     unsafe fn translate_mir_address(&mut self, a: &Address) -> LLVMValueRef {
         match a {
-            Address::Name(n) => self.name_table[n.to_owned()],
+            Address::Name(n) => LLVMBuildLoad(
+                self.builder,
+                self.name_table[n.to_owned()],
+                self.cstring("tmp"),
+            ),
             Address::Temp(t) => self.name_table[&t.to_string()],
             Address::Arg(arg) => LLVMGetParam(self.current_function.unwrap(), arg.into()),
             // TODO: other types

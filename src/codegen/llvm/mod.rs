@@ -16,6 +16,9 @@ pub fn emit_to_file<W: Write>(mir: &Mir, filename: &str, err_writer: &mut W) {
     let vendor = VendorType::PC;
     let os = OsType::GnuLinux;
 
+    // TODO: remove
+    ctx.dump_module();
+
     if let Err(msg) = ctx.verify_module() {
         unsafe {
             let cstr = CString::from_raw(msg);
@@ -25,9 +28,6 @@ pub fn emit_to_file<W: Write>(mir: &Mir, filename: &str, err_writer: &mut W) {
         }
         return;
     }
-
-    // TODO: remove
-    ctx.dump_module();
 
     let target = Target::new(TargetTriple::new(arch, vendor, os)).unwrap();
     let tm = TargetMachine::new(target, CpuType::Generic, CodeGenOptLevel::OptNone);
@@ -48,8 +48,6 @@ mod tests {
         let source = r#"
             import io
 
-            extern fn puts(s: string): i32;
-
             fn f(i: i32): i32 {
                 let x = 20 + 2;
                 let y = x + 20 + 2;
@@ -59,21 +57,9 @@ mod tests {
             }
 
             fn main(): i32 {
-                io.putchar(72);
-                io.putchar(101);
-                io.putchar(108);
-                io.putchar(108);
-                io.putchar(111);
-                io.putchar(32);
-                io.putchar(87);
-                io.putchar(111);
-                io.putchar(114);
-                io.putchar(108);
-                io.putchar(100);
-                io.putchar(10);
                 let s = "Hello World";
-                puts(s);
-                puts("test");
+                io.puts(s);
+                io.puts("test");
                 return f(2);
             }
         "#;

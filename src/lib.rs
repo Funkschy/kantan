@@ -12,7 +12,7 @@ mod types;
 use self::{
     mir::{func::Func, tac::Label, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
-    resolve::{Resolver, TypeMap},
+    resolve::Resolver,
 };
 
 pub(crate) use self::cli::*;
@@ -154,12 +154,12 @@ fn find_main<'input>(ast_sources: &PrgMap<'input>) -> Option<&'input str> {
         .map(|(src, _)| *src)
 }
 
-fn type_check<'input, 'ast, W: Write>(
+fn type_check<'input, W: Write>(
     main: &'input str,
-    ast_sources: &'ast PrgMap<'input>,
+    ast_sources: &mut PrgMap<'input>,
     writer: &mut W,
-) -> Result<TypeMap<'input, 'ast>, CompilationError> {
-    let mut resolver = Resolver::new(main, &ast_sources);
+) -> Result<(), CompilationError> {
+    let mut resolver = Resolver::new(main, ast_sources);
     let errors: Vec<String> = resolver
         .resolve()
         .iter()
@@ -171,7 +171,7 @@ fn type_check<'input, 'ast, W: Write>(
         return Err(CompilationError::TypeCheckError);
     }
 
-    Ok(resolver.expr_types)
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -180,12 +180,8 @@ pub struct Mir<'input> {
     pub functions: Vec<Func<'input>>,
 }
 
-fn construct_tac<'input, 'ast>(
-    main: &'input str,
-    types: &TypeMap<'input, 'ast>,
-    ast_sources: &PrgMap<'input>,
-) -> Mir<'input> {
-    let mut tac = Tac::new(&types);
+fn construct_tac<'input>(main: &'input str, ast_sources: &PrgMap<'input>) -> Mir<'input> {
+    let mut tac = Tac::new();
     for (src_name, (_, prg)) in ast_sources.iter() {
         for top_lvl in &prg.0 {
             if let TopLvl::FnDecl {
@@ -217,7 +213,11 @@ fn construct_tac<'input, 'ast>(
 
 // TODO: do properly
 pub fn stdlib() -> Vec<Source> {
-    let io = Source::new("io", "extern fn putchar(i: i32): i32;");
+    let io = Source::new(
+        "io",
+        "extern fn putchar(i: i32): i32; 
+         extern fn puts(s: string): i32;",
+    );
     vec![io]
 }
 
@@ -226,7 +226,7 @@ pub fn compile<'input, W: Write>(
     writer: &mut W,
 ) -> Result<Mir<'input>, CompilationError> {
     init_ansi();
-    let (ast_sources, err_count) = ast_sources(sources);
+    let (mut ast_sources, err_count) = ast_sources(sources);
 
     if err_count != 0 {
         for (source, ast) in ast_sources.values() {
@@ -244,9 +244,9 @@ pub fn compile<'input, W: Write>(
     }
 
     let main = main.unwrap();
-    let types = type_check(main, &ast_sources, writer)?;
+    type_check(main, &mut ast_sources, writer)?;
 
-    let mir = construct_tac(main, &types, &ast_sources);
+    let mir = construct_tac(main, &ast_sources);
 
     Ok(mir)
 }

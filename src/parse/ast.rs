@@ -1,8 +1,6 @@
-use std::fmt;
+use std::{cell::Cell, fmt};
 
-use super::error::ParseError;
-use super::token::Token;
-use super::Spanned;
+use super::{error::ParseError, token::Token, Spanned};
 use crate::types::Type;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -30,7 +28,8 @@ pub enum Stmt<'input> {
         name: Spanned<&'input str>,
         value: Spanned<Expr<'input>>,
         eq: Spanned<Token<'input>>,
-        ty: Option<Spanned<Type>>,
+        // is filled in by resolver if necessary
+        ty: Cell<Option<Spanned<Type>>>,
     },
     If {
         condition: Spanned<Expr<'input>>,
