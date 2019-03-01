@@ -57,10 +57,14 @@ mod tests {
             }
 
             fn main(): i32 {
-                let s = "Hello World";
+                let s = "";
+                if f(2) == 42 {
+                    s = "Hello World";
+                } else {
+                    s = "test";
+                }
                 io.puts(s);
-                io.puts("test");
-                return f(2);
+                return 0;
             }
         "#;
 
