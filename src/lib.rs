@@ -12,7 +12,7 @@ mod types;
 use self::{
     mir::{func::Func, tac::Label, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
-    resolve::Resolver,
+    resolve::{symbol::SymbolTable, Resolver},
 };
 
 pub(crate) use self::cli::*;
@@ -158,7 +158,7 @@ fn type_check<'input, W: Write>(
     main: &'input str,
     ast_sources: &mut PrgMap<'input>,
     writer: &mut W,
-) -> Result<(), CompilationError> {
+) -> Result<SymbolTable<'input>, CompilationError> {
     let mut resolver = Resolver::new(main, ast_sources);
     let errors: Vec<String> = resolver
         .resolve()
@@ -171,7 +171,7 @@ fn type_check<'input, W: Write>(
         return Err(CompilationError::TypeCheckError);
     }
 
-    Ok(())
+    Ok(resolver.sym_table)
 }
 
 #[derive(Debug)]
@@ -180,8 +180,12 @@ pub struct Mir<'input> {
     pub functions: Vec<Func<'input>>,
 }
 
-fn construct_tac<'input>(main: &'input str, ast_sources: &PrgMap<'input>) -> Mir<'input> {
-    let mut tac = Tac::new();
+fn construct_tac<'input>(
+    main: &'input str,
+    ast_sources: &PrgMap<'input>,
+    symbols: SymbolTable<'input>,
+) -> Mir<'input> {
+    let mut tac = Tac::new(symbols);
     for (src_name, (_, prg)) in ast_sources.iter() {
         for top_lvl in &prg.0 {
             if let TopLvl::FnDecl {
@@ -244,9 +248,9 @@ pub fn compile<'input, W: Write>(
     }
 
     let main = main.unwrap();
-    type_check(main, &mut ast_sources, writer)?;
+    let symbols = type_check(main, &mut ast_sources, writer)?;
 
-    let mir = construct_tac(main, &ast_sources);
+    let mir = construct_tac(main, &ast_sources, symbols);
 
     Ok(mir)
 }

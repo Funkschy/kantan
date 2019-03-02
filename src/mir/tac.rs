@@ -107,7 +107,7 @@ impl<'input> fmt::Display for Instruction<'input> {
             Return(Some(a)) => format!("return {};", a),
             Return(None) => "return;".to_string(),
             Label(l) => format!("{}:", l),
-            Nop => "nop".to_string(),
+            Nop => "nop".to_owned(),
         };
 
         write!(f, "{}", s)

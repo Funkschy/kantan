@@ -19,7 +19,7 @@ pub(crate) struct Resolver<'input, 'ast> {
     current_name: &'input str,
     programs: &'ast PrgMap<'input>,
     resolved: HashSet<&'input str>,
-    sym_table: SymbolTable<'input>,
+    pub(crate) sym_table: SymbolTable<'input>,
     functions: HashMap<String, Type>,
     current_func_ret_type: Spanned<Type>,
 }
@@ -169,7 +169,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             Stmt::If {
                 condition,
                 then_block,
-                ..
+                else_branch,
             } => {
                 match self.resolve_expr(condition.span, &condition.node) {
                     Err(msg) => errors.push(msg),
@@ -186,8 +186,29 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     }
                 }
 
+                self.sym_table.scope_enter();
                 for stmt in &then_block.0 {
                     self.resolve_stmt(&stmt, errors);
+                }
+                self.sym_table.scope_exit();
+
+                if let Some(else_branch) = else_branch {
+                    match else_branch.as_ref() {
+                        Else::IfStmt(s) => {
+                            if let Stmt::If { .. } = s {
+                                self.resolve_stmt(s, errors);
+                            } else {
+                                panic!("Only if statement allowed here");
+                            }
+                        }
+                        Else::Block(b) => {
+                            self.sym_table.scope_enter();
+                            for stmt in &b.0 {
+                                self.resolve_stmt(&stmt, errors);
+                            }
+                            self.sym_table.scope_exit();
+                        }
+                    }
                 }
             }
             Stmt::Return(expr) => {

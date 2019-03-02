@@ -16,7 +16,6 @@ pub struct KantanLLVMContext {
     // TODO: we probably want separate Modules
     module: LLVMModuleRef,
     temp_var_counter: usize,
-    // TODO: scopes
     name_table: HashMap<String, LLVMValueRef>,
     functions: HashMap<String, LLVMValueRef>,
     current_function: Option<LLVMValueRef>,
@@ -261,11 +260,9 @@ impl KantanLLVMContext {
 
     unsafe fn translate_mir_address(&mut self, a: &Address) -> LLVMValueRef {
         match a {
-            Address::Name(n) => LLVMBuildLoad(
-                self.builder,
-                self.name_table[n.to_owned()],
-                self.cstring("tmp"),
-            ),
+            Address::Name(n) => {
+                LLVMBuildLoad(self.builder, self.name_table[n], self.cstring("tmp"))
+            }
             Address::Temp(t) => self.name_table[&t.to_string()],
             Address::Arg(arg) => LLVMGetParam(self.current_function.unwrap(), arg.into()),
             // TODO: other types

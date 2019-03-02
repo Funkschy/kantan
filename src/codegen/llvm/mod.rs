@@ -26,7 +26,7 @@ pub fn emit_to_file<W: Write>(mir: &Mir, filename: &str, err_writer: &mut W) {
             print_error(msg, err_writer).unwrap();
             ctx.dump_module();
         }
-        return;
+        panic!("Error while verifying");
     }
 
     let target = Target::new(TargetTriple::new(arch, vendor, os)).unwrap();
@@ -58,13 +58,16 @@ mod tests {
 
             fn main(): i32 {
                 let s = "";
+                let x = 0;
                 if f(2) == 42 {
                     s = "Hello World";
+                    let x = 5;
                 } else {
                     s = "test";
+                    let x = "test";
                 }
                 io.puts(s);
-                return 0;
+                return x;
             }
         "#;
 

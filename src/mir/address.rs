@@ -5,7 +5,7 @@ use crate::types::Type;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Address<'input> {
-    Name(&'input str),
+    Name(String),
     Arg(Argument),
     Const(Constant<'input>),
     CompConst(CompilerConstant),
@@ -36,9 +36,9 @@ impl<'input> Into<Expression<'input>> for Address<'input> {
     }
 }
 
-impl<'input> From<&'input str> for Address<'input> {
-    fn from(value: &'input str) -> Self {
-        Address::Name(value)
+impl<'input> From<&String> for Address<'input> {
+    fn from(value: &String) -> Self {
+        Address::Name(value.clone())
     }
 }
 
@@ -51,7 +51,7 @@ impl<'input> Address<'input> {
         Address::Global(label)
     }
 
-    pub fn new_copy_name(name: &'input str) -> Self {
+    pub fn new_copy_name(name: String) -> Self {
         Address::Name(name)
     }
 
