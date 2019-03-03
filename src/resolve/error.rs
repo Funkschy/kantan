@@ -65,7 +65,7 @@ impl<'input> fmt::Display for ResolveError<'input> {
             }) => format_error(
                 self.source,
                 self.expr_span,
-                self.expr_span,
+                self.err_span,
                 &format!(
                     "{} must be of type '{}', but the supplied type was '{}'",
                     name, expected_type, actual_type

@@ -15,12 +15,18 @@ mod error;
 #[allow(dead_code)]
 pub mod symbol;
 
+#[derive(Clone)]
+struct FunctionDefinition {
+    ret_type: Type,
+    params: Vec<Type>,
+}
+
 pub(crate) struct Resolver<'input, 'ast> {
     current_name: &'input str,
     programs: &'ast PrgMap<'input>,
     resolved: HashSet<&'input str>,
     pub(crate) sym_table: SymbolTable<'input>,
-    functions: HashMap<String, Type>,
+    functions: HashMap<String, FunctionDefinition>,
     current_func_ret_type: Spanned<Type>,
 }
 
@@ -64,13 +70,23 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         prefix: Option<&str>,
     ) {
         match top_lvl {
-            // TODO: check params
-            TopLvl::FnDecl { name, ret_type, .. } => {
+            TopLvl::FnDecl {
+                name,
+                ret_type,
+                params,
+                ..
+            } => {
                 let name = prefix
                     .map(|prefix| format!("{}.{}", prefix, name.node))
                     .unwrap_or_else(|| name.node.to_owned());
 
-                self.functions.insert(name, ret_type.node);
+                let func_params = params.0.iter().map(|Param(_, ty)| *ty).collect();
+                let func_def = FunctionDefinition {
+                    ret_type: ret_type.node,
+                    params: func_params,
+                };
+
+                self.functions.insert(name, func_def);
             }
             TopLvl::Import { name, .. } => {
                 if name.node == self.current_name {
@@ -141,7 +157,12 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                             let expr_span = Span::new(name.span.start, value.span.end);
                             // If a type was provided, check if it's one of the builtin types
                             if let Err(err) = self
-                                .compare_types(eq.span, expr_span, var_type.borrow().node, ty)
+                                .compare_binary_types(
+                                    eq.span,
+                                    expr_span,
+                                    var_type.borrow().node,
+                                    ty,
+                                )
                                 .map(|_| self.sym_table.bind(name.node, name.span, ty, false))
                                 .map_err(
                                     |ResolveError {
@@ -223,7 +244,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                         errors.push(msg);
                     } else if let Ok(res) = resolve_result {
                         // TODO: proper error handling
-                        if let Err(err) = self.compare_types(
+                        if let Err(err) = self.compare_binary_types(
                             self.current_func_ret_type.span,
                             expr.span,
                             self.current_func_ret_type.node,
@@ -258,17 +279,17 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             Expr::Negate(op, expr) => {
                 let ty = self.resolve_expr(expr.span, &expr.node)?;
                 // TODO: unary operation error
-                self.compare_types(op.span, span, ty, Type::I32)
+                self.compare_binary_types(op.span, span, ty, Type::I32)
             }
             Expr::Binary(l, op, r) => {
                 let left = self.resolve_expr(l.span, &l.node)?;
                 let right = self.resolve_expr(r.span, &r.node)?;
-                self.compare_types(op.span, span, left, right)
+                self.compare_binary_types(op.span, span, left, right)
             }
             Expr::BoolBinary(l, op, r) => {
                 let left = self.resolve_expr(l.span, &l.node)?;
                 let right = self.resolve_expr(r.span, &r.node)?;
-                self.compare_types(op.span, span, left, right)?;
+                self.compare_binary_types(op.span, span, left, right)?;
                 Ok(Type::Bool)
             }
             Expr::Access { left, .. } => {
@@ -298,18 +319,19 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 let val_type = self.resolve_expr(value_span, node)?;
                 // check if type of right expression is the same as that of
                 // the declared variable
-                self.compare_types(eq.span, span, ty, val_type).map_err(
-                    |ResolveError {
-                         error,
-                         err_span,
-                         expr_span,
-                         ..
-                     }| {
-                        self.illegal_op_to_illegal_assignment(
-                            err_span, expr_span, name, error, sym_span,
-                        )
-                    },
-                )
+                self.compare_binary_types(eq.span, span, ty, val_type)
+                    .map_err(
+                        |ResolveError {
+                             error,
+                             err_span,
+                             expr_span,
+                             ..
+                         }| {
+                            self.illegal_op_to_illegal_assignment(
+                                err_span, expr_span, name, error, sym_span,
+                            )
+                        },
+                    )
             }
             Expr::Ident(name) => self
                 .sym_table
@@ -319,18 +341,46 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
             // TODO: check args correspond to params
             Expr::Call { callee, args } => {
-                for Spanned { node: expr, span } in &args.0 {
-                    self.resolve_expr(*span, &expr)?;
-                }
-
                 let callee_name = self.current_source().slice(callee.span);
 
                 let func_type = self
                     .functions
                     .get(callee_name)
-                    .ok_or_else(|| self.not_defined_error(callee.span, span, callee_name))?;
+                    .ok_or_else(|| self.not_defined_error(callee.span, span, callee_name))?
+                    .clone();
 
-                Ok(*func_type)
+                if func_type.params.len() != args.0.len() {
+                    // TODO: emit custom error
+                    panic!(
+                        "Expected {} arguments, but got {}!",
+                        func_type.params.len(),
+                        args.0.len()
+                    );
+                }
+
+                let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
+                for Spanned { node: expr, span } in &args.0 {
+                    arg_types.push((*span, self.resolve_expr(*span, &expr)?));
+                }
+
+                let arg_error = func_type
+                    .params
+                    .iter()
+                    .zip(arg_types.iter())
+                    .filter_map(|(p, (arg_span, a))| {
+                        if let Err(err) = self.compare_types(*arg_span, span, *p, *a, "argument") {
+                            return Some(err);
+                        }
+                        None
+                    })
+                    .take(1)
+                    .next();
+
+                if let Some(err) = arg_error {
+                    return Err(err);
+                }
+
+                Ok(func_type.ret_type)
             }
         }
     }
@@ -412,6 +462,29 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
     }
 
     fn compare_types(
+        &self,
+        err_span: Span,
+        expr_span: Span,
+        first: Type,
+        second: Type,
+        name: &'static str,
+    ) -> Result<(), ResolveError<'input>> {
+        if first != second {
+            return Err(self.error(
+                err_span,
+                expr_span,
+                ResolveErrorType::IllegalType(IllegalTypeError {
+                    expected_type: first,
+                    actual_type: second,
+                    name,
+                }),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn compare_binary_types(
         &self,
         err_span: Span,
         expr_span: Span,
