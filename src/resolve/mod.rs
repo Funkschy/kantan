@@ -243,12 +243,12 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     if let Err(msg) = resolve_result {
                         errors.push(msg);
                     } else if let Ok(res) = resolve_result {
-                        // TODO: proper error handling
-                        if let Err(err) = self.compare_binary_types(
-                            self.current_func_ret_type.span,
+                        if let Err(err) = self.compare_types(
+                            expr.span,
                             expr.span,
                             self.current_func_ret_type.node,
                             res,
+                            "return value",
                         ) {
                             errors.push(err);
                         }
@@ -292,11 +292,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 self.compare_binary_types(op.span, span, left, right)?;
                 Ok(Type::Bool)
             }
-            Expr::Access { left, .. } => {
-                self.resolve_expr(left.span, &left.node)?;
-                // TODO: check type of field/import
-                Ok(Type::Void)
-            }
+            Expr::Access { .. } => unimplemented!("No structs yet. Imports are resolved by name"),
             Expr::Assign { name, eq, value } => {
                 // Lookup variable in defined scopes
                 let (ty, sym_span) = {
@@ -339,7 +335,6 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 .ok_or_else(|| self.not_defined_error(span, span, name))
                 .map(|sym| sym.node.ty),
 
-            // TODO: check args correspond to params
             Expr::Call { callee, args } => {
                 let callee_name = self.current_source().slice(callee.span);
 
@@ -358,6 +353,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     );
                 }
 
+                // resolve arguments
                 let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
                 for Spanned { node: expr, span } in &args.0 {
                     arg_types.push((*span, self.resolve_expr(*span, &expr)?));
@@ -368,11 +364,13 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     .iter()
                     .zip(arg_types.iter())
                     .filter_map(|(p, (arg_span, a))| {
+                        // compare arguments to expected parameters
                         if let Err(err) = self.compare_types(*arg_span, span, *p, *a, "argument") {
                             return Some(err);
                         }
                         None
                     })
+                    // only evaluate the first argument (this should probably be changed)
                     .take(1)
                     .next();
 

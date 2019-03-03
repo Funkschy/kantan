@@ -103,7 +103,6 @@ where
         Ok(TopLvl::Import { name })
     }
 
-    // TODO: parse parameters
     fn param_list(&mut self) -> Result<ParamList<'input>, Spanned<ParseError<'input>>> {
         self.consume(Token::LParen)?;
 
@@ -205,7 +204,6 @@ where
             None
         };
 
-        // TODO: else branch
         Ok(Stmt::If {
             condition,
             then_block,
