@@ -234,6 +234,7 @@ impl<'input> Lexer<'input> {
             '{' => consume_single!(self, start, Token::LBrace),
             '}' => consume_single!(self, start, Token::RBrace),
             '.' => consume_single!(self, start, Token::Dot),
+            ',' => consume_single!(self, start, Token::Comma),
             '"' => self.scan_string(),
             c if c.is_alphabetic() => self.scan_ident(),
             c if c.is_digit(10) => self.scan_dec_num(),

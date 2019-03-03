@@ -108,7 +108,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     errors.push(self.not_defined_error(name.span, name.span, name.node));
                 }
             }
-            _ => panic!("Invalid top level declaration"),
+            _ => panic!("Invalid top level declaration {:#?}", top_lvl),
         }
     }
 

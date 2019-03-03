@@ -68,10 +68,16 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
 
     let mut errors = vec![];
     for top_lvl in &prg.0 {
-        if let TopLvl::FnDecl { body, .. } = top_lvl {
-            for s in &body.0 {
-                find_errors_rec(s, &mut errors);
+        match top_lvl {
+            TopLvl::FnDecl { body, .. } => {
+                for s in &body.0 {
+                    find_errors_rec(s, &mut errors);
+                }
             }
+            TopLvl::Error(err) => {
+                errors.push((err.span, err.node.to_string()));
+            }
+            TopLvl::Import { .. } => {}
         }
     }
     errors

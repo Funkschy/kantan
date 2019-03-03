@@ -108,6 +108,15 @@ pub enum Expr<'input> {
     },
 }
 
+impl<'input> Expr<'input> {
+    pub fn is_err(&self) -> bool {
+        if let Expr::Error(..) = self {
+            return true;
+        }
+        false
+    }
+}
+
 impl<'input> fmt::Display for Expr<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Expr::*;

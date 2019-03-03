@@ -55,6 +55,7 @@ where
                 top_lvl_decls.push(decl);
             } else if let Err(err) = decl {
                 top_lvl_decls.push(TopLvl::Error(err));
+                self.err_count += 1;
                 // TODO: fix sync
                 self.sync();
             }
@@ -64,8 +65,6 @@ where
     }
 
     fn top_lvl_decl(&mut self, is_extern: bool) -> TopLvlResult<'input> {
-        // TODO: error collection
-
         if self.peek_eq(Token::Import) {
             return self.import();
         }
@@ -121,6 +120,10 @@ where
             // TODO: user defined types
             let ty = self.consume_type()?;
             params.push(Param::new(ident, ty.node));
+
+            if self.peek_eq(Token::Comma) {
+                self.consume(Token::Comma)?;
+            }
         }
 
         self.consume(Token::RParen)?;
@@ -136,6 +139,8 @@ where
             if let Ok(stmt) = stmt {
                 stmts.push(stmt);
             } else if let Err(err) = stmt {
+                self.err_count += 1;
+                self.sync();
                 stmts.push(as_err_stmt(err));
             }
         }
@@ -146,16 +151,19 @@ where
 
     fn statement(&mut self) -> StmtResult<'input> {
         let stmt = if self.peek_eq(Token::Let) {
-            let decl = self.let_decl();
+            let decl = self.let_decl()?;
             self.consume(Token::Semi)?;
-            decl?
+            decl
         } else if self.peek_eq(Token::If) {
             self.if_stmt()?
         } else if self.peek_eq(Token::Return) {
             self.return_stmt()?
         } else {
             let expr = self.expression();
-            self.consume(Token::Semi)?;
+            // sync already consumes ;
+            if !expr.node.is_err() {
+                self.consume(Token::Semi)?;
+            }
             Stmt::Expr(expr)
         };
 
@@ -208,13 +216,7 @@ where
     fn let_decl(&mut self) -> StmtResult<'input> {
         self.consume(Token::Let)?;
 
-        let ident = self.consume_ident();
-        if ident.is_err() {
-            self.err_count += 1;
-            self.sync();
-        }
-        let name = ident?;
-
+        let name = self.consume_ident()?;
         let ty = if let Ok(true) = self.match_tok(Token::Colon) {
             Some(self.consume_type()?)
         } else {
@@ -240,8 +242,8 @@ where
 
         self.parse_expression(Precedence::None)
             .unwrap_or_else(|err| {
-                self.sync();
                 self.err_count += 1;
+                self.sync();
                 as_err_stmt(err)
             })
     }
@@ -476,6 +478,9 @@ where
 
         while !self.at_end() && !self.peek_eq(Token::RParen) {
             args.push(self.expression());
+            if self.peek_eq(Token::Comma) {
+                self.consume(Token::Comma)?;
+            }
         }
 
         Ok(ArgList(args))
@@ -523,22 +528,26 @@ where
     }
 
     fn sync(&mut self) {
-        self.scanner.next();
+        if self.peek_eq(Token::RBrace) {
+            return;
+        }
 
-        'outer: while let Some(peek) = self.scanner.peek() {
-            match peek {
-                Ok(Spanned { node, .. }) if *node == Token::Semi => {
-                    break 'outer;
-                }
+        let mut previous = self.advance();
+
+        while let Some(Ok(peek)) = self.scanner.peek() {
+            if let Ok(Spanned {
+                node: Token::Semi, ..
+            }) = previous
+            {
+                break;
+            }
+
+            match peek.node {
+                Token::Fn | Token::If | Token::Let | Token::Return => return,
                 _ => {}
             }
 
-            if let Some(Ok(Spanned { node, .. })) = self.scanner.next() {
-                match node {
-                    Token::Let | Token::Fn => break 'outer,
-                    _ => {}
-                }
-            }
+            previous = self.advance();
         }
     }
 
