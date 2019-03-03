@@ -107,7 +107,7 @@ impl<'input> Tac<'input> {
                 }
                 Stmt::Return(e) => {
                     let ret = if let Some(Spanned { node, .. }) = e {
-                        let address = self.expr_instr(node, &mut block).unwrap();
+                        let address = self.expr_instr(node, &mut block);
                         Instruction::Return(Some(address))
                     } else {
                         Instruction::Return(None)
@@ -145,8 +145,7 @@ impl<'input> Tac<'input> {
         block: &mut InstructionBlock<'input>,
         end_label: Label,
     ) {
-        let msg = "unexpected empty expression";
-        let condition = self.expr_instr(condition, block).expect(msg);
+        let condition = self.expr_instr(condition, block);
 
         let mut then_block = self.create_block(&then_block.0);
         let then_label = self.label();
@@ -200,13 +199,11 @@ impl<'input> Tac<'input> {
     ) -> Expression<'input> {
         match expr {
             Expr::Binary(l, op, r) | Expr::BoolBinary(l, op, r) => {
-                let msg = "unexpected empty expression";
-
                 // TODO: find correct dec size
                 let bin_type = Option::from(&op.node).map(BinaryType::I32).unwrap();
 
-                let left = self.expr_instr(&l.node, block).expect(msg);
-                let right = self.expr_instr(&r.node, block).expect(msg);
+                let left = self.expr_instr(&l.node, block);
+                let right = self.expr_instr(&r.node, block);
 
                 Expression::Binary(left, bin_type, right)
             }
@@ -214,7 +211,7 @@ impl<'input> Tac<'input> {
                 let args: Vec<Address> = args
                     .0
                     .iter()
-                    .filter_map(|a| self.expr_instr(&a.node, block))
+                    .map(|a| self.expr_instr(&a.node, block))
                     .collect();
 
                 let label = callee.node.to_string().into();
@@ -229,37 +226,38 @@ impl<'input> Tac<'input> {
                 };
 
                 let address = self.names.lookup(name).into();
-                self.assign(address, expr, block);
-                Expression::Empty
+                self.assign(address, expr.clone(), block);
+                expr
             }
             Expr::Negate(op, expr) => {
                 // TODO: find correct dec size
                 let u_type = Option::from(&op.node).unwrap();
-                let expr = self.expr_instr(&expr.node, block).unwrap();
+                let address = self.expr_instr(&expr.node, block);
 
-                Expression::Unary(u_type, expr)
+                Expression::Unary(u_type, address)
             }
             _ => unimplemented!(),
         }
     }
 
+    /// Splits an expression and returns an address to the result
     fn expr_instr(
         &mut self,
         expr: &Expr<'input>,
         block: &mut InstructionBlock<'input>,
-    ) -> Option<Address<'input>> {
+    ) -> Address<'input> {
         let rval = self.rvalue(&expr);
-        if rval.is_some() {
+        if let Some(rval) = rval {
             return rval;
         }
 
         let e = self.expr(expr, block);
-        if e.is_empty() {
-            return None;
+        if let Expression::Copy(a) = e {
+            return a;
         }
 
         let temp = self.temp();
-        Some(self.assign(temp, e, block))
+        self.assign(temp, e, block)
     }
 
     fn assign(

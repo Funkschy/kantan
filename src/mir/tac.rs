@@ -116,7 +116,7 @@ impl<'input> fmt::Display for Instruction<'input> {
 
 /// An expression is always on the right side of an assignment instruction
 /// In the comments, this assignment is denoted as 'x = '
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Expression<'input> {
     /// x = y op z
     Binary(Address<'input>, BinaryType, Address<'input>),
@@ -130,18 +130,6 @@ pub enum Expression<'input> {
     DeRef(Address<'input>),
     /// x = call f (y, z)
     Call(Label, Vec<Address<'input>>),
-    /// empty
-    Empty,
-}
-
-impl<'input> Expression<'input> {
-    pub fn is_empty(&self) -> bool {
-        if let Expression::Empty = self {
-            return true;
-        }
-
-        false
-    }
 }
 
 impl<'input> fmt::Display for Expression<'input> {
@@ -159,14 +147,13 @@ impl<'input> fmt::Display for Expression<'input> {
                 let args = args.join(", ");
                 format!("call {}({})", f, args)
             }
-            Empty => "empty".to_string(),
         };
 
         write!(f, "{}", s)
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum UnaryType {
     BoolNegate,
     I32Negate,

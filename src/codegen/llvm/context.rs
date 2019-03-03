@@ -322,7 +322,6 @@ impl KantanLLVMContext {
                 self.strings.push(CString::from_raw(n));
                 op
             }
-            Expression::Empty => panic!("Unexpected empty expression"),
             _ => unimplemented!(),
         }
     }
