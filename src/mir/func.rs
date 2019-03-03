@@ -44,14 +44,22 @@ impl<'input> fmt::Display for Func<'input> {
             return write!(f, "extern fn {}({}): {};", self.label, params, self.ret);
         }
 
+        let format = |inst| {
+            if let &Instruction::Label(..) = inst {
+                format!("   {}", inst)
+            } else {
+                format!("       {}", inst)
+            }
+        };
+
         let instructions = self
             .blocks
             .blocks
             .iter()
             .map(|b| (b.instructions.iter(), &b.terminator))
             .flat_map(|(is, t)| {
-                let mut instrs = is.map(|i| format!("\t{}", i)).collect::<Vec<String>>();
-                instrs.push(format!("\t{}", t));
+                let mut instrs = is.map(format).collect::<Vec<String>>();
+                instrs.push(format(t));
                 instrs
             })
             .collect::<Vec<String>>()

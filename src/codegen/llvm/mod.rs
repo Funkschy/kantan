@@ -57,11 +57,19 @@ mod tests {
             }
 
             fn main(): i32 {
-                let s = "";
+                let s = "correct";
                 let x = 0;
-                if f(2) == 42 {
+                if f(2) == 44 {
                     s = "Hello World";
                     let x = 5;
+                } else if f(2) == 43 {
+                    s = "Wrong result";
+                }
+                io.puts(s);
+
+                if f(3) == 41 {
+                    s = "correct";
+                    let x = 42;
                 } else {
                     s = "test";
                     let x = "test";
