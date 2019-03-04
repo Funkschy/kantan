@@ -74,7 +74,11 @@ mod tests {
                     s = "test";
                     let x = "test";
                 }
-                io.puts(s);
+                let y = x;
+                while x < 2 {
+                    io.puts(s);
+                    x = x + 1;
+                }
                 return x;
             }
         "#;

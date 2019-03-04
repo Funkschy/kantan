@@ -17,6 +17,7 @@ pub enum Token<'input> {
     Import,
     Return,
     Extern,
+    While,
 
     // Operators
     Equals, // =
@@ -83,6 +84,7 @@ impl<'input> fmt::Display for Token<'input> {
             Token::Import => write!(f, "import"),
             Token::Return => write!(f, "return"),
             Token::Extern => write!(f, "extern"),
+            Token::While => write!(f, "while"),
 
             // Operators
             Token::Equals => write!(f, "="),

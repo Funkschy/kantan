@@ -46,6 +46,21 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     errors.push((*span, err.to_string()));
                 }
             }
+            Stmt::While {
+                condition:
+                    Spanned {
+                        node: condition,
+                        span,
+                    },
+                body,
+            } => {
+                if let Expr::Error(err) = condition {
+                    errors.push((*span, err.to_string()));
+                }
+                for s in &body.0 {
+                    find_errors_rec(s, errors);
+                }
+            }
             Stmt::If {
                 condition:
                     Spanned {

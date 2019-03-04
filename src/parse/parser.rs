@@ -149,24 +149,36 @@ where
     }
 
     fn statement(&mut self) -> StmtResult<'input> {
-        let stmt = if self.peek_eq(Token::Let) {
-            let decl = self.let_decl()?;
-            self.consume(Token::Semi)?;
-            decl
-        } else if self.peek_eq(Token::If) {
-            self.if_stmt()?
-        } else if self.peek_eq(Token::Return) {
-            self.return_stmt()?
-        } else {
-            let expr = self.expression();
-            // sync already consumes ;
-            if !expr.node.is_err() {
-                self.consume(Token::Semi)?;
+        if let Some(Ok(Spanned { node, .. })) = self.scanner.peek() {
+            // Check different statement types
+            match node {
+                Token::Let => {
+                    let decl = self.let_decl()?;
+                    self.consume(Token::Semi)?;
+                    return Ok(decl);
+                }
+                Token::If => return Ok(self.if_stmt()?),
+                Token::Return => return Ok(self.return_stmt()?),
+                Token::While => return Ok(self.while_stmt()?),
+                _ => {}
             }
-            Stmt::Expr(expr)
-        };
+        }
 
-        Ok(stmt)
+        // If no statement rule applies, assume an expression
+        let expr = self.expression();
+        // sync already consumes ;
+        if !expr.node.is_err() {
+            self.consume(Token::Semi)?;
+        }
+        Ok(Stmt::Expr(expr))
+    }
+
+    fn while_stmt(&mut self) -> StmtResult<'input> {
+        self.consume(Token::While)?;
+        let condition = self.expression();
+        let body = self.block()?;
+
+        Ok(Stmt::While { condition, body })
     }
 
     fn return_stmt(&mut self) -> StmtResult<'input> {
@@ -558,6 +570,43 @@ where
 mod tests {
     use super::lexer::Lexer;
     use super::*;
+
+    #[test]
+    fn test_parse_while_statement() {
+        let source = "fn main(): void { while 1 == 1 { test(); } }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![TopLvl::FnDecl {
+                name: Spanned::new(3, 6, "main"),
+                params: ParamList(vec![]),
+                ret_type: Spanned::new(11, 14, Type::Void),
+                is_extern: false,
+                body: Block(vec![Stmt::While {
+                    condition: Spanned::new(
+                        24,
+                        29,
+                        Expr::BoolBinary(
+                            Box::new(Spanned::new(24, 24, Expr::DecLit("1"))),
+                            Spanned::new(26, 27, Token::EqualsEquals),
+                            Box::new(Spanned::new(29, 29, Expr::DecLit("1"))),
+                        )
+                    ),
+                    body: Block(vec![Stmt::Expr(Spanned::new(
+                        33,
+                        38,
+                        Expr::Call {
+                            callee: Box::new(Spanned::new(33, 36, Expr::Ident("test"))),
+                            args: ArgList(vec![])
+                        }
+                    ))])
+                }])
+            }]),
+            prg
+        );
+    }
 
     #[test]
     fn test_parse_import_access() {
