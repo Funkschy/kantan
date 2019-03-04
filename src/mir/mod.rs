@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use super::{parse::ast::*, resolve::symbol::SymbolTable, types::Type, Spanned};
-use address::{Address, Argument};
+use address::{Address, Argument, Constant};
 use blockmap::BlockMap;
 use func::Func;
 use names::NameTable;
@@ -61,9 +61,20 @@ impl<'input> Tac<'input> {
                 _ => true,
             };
 
+            let main_func = name == "main";
+
             if add_ret {
-                block.push(Instruction::Return(None));
+                let ret = if main_func {
+                    Some(Address::Const(Constant::new(Type::I32, "0")))
+                } else {
+                    None
+                };
+
+                block.push(Instruction::Return(ret));
             }
+
+            // the main function has to return an int
+            let ret_type = if main_func { Type::I32 } else { ret_type };
 
             Func::new(
                 name.into(),
@@ -403,16 +414,10 @@ mod tests {
             ),
         ];
 
-        bb.terminator = Instruction::Return(None);
+        bb.terminator = Instruction::Return(Some(Address::Const(Constant::new(Type::I32, "0"))));
         bm.blocks = vec![bb];
 
-        let expected = vec![Func::new(
-            Label::from("main"),
-            vec![],
-            Type::Void,
-            bm,
-            false,
-        )];
+        let expected = vec![Func::new(Label::from("main"), vec![], Type::I32, bm, false)];
 
         assert_eq!(expected, funcs);
     }
@@ -642,17 +647,64 @@ mod tests {
 
         let mut bb4 = BasicBlock::default();
         bb4.instructions = vec![Instruction::Label(Label::new(0))];
-        bb4.terminator = Instruction::Return(None);
+        bb4.terminator = Instruction::Return(Some(Address::Const(Constant::new(Type::I32, "0"))));
 
         bm.blocks = vec![bb1, bb2, bb3, bb4];
 
         let expected = vec![Func::new(
             Label::from("main".to_string()),
             vec![],
-            Type::Void,
+            Type::I32,
             bm,
             false,
         )];
+
+        assert_eq!(expected, funcs);
+    }
+
+    #[test]
+    fn test_void_return_can_be_omitted() {
+        let mut cursor = Cursor::new(Vec::default());
+
+        let source = "
+            fn test(): void {
+
+            }
+
+            fn main(): void {
+
+            }
+        ";
+
+        let sources = vec![Source::new("main", source)];
+        let funcs = compile(&sources, &mut cursor).unwrap().functions;
+
+        let mut main_bm = BlockMap::default();
+        main_bm
+            .mappings
+            .insert(Label::from(".entry0".to_string()), 0);
+
+        let mut test_bm = BlockMap::default();
+        test_bm
+            .mappings
+            .insert(Label::from(".entry0".to_string()), 0);
+
+        let mut main_bb = BasicBlock::default();
+        main_bb.instructions = vec![];
+        main_bb.terminator =
+            Instruction::Return(Some(Address::Const(Constant::new(Type::I32, "0"))));
+
+        let mut test_bb = BasicBlock::default();
+        test_bb.instructions = vec![];
+        test_bb.terminator = Instruction::Return(None);
+
+        main_bm.blocks = vec![main_bb];
+        test_bm.blocks = vec![test_bb];
+
+        let expected = vec![
+            Func::new(Label::from("test"), vec![], Type::Void, test_bm, false),
+            Func::new(Label::from("main"), vec![], Type::I32, main_bm, false),
+        ];
 
         assert_eq!(expected, funcs);
     }

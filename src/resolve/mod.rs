@@ -80,6 +80,11 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     .map(|prefix| format!("{}.{}", prefix, name.node))
                     .unwrap_or_else(|| name.node.to_owned());
 
+                if self.functions.contains_key(&name) {
+                    // TODO: replace with proper error
+                    panic!("Duplicate function '{}'", name);
+                }
+
                 let func_params = params.0.iter().map(|Param(_, ty)| *ty).collect();
                 let func_def = FunctionDefinition {
                     ret_type: ret_type.node,
