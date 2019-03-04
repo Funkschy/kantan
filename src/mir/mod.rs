@@ -114,6 +114,11 @@ impl<'input> Tac<'input> {
                     };
                     block.push(ret);
                 }
+                Stmt::While { condition, body } => {
+                    let end_label = self.label();
+                    self.while_loop(&condition.node, body, &mut block, end_label.clone());
+                    block.push(Instruction::Label(end_label));
+                }
                 Stmt::If {
                     condition,
                     then_block,
@@ -135,6 +140,27 @@ impl<'input> Tac<'input> {
         self.names.scope_exit();
 
         block
+    }
+
+    fn while_loop(
+        &mut self,
+        condition: &Expr<'input>,
+        body: &Block<'input>,
+        block: &mut InstructionBlock<'input>,
+        end_label: Label,
+    ) {
+        let condition_label = self.label();
+        block.push(condition_label.clone().into());
+
+        let condition = self.expr_instr(condition, block);
+        let mut body = self.create_block(&body.0);
+        let body_label = self.label();
+
+        let instr = Instruction::JmpIf(condition, body_label.clone(), end_label);
+        block.push(instr);
+        block.push(body_label.into());
+        block.append(&mut body);
+        block.push(Instruction::Jmp(condition_label));
     }
 
     fn if_branch(
@@ -226,8 +252,7 @@ impl<'input> Tac<'input> {
                 };
 
                 let address = self.names.lookup(name).into();
-                self.assign(address, expr.clone(), block);
-                expr
+                Expression::Copy(self.assign(address, expr.clone(), block))
             }
             Expr::Negate(op, expr) => {
                 // TODO: find correct dec size
@@ -542,6 +567,89 @@ mod tests {
             Label::from("main".to_string()),
             vec![],
             Type::I32,
+            bm,
+            false,
+        )];
+
+        assert_eq!(expected, funcs);
+    }
+
+    #[test]
+    fn test_mir_while_has_correct_jumps() {
+        let mut cursor = Cursor::new(Vec::default());
+
+        let source = "
+            fn main(): void {
+                let x = 0;
+                while x < 10 {
+                    x = x + 1;
+                }
+            }
+        ";
+
+        let sources = vec![Source::new("main", source)];
+        let funcs = compile(&sources, &mut cursor).unwrap().functions;
+
+        let mut bm = BlockMap::default();
+
+        bm.mappings.insert(Label::from(".entry0".to_string()), 0);
+        bm.mappings.insert(Label::new(1), 1);
+        bm.mappings.insert(Label::new(2), 2);
+        bm.mappings.insert(Label::new(0), 3);
+
+        // init block
+        let mut bb1 = BasicBlock::default();
+        bb1.instructions = vec![
+            Instruction::Decl(Address::Name("x0".to_string()), Type::I32),
+            Instruction::Assignment(
+                Address::Name("x0".to_string()),
+                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+            ),
+        ];
+        bb1.terminator = Instruction::Jmp(Label::new(1));
+
+        let mut bb2 = BasicBlock::default();
+        bb2.instructions = vec![
+            Instruction::Label(Label::new(1)),
+            Instruction::Assignment(
+                Address::Temp(TempVar::from(0)),
+                Expression::Binary(
+                    Address::Name("x0".to_string()),
+                    BinaryType::I32(IntBinaryType::Smaller),
+                    Address::Const(Constant::new(Type::I32, "10")),
+                ),
+            ),
+        ];
+        bb2.terminator = Instruction::JmpIf(
+            Address::Temp(TempVar::from(0)),
+            Label::new(2),
+            Label::new(0),
+        );
+
+        let mut bb3 = BasicBlock::default();
+        bb3.instructions = vec![
+            Instruction::Label(Label::new(2)),
+            Instruction::Assignment(
+                Address::Name("x0".to_string()),
+                Expression::Binary(
+                    Address::Name("x0".to_string()),
+                    BinaryType::I32(IntBinaryType::Add),
+                    Address::Const(Constant::new(Type::I32, "1")),
+                ),
+            ),
+        ];
+        bb3.terminator = Instruction::Jmp(Label::new(1));
+
+        let mut bb4 = BasicBlock::default();
+        bb4.instructions = vec![Instruction::Label(Label::new(0))];
+        bb4.terminator = Instruction::Return(None);
+
+        bm.blocks = vec![bb1, bb2, bb3, bb4];
+
+        let expected = vec![Func::new(
+            Label::from("main".to_string()),
+            vec![],
+            Type::Void,
             bm,
             false,
         )];

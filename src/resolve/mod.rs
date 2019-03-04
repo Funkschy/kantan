@@ -207,6 +207,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     }
                 }
 
+                // TODO: refactor to method
                 self.sym_table.scope_enter();
                 for stmt in &then_block.0 {
                     self.resolve_stmt(&stmt, errors);
@@ -231,6 +232,29 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                         }
                     }
                 }
+            }
+            Stmt::While { condition, body } => {
+                match self.resolve_expr(condition.span, &condition.node) {
+                    Err(msg) => errors.push(msg),
+                    Ok(ty) => {
+                        if ty != Type::Bool {
+                            errors.push(self.type_error(
+                                condition.span,
+                                condition.span,
+                                "while condition",
+                                Type::Bool,
+                                ty,
+                            ))
+                        }
+                    }
+                }
+
+                // TODO: refactor to method
+                self.sym_table.scope_enter();
+                for stmt in &body.0 {
+                    self.resolve_stmt(&stmt, errors);
+                }
+                self.sym_table.scope_exit();
             }
             Stmt::Return(expr) => {
                 if let Some(expr) = expr {

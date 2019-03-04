@@ -36,6 +36,10 @@ pub enum Stmt<'input> {
         then_block: Block<'input>,
         else_branch: Option<Box<Else<'input>>>,
     },
+    While {
+        condition: Spanned<Expr<'input>>,
+        body: Block<'input>,
+    },
     Return(Option<Spanned<Expr<'input>>>),
     Expr(Spanned<Expr<'input>>),
 }

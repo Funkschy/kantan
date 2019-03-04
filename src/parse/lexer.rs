@@ -174,6 +174,7 @@ impl<'input> Lexer<'input> {
             "else" => self.spanned(start, Token::Else),
             "import" => self.spanned(start, Token::Import),
             "extern" => self.spanned(start, Token::Extern),
+            "while" => self.spanned(start, Token::While),
             _ => return None,
         })
     }
