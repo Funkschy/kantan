@@ -1,4 +1,4 @@
-use std::iter::Peekable;
+use std::{cell::Cell, iter::Peekable};
 
 use super::{ast::*, error::LexError, token::*, *};
 use crate::types::Type;
@@ -48,11 +48,14 @@ where
         let mut top_lvl_decls = vec![];
 
         while self.scanner.peek().is_some() {
-            let decl = self.top_lvl_decl();
+            let is_extern = self.peek_eq(Token::Extern);
+
+            let decl = self.top_lvl_decl(is_extern);
             if let Ok(decl) = decl {
                 top_lvl_decls.push(decl);
             } else if let Err(err) = decl {
                 top_lvl_decls.push(TopLvl::Error(err));
+                self.err_count += 1;
                 // TODO: fix sync
                 self.sync();
             }
@@ -61,11 +64,13 @@ where
         Program(top_lvl_decls)
     }
 
-    fn top_lvl_decl(&mut self) -> TopLvlResult<'input> {
-        // TODO: error collection
-
+    fn top_lvl_decl(&mut self, is_extern: bool) -> TopLvlResult<'input> {
         if self.peek_eq(Token::Import) {
             return self.import();
+        }
+
+        if is_extern {
+            self.consume(Token::Extern)?;
         }
 
         self.consume(Token::Fn)?;
@@ -75,12 +80,19 @@ where
         self.consume(Token::Colon)?;
         let ret_type = self.consume_type()?;
 
-        let body = self.block()?;
+        let body = if !is_extern {
+            self.block()?
+        } else {
+            self.consume(Token::Semi)?;
+            Block::default()
+        };
+
         Ok(TopLvl::FnDecl {
             name,
             params,
             body,
             ret_type,
+            is_extern,
         })
     }
 
@@ -91,7 +103,6 @@ where
         Ok(TopLvl::Import { name })
     }
 
-    // TODO: parse parameters
     fn param_list(&mut self) -> Result<ParamList<'input>, Spanned<ParseError<'input>>> {
         self.consume(Token::LParen)?;
 
@@ -108,6 +119,10 @@ where
             // TODO: user defined types
             let ty = self.consume_type()?;
             params.push(Param::new(ident, ty.node));
+
+            if self.peek_eq(Token::Comma) {
+                self.consume(Token::Comma)?;
+            }
         }
 
         self.consume(Token::RParen)?;
@@ -123,6 +138,8 @@ where
             if let Ok(stmt) = stmt {
                 stmts.push(stmt);
             } else if let Err(err) = stmt {
+                self.err_count += 1;
+                self.sync();
                 stmts.push(as_err_stmt(err));
             }
         }
@@ -133,16 +150,19 @@ where
 
     fn statement(&mut self) -> StmtResult<'input> {
         let stmt = if self.peek_eq(Token::Let) {
-            let decl = self.let_decl();
+            let decl = self.let_decl()?;
             self.consume(Token::Semi)?;
-            decl?
+            decl
         } else if self.peek_eq(Token::If) {
             self.if_stmt()?
         } else if self.peek_eq(Token::Return) {
             self.return_stmt()?
         } else {
             let expr = self.expression();
-            self.consume(Token::Semi)?;
+            // sync already consumes ;
+            if !expr.node.is_err() {
+                self.consume(Token::Semi)?;
+            }
             Stmt::Expr(expr)
         };
 
@@ -184,7 +204,6 @@ where
             None
         };
 
-        // TODO: else branch
         Ok(Stmt::If {
             condition,
             then_block,
@@ -195,18 +214,14 @@ where
     fn let_decl(&mut self) -> StmtResult<'input> {
         self.consume(Token::Let)?;
 
-        let ident = self.consume_ident();
-        if ident.is_err() {
-            self.err_count += 1;
-            self.sync();
-        }
-        let name = ident?;
-
+        let name = self.consume_ident()?;
         let ty = if let Ok(true) = self.match_tok(Token::Colon) {
             Some(self.consume_type()?)
         } else {
             None
         };
+
+        let ty = Cell::new(ty);
 
         let eq = self.consume(Token::Equals)?;
 
@@ -225,8 +240,8 @@ where
 
         self.parse_expression(Precedence::None)
             .unwrap_or_else(|err| {
-                self.sync();
                 self.err_count += 1;
+                self.sync();
                 as_err_stmt(err)
             })
     }
@@ -461,6 +476,9 @@ where
 
         while !self.at_end() && !self.peek_eq(Token::RParen) {
             args.push(self.expression());
+            if self.peek_eq(Token::Comma) {
+                self.consume(Token::Comma)?;
+            }
         }
 
         Ok(ArgList(args))
@@ -508,22 +526,26 @@ where
     }
 
     fn sync(&mut self) {
-        self.scanner.next();
+        if self.peek_eq(Token::RBrace) {
+            return;
+        }
 
-        'outer: while let Some(peek) = self.scanner.peek() {
-            match peek {
-                Ok(Spanned { node, .. }) if *node == Token::Semi => {
-                    break 'outer;
-                }
+        let mut previous = self.advance();
+
+        while let Some(Ok(peek)) = self.scanner.peek() {
+            if let Ok(Spanned {
+                node: Token::Semi, ..
+            }) = previous
+            {
+                break;
+            }
+
+            match peek.node {
+                Token::Fn | Token::If | Token::Let | Token::Return => return,
                 _ => {}
             }
 
-            if let Some(Ok(Spanned { node, .. })) = self.scanner.next() {
-                match node {
-                    Token::Let | Token::Fn => break 'outer,
-                    _ => {}
-                }
-            }
+            previous = self.advance();
         }
     }
 
@@ -549,6 +571,7 @@ mod tests {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList(vec![]),
                 ret_type: Spanned::new(11, 14, Type::Void),
+                is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     28,
@@ -583,6 +606,7 @@ mod tests {
                 },
                 TopLvl::FnDecl {
                     name: Spanned::new(15, 18, "main"),
+                    is_extern: false,
                     ret_type: Spanned::new(23, 26, Type::Void),
                     params: ParamList(vec![]),
                     body: Block(vec![])
@@ -603,6 +627,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
+                is_extern: false,
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
@@ -635,6 +660,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
+                is_extern: false,
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
@@ -660,6 +686,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 5, "err"),
                 ret_type: Spanned::new(10, 13, Type::Void),
+                is_extern: false,
                 params: ParamList(vec![]),
                 body: Block(vec![
                     Stmt::Expr(Spanned {
@@ -693,12 +720,13 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
+                is_extern: false,
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::VarDecl {
                     name: Spanned::new(22, 24, "var"),
                     value: Spanned::new(28, 28, Expr::DecLit("5")),
                     eq: Spanned::new(26, 26, Token::Equals),
-                    ty: None
+                    ty: Cell::new(None)
                 }])
             }]),
             prg
@@ -717,6 +745,7 @@ mod tests {
         assert_eq!(
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
+                is_extern: false,
                 ret_type: Spanned::new(11, 14, Type::Void),
                 params: ParamList(vec![]),
                 body: Block(vec![])
@@ -737,6 +766,7 @@ mod tests {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
                 params: ParamList(vec![]),
+                is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     17,
                     21,

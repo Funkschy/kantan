@@ -1,8 +1,6 @@
-use std::str::CharIndices;
+use std::{iter::Peekable, str::CharIndices};
 
-use super::error::*;
-use super::token::*;
-use super::*;
+use super::{error::*, token::*, *};
 use crate::types::Type;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -21,14 +19,14 @@ impl InputPos {
 
 pub struct Lexer<'input> {
     src: &'input str,
-    chars: CharIndices<'input>,
+    chars: Peekable<CharIndices<'input>>,
     current: Option<InputPos>,
     prev: Option<char>,
 }
 
 impl<'input> Lexer<'input> {
     pub fn new(src: &'input str) -> Self {
-        let mut chars = src.char_indices();
+        let mut chars = src.char_indices().peekable();
 
         Lexer {
             src,
@@ -164,19 +162,20 @@ impl<'input> Lexer<'input> {
         start: CharPos,
         slice: &'input str,
     ) -> Option<Spanned<Token<'input>>> {
-        match slice {
-            "i32" => Some(self.spanned(start, Token::TypeIdent(Type::I32))),
-            "string" => Some(self.spanned(start, Token::TypeIdent(Type::String))),
-            "bool" => Some(self.spanned(start, Token::TypeIdent(Type::Bool))),
-            "void" => Some(self.spanned(start, Token::TypeIdent(Type::Void))),
-            "return" => Some(self.spanned(start, Token::Return)),
-            "let" => Some(self.spanned(start, Token::Let)),
-            "fn" => Some(self.spanned(start, Token::Fn)),
-            "if" => Some(self.spanned(start, Token::If)),
-            "else" => Some(self.spanned(start, Token::Else)),
-            "import" => Some(self.spanned(start, Token::Import)),
-            _ => None,
-        }
+        Some(match slice {
+            "i32" => self.spanned(start, Token::TypeIdent(Type::I32)),
+            "string" => self.spanned(start, Token::TypeIdent(Type::String)),
+            "bool" => self.spanned(start, Token::TypeIdent(Type::Bool)),
+            "void" => self.spanned(start, Token::TypeIdent(Type::Void)),
+            "return" => self.spanned(start, Token::Return),
+            "let" => self.spanned(start, Token::Let),
+            "fn" => self.spanned(start, Token::Fn),
+            "if" => self.spanned(start, Token::If),
+            "else" => self.spanned(start, Token::Else),
+            "import" => self.spanned(start, Token::Import),
+            "extern" => self.spanned(start, Token::Extern),
+            _ => return None,
+        })
     }
 
     fn scan_dec_num(&mut self) -> Scanned<'input> {
@@ -221,7 +220,13 @@ impl<'input> Lexer<'input> {
             '+' => consume_single!(self, start, Token::Plus),
             '-' => consume_single!(self, start, Token::Minus),
             '*' => consume_single!(self, start, Token::Star),
-            '/' => consume_single!(self, start, Token::Slash),
+            '/' => {
+                if let Some((_, '/')) = self.chars.peek() {
+                    self.read_while(|c| c != '\n');
+                    return self.scan_token();
+                }
+                consume_single!(self, start, Token::Slash)
+            }
             ':' => consume_single!(self, start, Token::Colon),
             ';' => consume_single!(self, start, Token::Semi),
             '(' => consume_single!(self, start, Token::LParen),
@@ -229,6 +234,7 @@ impl<'input> Lexer<'input> {
             '{' => consume_single!(self, start, Token::LBrace),
             '}' => consume_single!(self, start, Token::RBrace),
             '.' => consume_single!(self, start, Token::Dot),
+            ',' => consume_single!(self, start, Token::Comma),
             '"' => self.scan_string(),
             c if c.is_alphabetic() => self.scan_ident(),
             c if c.is_digit(10) => self.scan_dec_num(),
@@ -257,6 +263,24 @@ impl<'input> Iterator for Lexer<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_comments_are_ignored() {
+        let source = "1 + //
+            2";
+
+        let lexer = Lexer::new(&source);
+
+        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        assert_eq!(
+            vec![
+                Spanned::new(0, 1, Token::DecLit("1")),
+                Spanned::new(2, 2, Token::Plus),
+                Spanned::new(19, 19, Token::DecLit("2")),
+            ],
+            tokens
+        );
+    }
 
     #[test]
     fn test_scan_smaller_and_smaller_equals() {

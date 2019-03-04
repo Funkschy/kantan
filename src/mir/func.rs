@@ -5,10 +5,11 @@ use crate::types::Type;
 
 #[derive(PartialEq, Debug)]
 pub struct Func<'input> {
-    label: Label,
-    params: Vec<(&'input str, Type)>,
-    ret: Type,
-    blocks: BlockMap<'input>,
+    pub(crate) label: Label,
+    pub(crate) params: Vec<(&'input str, Type)>,
+    pub(crate) ret: Type,
+    pub(crate) blocks: BlockMap<'input>,
+    pub(crate) is_extern: bool,
 }
 
 impl<'input> Func<'input> {
@@ -17,12 +18,14 @@ impl<'input> Func<'input> {
         params: Vec<(&'input str, Type)>,
         ret: Type,
         blocks: BlockMap<'input>,
+        is_extern: bool,
     ) -> Self {
         Func {
             label,
             params,
             ret,
             blocks,
+            is_extern,
         }
     }
 }
@@ -32,11 +35,22 @@ impl<'input> fmt::Display for Func<'input> {
         let params = self
             .params
             .iter()
-            .map(|(n, t)| format!("{}: t_{}", n, t))
+            .enumerate()
+            .map(|(i, (_, t))| format!("_arg{}: {}", i, t))
             .collect::<Vec<String>>()
             .join(", ");
 
-        dbg!(&self.blocks);
+        if self.is_extern {
+            return write!(f, "extern fn {}({}): {};", self.label, params, self.ret);
+        }
+
+        let format = |inst| {
+            if let &Instruction::Label(..) = inst {
+                format!("   {}", inst)
+            } else {
+                format!("       {}", inst)
+            }
+        };
 
         let instructions = self
             .blocks
@@ -44,8 +58,8 @@ impl<'input> fmt::Display for Func<'input> {
             .iter()
             .map(|b| (b.instructions.iter(), &b.terminator))
             .flat_map(|(is, t)| {
-                let mut instrs = is.map(|i| format!("\t{}", i)).collect::<Vec<String>>();
-                instrs.push(format!("\t{}", t));
+                let mut instrs = is.map(format).collect::<Vec<String>>();
+                instrs.push(format(t));
                 instrs
             })
             .collect::<Vec<String>>()

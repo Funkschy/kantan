@@ -1,8 +1,6 @@
-use std::fmt;
+use std::{cell::Cell, fmt};
 
-use super::error::ParseError;
-use super::token::Token;
-use super::Spanned;
+use super::{error::ParseError, token::Token, Spanned};
 use crate::types::Type;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -15,6 +13,7 @@ pub enum TopLvl<'input> {
         params: ParamList<'input>,
         body: Block<'input>,
         ret_type: Spanned<Type>,
+        is_extern: bool,
     },
     Import {
         name: Spanned<&'input str>,
@@ -29,7 +28,8 @@ pub enum Stmt<'input> {
         name: Spanned<&'input str>,
         value: Spanned<Expr<'input>>,
         eq: Spanned<Token<'input>>,
-        ty: Option<Spanned<Type>>,
+        // is filled in by resolver if necessary
+        ty: Cell<Option<Spanned<Type>>>,
     },
     If {
         condition: Spanned<Expr<'input>>,
@@ -46,7 +46,7 @@ pub enum Else<'input> {
     Block(Block<'input>),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Default, Debug, Eq, PartialEq)]
 pub struct Block<'input>(pub Vec<Stmt<'input>>);
 
 #[derive(Debug, Eq, PartialEq)]
@@ -106,6 +106,15 @@ pub enum Expr<'input> {
         left: Box<Spanned<Expr<'input>>>,
         identifier: Spanned<&'input str>,
     },
+}
+
+impl<'input> Expr<'input> {
+    pub fn is_err(&self) -> bool {
+        if let Expr::Error(..) = self {
+            return true;
+        }
+        false
+    }
 }
 
 impl<'input> fmt::Display for Expr<'input> {

@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{borrow::Borrow, fmt};
 
 use crate::{parse::token::Token, types::Type};
 
@@ -65,6 +65,12 @@ impl From<&str> for Label {
     }
 }
 
+impl Borrow<str> for Label {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 impl<'input> Into<Instruction<'input>> for Label {
     fn into(self) -> Instruction<'input> {
         Instruction::Label(self)
@@ -73,6 +79,8 @@ impl<'input> Into<Instruction<'input>> for Label {
 
 #[derive(PartialEq, Debug)]
 pub enum Instruction<'input> {
+    /// let x: i32
+    Decl(Address<'input>, Type),
     /// x = <expr>
     Assignment(Address<'input>, Expression<'input>),
     /// goto l
@@ -92,13 +100,14 @@ impl<'input> fmt::Display for Instruction<'input> {
         use Instruction::*;
 
         let s = match self {
+            Decl(name, ty) => format!("let {}: {};", name, ty),
             Assignment(a, e) => format!("{} = {};", a, e),
             Jmp(l) => format!("goto {};", l),
             JmpIf(a, l0, l1) => format!("if {} goto {} else goto {};", a, l0, l1),
             Return(Some(a)) => format!("return {};", a),
             Return(None) => "return;".to_string(),
             Label(l) => format!("{}:", l),
-            Nop => "nop".to_string(),
+            Nop => "nop".to_owned(),
         };
 
         write!(f, "{}", s)
@@ -107,7 +116,7 @@ impl<'input> fmt::Display for Instruction<'input> {
 
 /// An expression is always on the right side of an assignment instruction
 /// In the comments, this assignment is denoted as 'x = '
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Expression<'input> {
     /// x = y op z
     Binary(Address<'input>, BinaryType, Address<'input>),
@@ -121,18 +130,6 @@ pub enum Expression<'input> {
     DeRef(Address<'input>),
     /// x = call f (y, z)
     Call(Label, Vec<Address<'input>>),
-    /// empty
-    Empty,
-}
-
-impl<'input> Expression<'input> {
-    pub fn is_empty(&self) -> bool {
-        if let Expression::Empty = self {
-            return true;
-        }
-
-        false
-    }
 }
 
 impl<'input> fmt::Display for Expression<'input> {
@@ -150,14 +147,13 @@ impl<'input> fmt::Display for Expression<'input> {
                 let args = args.join(", ");
                 format!("call {}({})", f, args)
             }
-            Empty => "empty".to_string(),
         };
 
         write!(f, "{}", s)
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum UnaryType {
     BoolNegate,
     I32Negate,
@@ -173,6 +169,15 @@ impl fmt::Display for UnaryType {
         };
 
         write!(f, "{}", s)
+    }
+}
+
+impl<'a> From<&Token<'a>> for Option<UnaryType> {
+    fn from(value: &Token) -> Self {
+        match value {
+            Token::Minus => Some(UnaryType::I32Negate),
+            _ => None,
+        }
     }
 }
 

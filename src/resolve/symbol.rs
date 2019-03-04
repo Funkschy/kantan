@@ -23,6 +23,7 @@ impl<'input> Symbol<'input> {
     }
 }
 
+#[derive(Debug)]
 pub struct SymbolTable<'input> {
     scopes: Vec<HashMap<&'input str, Spanned<Symbol<'input>>>>,
 }
@@ -41,7 +42,7 @@ impl<'input> SymbolTable<'input> {
     }
 
     pub fn scope_exit(&mut self) {
-        if self.scopes.len() <= 1 {
+        if self.in_global_scope() {
             panic!("Cannot exit out of global scope");
         }
         self.scopes.pop();
@@ -66,7 +67,7 @@ impl<'input> SymbolTable<'input> {
 
 impl<'input> SymbolTable<'input> {
     fn in_global_scope(&self) -> bool {
-        self.scopes.len() == 1
+        self.scopes.len() <= 1
     }
 
     pub fn lookup(&self, name: &'input str) -> Option<&Spanned<Symbol>> {

@@ -1,8 +1,8 @@
-use std::{borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
+use std::{borrow::Borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
 
 mod cli;
 #[allow(dead_code)]
-mod codegen;
+pub mod codegen;
 #[allow(dead_code)]
 mod mir;
 mod parse;
@@ -10,9 +10,9 @@ mod resolve;
 mod types;
 
 use self::{
-    mir::{func::Func, Tac},
+    mir::{func::Func, tac::Label, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
-    resolve::{Resolver, TypeMap},
+    resolve::{symbol::SymbolTable, Resolver},
 };
 
 pub(crate) use self::cli::*;
@@ -39,7 +39,7 @@ impl cmp::PartialEq for Source {
 
 impl cmp::Eq for Source {}
 
-impl borrow::Borrow<str> for &Source {
+impl Borrow<str> for &Source {
     fn borrow(&self) -> &str {
         self.name.as_str()
     }
@@ -154,12 +154,12 @@ fn find_main<'input>(ast_sources: &PrgMap<'input>) -> Option<&'input str> {
         .map(|(src, _)| *src)
 }
 
-fn type_check<'input, 'ast, W: Write>(
+fn type_check<'input, W: Write>(
     main: &'input str,
-    ast_sources: &'ast PrgMap<'input>,
+    ast_sources: &mut PrgMap<'input>,
     writer: &mut W,
-) -> Result<TypeMap<'input, 'ast>, CompilationError> {
-    let mut resolver = Resolver::new(main, &ast_sources);
+) -> Result<SymbolTable<'input>, CompilationError> {
+    let mut resolver = Resolver::new(main, ast_sources);
     let errors: Vec<String> = resolver
         .resolve()
         .iter()
@@ -171,15 +171,21 @@ fn type_check<'input, 'ast, W: Write>(
         return Err(CompilationError::TypeCheckError);
     }
 
-    Ok(resolver.expr_types)
+    Ok(resolver.sym_table)
 }
 
-fn tac_functions<'input, 'ast>(
+#[derive(Debug)]
+pub struct Mir<'input> {
+    pub globals: HashMap<Label, &'input str>,
+    pub functions: Vec<Func<'input>>,
+}
+
+fn construct_tac<'input>(
     main: &'input str,
-    types: &TypeMap<'input, 'ast>,
     ast_sources: &PrgMap<'input>,
-) -> Vec<Func<'input>> {
-    let mut tac = Tac::new(&types);
+    symbols: SymbolTable<'input>,
+) -> Mir<'input> {
+    let mut tac = Tac::new(symbols);
     for (src_name, (_, prg)) in ast_sources.iter() {
         for top_lvl in &prg.0 {
             if let TopLvl::FnDecl {
@@ -187,6 +193,7 @@ fn tac_functions<'input, 'ast>(
                 body,
                 params,
                 ret_type,
+                is_extern,
             } = top_lvl
             {
                 let name = if *src_name != main {
@@ -198,19 +205,32 @@ fn tac_functions<'input, 'ast>(
                 let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
                 let ret_type = ret_type.node;
 
-                tac.add_function(name, params, &body, ret_type);
+                tac.add_function(name, params, &body, ret_type, *is_extern);
             }
         }
     }
-    tac.functions
+    Mir {
+        globals: tac.literals,
+        functions: tac.functions,
+    }
+}
+
+// TODO: do properly
+pub fn stdlib() -> Vec<Source> {
+    let io = Source::new(
+        "io",
+        "extern fn putchar(i: i32): i32; 
+         extern fn puts(s: string): i32;",
+    );
+    vec![io]
 }
 
 pub fn compile<'input, W: Write>(
     sources: &'input [Source],
     writer: &mut W,
-) -> Result<Vec<Func<'input>>, CompilationError> {
+) -> Result<Mir<'input>, CompilationError> {
     init_ansi();
-    let (ast_sources, err_count) = ast_sources(sources);
+    let (mut ast_sources, err_count) = ast_sources(sources);
 
     if err_count != 0 {
         for (source, ast) in ast_sources.values() {
@@ -228,8 +248,9 @@ pub fn compile<'input, W: Write>(
     }
 
     let main = main.unwrap();
-    let types = type_check(main, &ast_sources, writer)?;
-    let funcs = tac_functions(main, &types, &ast_sources);
+    let symbols = type_check(main, &mut ast_sources, writer)?;
 
-    Ok(funcs)
+    let mir = construct_tac(main, &ast_sources, symbols);
+
+    Ok(mir)
 }

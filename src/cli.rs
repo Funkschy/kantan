@@ -46,7 +46,6 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     errors.push((*span, err.to_string()));
                 }
             }
-            // TODO: else branch
             Stmt::If {
                 condition:
                     Spanned {
@@ -54,7 +53,7 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                         span,
                     },
                 then_block,
-                ..
+                else_branch,
             } => {
                 if let Expr::Error(err) = condition {
                     errors.push((*span, err.to_string()));
@@ -62,16 +61,33 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                 for s in &then_block.0 {
                     find_errors_rec(s, errors);
                 }
+
+                if let Some(else_branch) = else_branch {
+                    match else_branch.as_ref() {
+                        Else::IfStmt(s) => find_errors_rec(s, errors),
+                        Else::Block(b) => {
+                            for s in &b.0 {
+                                find_errors_rec(s, errors);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
     let mut errors = vec![];
     for top_lvl in &prg.0 {
-        if let TopLvl::FnDecl { body, .. } = top_lvl {
-            for s in &body.0 {
-                find_errors_rec(s, &mut errors);
+        match top_lvl {
+            TopLvl::FnDecl { body, .. } => {
+                for s in &body.0 {
+                    find_errors_rec(s, &mut errors);
+                }
             }
+            TopLvl::Error(err) => {
+                errors.push((err.span, err.node.to_string()));
+            }
+            TopLvl::Import { .. } => {}
         }
     }
     errors
