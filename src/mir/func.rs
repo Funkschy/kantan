@@ -44,8 +44,8 @@ impl<'input> fmt::Display for Func<'input> {
             return write!(f, "extern fn {}({}): {};", self.label, params, self.ret);
         }
 
-        let format = |inst| {
-            if let &Instruction::Label(..) = inst {
+        let format = |inst: &Instruction| {
+            if let Instruction::Label(..) = *inst {
                 format!("   {}", inst)
             } else {
                 format!("       {}", inst)
