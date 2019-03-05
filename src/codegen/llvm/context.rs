@@ -139,9 +139,8 @@ impl KantanLLVMContext {
                 self.current_function = Some(f);
 
                 let mut bbs = Vec::with_capacity(function.blocks.blocks.len());
-                bbs.push(self.add_bb(f, "entry"));
 
-                for b in function.blocks.blocks.iter().skip(1) {
+                for b in function.blocks.blocks.iter() {
                     if let Instruction::Label(label) = &b.instructions[0] {
                         let name: &str = label.borrow();
                         let bb_ref = self.add_bb(f, name);

@@ -381,6 +381,7 @@ mod tests {
 
         let mut bb = BasicBlock::default();
         bb.instructions = vec![
+            Label::from(".entry0".to_string()).into(),
             Instruction::Decl(Address::Name("x0".to_string()), Type::I32),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
@@ -447,6 +448,7 @@ mod tests {
 
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
+            Label::from(".entry0".to_string()).into(),
             Instruction::Decl(Address::Name("x0".to_string()), Type::I32),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
@@ -522,6 +524,7 @@ mod tests {
 
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
+            Label::from(".entry0".to_string()).into(),
             Instruction::Decl(Address::Name("x0".to_string()), Type::I32),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
@@ -605,6 +608,7 @@ mod tests {
         // init block
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
+            Label::from(".entry0".to_string()).into(),
             Instruction::Decl(Address::Name("x0".to_string()), Type::I32),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
@@ -690,12 +694,12 @@ mod tests {
             .insert(Label::from(".entry0".to_string()), 0);
 
         let mut main_bb = BasicBlock::default();
-        main_bb.instructions = vec![];
+        main_bb.instructions = vec![Label::from(".entry0".to_string()).into()];
         main_bb.terminator =
             Instruction::Return(Some(Address::Const(Constant::new(Type::I32, "0"))));
 
         let mut test_bb = BasicBlock::default();
-        test_bb.instructions = vec![];
+        test_bb.instructions = vec![Label::from(".entry0".to_string()).into()];
         test_bb.terminator = Instruction::Return(None);
 
         main_bm.blocks = vec![main_bb];

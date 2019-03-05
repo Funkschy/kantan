@@ -16,6 +16,8 @@ impl<'input> BlockMap<'input> {
         let mut label = Label::from(BlockMap::entry_name());
         let mut label_count = 1;
 
+        bb.instructions.push(label.clone().into());
+
         for instr in block.0 {
             match instr {
                 Instruction::Assignment(..) | Instruction::Decl(..) | Instruction::Nop => {
@@ -40,6 +42,14 @@ impl<'input> BlockMap<'input> {
                 }
                 // Terminator instructions
                 Instruction::Jmp(..) | Instruction::JmpIf(..) | Instruction::Return(..) => {
+                    // If the current block is empty, this means, that the last
+                    // Instruction already terminated the block. Normally, there
+                    // should already be a label Instruction inside
+                    if bb.instructions.is_empty() {
+                        // Continue, to ensure, that there are no Blocks, which
+                        // consist only of a terminator
+                        continue;
+                    }
                     bb.terminator = instr;
                     let idx = blocks.len();
                     blocks.push(bb);
@@ -66,14 +76,12 @@ mod tests {
 
     #[test]
     fn test_from_instructions_only_basics_should_return_map_with_one_block() {
-        // .test:
         // x = 4;
         // y = 2 + x * 3;
         // x = 42;
         // return;
 
         let instructions = vec![
-            Instruction::Label(Label::from(".test".to_string())),
             Instruction::Assignment(
                 Address::Name("x".to_string()),
                 Expression::Copy(Address::Const(Constant::new(Type::I32, "4"))),
@@ -103,14 +111,14 @@ mod tests {
 
         let result = BlockMap::from_instructions(InstructionBlock(instructions));
         let mut expected = HashMap::new();
-        expected.insert(Label::from(".test".to_string()), 0);
+        expected.insert(Label::from(".entry0".to_string()), 0);
 
         assert_eq!(expected, result.mappings);
         assert_eq!(1, result.blocks.len());
 
         let expected = vec![BasicBlock {
             instructions: vec![
-                Instruction::Label(Label::from(".test".to_string())),
+                Instruction::Label(Label::from(".entry0".to_string())),
                 Instruction::Assignment(
                     Address::Name("x".to_string()),
                     Expression::Copy(Address::Const(Constant::new(Type::I32, "4"))),
@@ -190,6 +198,7 @@ mod tests {
         let expected = vec![
             BasicBlock {
                 instructions: vec![
+                    Instruction::Label(Label::from(".entry0".to_string())),
                     Instruction::Assignment(
                         Address::Name("x".to_string()),
                         Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
@@ -285,6 +294,7 @@ mod tests {
         let expected = vec![
             BasicBlock {
                 instructions: vec![
+                    Instruction::Label(Label::from(".entry0".to_string())),
                     Instruction::Assignment(
                         Address::Name("x".to_string()),
                         Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
