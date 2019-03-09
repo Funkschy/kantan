@@ -1,4 +1,4 @@
-use std::{cell::Cell, iter::Peekable};
+use std::{cell::Cell, collections::HashMap, iter::Peekable};
 
 use super::{ast::*, error::LexError, token::*, *};
 use crate::types::Type;
@@ -48,9 +48,7 @@ where
         let mut top_lvl_decls = vec![];
 
         while self.scanner.peek().is_some() {
-            let is_extern = self.peek_eq(Token::Extern);
-
-            let decl = self.top_lvl_decl(is_extern);
+            let decl = self.top_lvl_decl();
             if let Ok(decl) = decl {
                 top_lvl_decls.push(decl);
             } else if let Err(err) = decl {
@@ -64,11 +62,16 @@ where
         Program(top_lvl_decls)
     }
 
-    fn top_lvl_decl(&mut self, is_extern: bool) -> TopLvlResult<'input> {
+    fn top_lvl_decl(&mut self) -> TopLvlResult<'input> {
         if self.peek_eq(Token::Import) {
             return self.import();
         }
 
+        if self.peek_eq(Token::Type) {
+            return self.type_definition();
+        }
+
+        let is_extern = self.peek_eq(Token::Extern);
         if is_extern {
             self.consume(Token::Extern)?;
         }
@@ -94,6 +97,34 @@ where
             ret_type,
             is_extern,
         })
+    }
+
+    fn type_definition(&mut self) -> TopLvlResult<'input> {
+        self.consume(Token::Type)?;
+        let name = self.consume_ident()?;
+
+        self.consume(Token::Struct)?;
+        self.consume(Token::LBrace)?;
+
+        let mut fields = HashMap::new();
+
+        if !self.at_end() && !self.peek_eq(Token::RBrace) {
+            loop {
+                let field_name = self.consume_ident()?;
+                self.consume(Token::Colon)?;
+                let field_type = self.consume_type()?;
+                fields.insert(field_name, field_type);
+
+                if self.at_end() || self.peek_eq(Token::RBrace) {
+                    break;
+                }
+
+                self.consume(Token::Comma)?;
+            }
+        }
+
+        self.consume(Token::RBrace)?;
+        Ok(TopLvl::TypeDef(TypeDef::StructDef { name, fields }))
     }
 
     fn import(&mut self) -> TopLvlResult<'input> {
@@ -321,22 +352,29 @@ where
         Err(self.eof().unwrap_err())
     }
 
-    fn consume_type(&mut self) -> Result<Spanned<Type>, Spanned<ParseError<'input>>> {
+    fn consume_type(&mut self) -> Result<Spanned<Type<'input>>, Spanned<ParseError<'input>>> {
         if let Some(peek) = self.scanner.peek().cloned() {
             return match peek {
-                Ok(peek) => {
-                    if let Spanned {
+                Ok(peek) => match peek {
+                    Spanned {
                         node: Token::TypeIdent(ty),
                         span,
-                    } = peek
-                    {
+                    } => {
                         self.advance()?;
-                        return Ok(Spanned::from_span(span, ty));
-                    } else {
-                        let tok = Spanned::clone(&peek);
-                        return Err(self.make_consume_err(&tok, "Type".to_owned()).unwrap_err());
+                        Ok(Spanned::from_span(span, ty))
                     }
-                }
+                    Spanned {
+                        node: Token::Ident(ident),
+                        span,
+                    } => {
+                        self.advance()?;
+                        Ok(Spanned::from_span(span, Type::UserType(ident)))
+                    }
+                    _ => {
+                        let tok = Spanned::clone(&peek);
+                        Err(self.make_consume_err(&tok, "Type".to_owned()).unwrap_err())
+                    }
+                },
                 Err(err) => Err(err),
             };
         }
@@ -570,6 +608,103 @@ where
 mod tests {
     use super::lexer::Lexer;
     use super::*;
+
+    #[test]
+    fn test_parse_return_struct() {
+        let source = "type Test struct {test: i32, second: bool} fn main(): Test { }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![
+                TopLvl::TypeDef(TypeDef::StructDef {
+                    name: Spanned::new(5, 8, "Test"),
+                    fields: {
+                        let mut map = HashMap::new();
+                        map.insert(
+                            Spanned::new(18, 21, "test"),
+                            Spanned::new(24, 26, Type::I32),
+                        );
+                        map.insert(
+                            Spanned::new(29, 34, "second"),
+                            Spanned::new(37, 40, Type::Bool),
+                        );
+                        map
+                    }
+                }),
+                TopLvl::FnDecl {
+                    name: Spanned::new(46, 49, "main"),
+                    params: ParamList(vec![]),
+                    ret_type: Spanned::new(54, 57, Type::UserType("Test")),
+                    is_extern: false,
+                    body: Block(vec![])
+                }
+            ]),
+            prg
+        );
+    }
+
+    #[test]
+    fn test_parse_struct_definition() {
+        let source = "type Test struct {test: i32, second: bool} fn main(): void { }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![
+                TopLvl::TypeDef(TypeDef::StructDef {
+                    name: Spanned::new(5, 8, "Test"),
+                    fields: {
+                        let mut map = HashMap::new();
+                        map.insert(
+                            Spanned::new(18, 21, "test"),
+                            Spanned::new(24, 26, Type::I32),
+                        );
+                        map.insert(
+                            Spanned::new(29, 34, "second"),
+                            Spanned::new(37, 40, Type::Bool),
+                        );
+                        map
+                    }
+                }),
+                TopLvl::FnDecl {
+                    name: Spanned::new(46, 49, "main"),
+                    params: ParamList(vec![]),
+                    ret_type: Spanned::new(54, 57, Type::Void),
+                    is_extern: false,
+                    body: Block(vec![])
+                }
+            ]),
+            prg
+        );
+    }
+
+    #[test]
+    fn test_parse_empty_struct_definition() {
+        let source = "type Test struct {} fn main(): void { }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![
+                TopLvl::TypeDef(TypeDef::StructDef {
+                    name: Spanned::new(5, 8, "Test"),
+                    fields: HashMap::new()
+                }),
+                TopLvl::FnDecl {
+                    name: Spanned::new(23, 26, "main"),
+                    params: ParamList(vec![]),
+                    ret_type: Spanned::new(31, 34, Type::Void),
+                    is_extern: false,
+                    body: Block(vec![])
+                }
+            ]),
+            prg
+        );
+    }
 
     #[test]
     fn test_parse_while_statement() {

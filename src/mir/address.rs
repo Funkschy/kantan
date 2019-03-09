@@ -8,7 +8,7 @@ pub enum Address<'input> {
     Name(String),
     Arg(Argument),
     Const(Constant<'input>),
-    CompConst(CompilerConstant),
+    CompConst(CompilerConstant<'input>),
     Temp(TempVar),
     Global(Label),
 }
@@ -43,7 +43,7 @@ impl<'input> From<&String> for Address<'input> {
 }
 
 impl<'input> Address<'input> {
-    pub fn new_const(ty: Type, literal: &'input str) -> Self {
+    pub fn new_const(ty: Type<'input>, literal: &'input str) -> Self {
         Address::Const(Constant::new(ty, literal))
     }
 
@@ -98,7 +98,7 @@ impl fmt::Display for TempVar {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Constant<'input> {
-    pub ty: Type,
+    pub ty: Type<'input>,
     pub literal: &'input str,
 }
 
@@ -109,25 +109,25 @@ impl<'input> fmt::Display for Constant<'input> {
 }
 
 impl<'input> Constant<'input> {
-    pub fn new(ty: Type, literal: &'input str) -> Self {
+    pub fn new(ty: Type<'input>, literal: &'input str) -> Self {
         Constant { ty, literal }
     }
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct CompilerConstant {
-    pub ty: Type,
+pub struct CompilerConstant<'input> {
+    pub ty: Type<'input>,
     pub literal: String,
 }
 
-impl<'input> fmt::Display for CompilerConstant {
+impl<'input> fmt::Display for CompilerConstant<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.literal)
     }
 }
 
-impl<'input> CompilerConstant {
-    pub fn new(ty: Type, literal: String) -> Self {
+impl<'input> CompilerConstant<'input> {
+    pub fn new(ty: Type<'input>, literal: String) -> Self {
         CompilerConstant { ty, literal }
     }
 }

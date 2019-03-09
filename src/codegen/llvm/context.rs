@@ -90,6 +90,7 @@ impl KantanLLVMContext {
             Type::Bool => LLVMInt8TypeInContext(self.context),
             Type::Void => LLVMVoidTypeInContext(self.context),
             Type::String => LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
+            Type::UserType(..) => unimplemented!(),
         }
     }
 }

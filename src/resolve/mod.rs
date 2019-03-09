@@ -16,9 +16,14 @@ mod error;
 pub mod symbol;
 
 #[derive(Clone)]
-struct FunctionDefinition {
-    ret_type: Type,
-    params: Vec<Type>,
+struct FunctionDefinition<'input> {
+    ret_type: Type<'input>,
+    params: Vec<Type<'input>>,
+}
+
+struct UserTypeDefinition<'input> {
+    name: &'input str,
+    fields: HashMap<&'input str, Spanned<Type<'input>>>,
 }
 
 pub(crate) struct Resolver<'input, 'ast> {
@@ -26,8 +31,9 @@ pub(crate) struct Resolver<'input, 'ast> {
     programs: &'ast PrgMap<'input>,
     resolved: HashSet<&'input str>,
     pub(crate) sym_table: SymbolTable<'input>,
-    functions: HashMap<String, FunctionDefinition>,
-    current_func_ret_type: Spanned<Type>,
+    functions: HashMap<String, FunctionDefinition<'input>>,
+    user_types: HashMap<String, UserTypeDefinition<'input>>,
+    current_func_ret_type: Spanned<Type<'input>>,
 }
 
 impl<'input, 'ast> Resolver<'input, 'ast> {
@@ -38,6 +44,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             resolved: HashSet::new(),
             sym_table: SymbolTable::new(),
             functions: HashMap::new(),
+            user_types: HashMap::new(),
             current_func_ret_type: Spanned::new(0, 0, Type::Void),
         }
     }
@@ -113,7 +120,26 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     errors.push(self.not_defined_error(name.span, name.span, name.node));
                 }
             }
-            _ => panic!("Invalid top level declaration {:#?}", top_lvl),
+            TopLvl::TypeDef(TypeDef::StructDef { name, fields }) => {
+                let full_name = prefix
+                    .map(|prefix| format!("{}.{}", prefix, name.node))
+                    .unwrap_or_else(|| name.node.to_owned());
+
+                let fields = fields
+                    .iter()
+                    .map(|(Spanned { node, .. }, ty)| (*node, *ty))
+                    .collect();
+
+                let def = UserTypeDefinition {
+                    name: name.node,
+                    fields,
+                };
+
+                self.user_types.insert(full_name, def);
+            }
+            TopLvl::Error(err) => {
+                panic!("Invalid top level declaration {:#?}\n{}", top_lvl, err.node)
+            }
         }
     }
 
@@ -298,7 +324,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &mut self,
         span: Span,
         expr: &Expr<'input>,
-    ) -> Result<Type, ResolveError<'input>> {
+    ) -> Result<Type<'input>, ResolveError<'input>> {
         match &expr {
             Expr::Error(_) => {
                 unreachable!("If errors occur during parsing, the program should not be resolved")
@@ -321,7 +347,18 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 self.compare_binary_types(op.span, span, left, right)?;
                 Ok(Type::Bool)
             }
-            Expr::Access { .. } => unimplemented!("No structs yet. Imports are resolved by name"),
+            // currently only field access
+            Expr::Access { left, identifier } => {
+                let left_ty = self.resolve_expr(left.span, &left.node)?;
+                if let Type::UserType(type_name) = left_ty {
+                    let user_type = self.get_user_type(Spanned::from_span(span, type_name))?;
+                    let field_type = self.get_field(&user_type, identifier)?;
+                    Ok(field_type)
+                } else {
+                    // TODO: replace with custom error
+                    panic!("Cannot access field of primitive type: {}", left_ty);
+                }
+            }
             Expr::Assign { name, eq, value } => {
                 // Lookup variable in defined scopes
                 let (ty, sym_span) = {
@@ -365,6 +402,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 .map(|sym| sym.node.ty),
 
             Expr::Call { callee, args } => {
+                // TODO: replace with proper resolution to enable UFCS
                 let callee_name = self.current_source().slice(callee.span);
 
                 let func_type = self
@@ -419,6 +457,27 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         src
     }
 
+    fn get_user_type(
+        &self,
+        name: Spanned<&'input str>,
+    ) -> Result<&UserTypeDefinition<'input>, ResolveError<'input>> {
+        self.user_types
+            .get(name.node)
+            .ok_or(self.not_defined_error(name.span, name.span, name.node))
+    }
+
+    fn get_field(
+        &self,
+        user_type: &UserTypeDefinition<'input>,
+        name: &Spanned<&'input str>,
+    ) -> Result<Type<'input>, ResolveError<'input>> {
+        user_type
+            .fields
+            .get(name.node)
+            .ok_or(self.no_such_field_error(user_type, name))
+            .map(|ty| ty.node)
+    }
+
     fn error(
         &self,
         err_span: Span,
@@ -431,6 +490,21 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             err_span,
             expr_span,
         }
+    }
+
+    fn no_such_field_error(
+        &self,
+        user_type: &UserTypeDefinition<'input>,
+        name: &Spanned<&'input str>,
+    ) -> ResolveError<'input> {
+        self.error(
+            name.span,
+            name.span,
+            ResolveErrorType::NoSuchField(StructFieldError {
+                struct_name: user_type.name,
+                field_name: name.node,
+            }),
+        )
     }
 
     fn illegal_op_to_illegal_assignment(
@@ -461,8 +535,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         err_span: Span,
         expr_span: Span,
         name: &'static str,
-        expected_type: Type,
-        actual_type: Type,
+        expected_type: Type<'input>,
+        actual_type: Type<'input>,
     ) -> ResolveError<'input> {
         self.error(
             err_span,
@@ -492,8 +566,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        first: Type,
-        second: Type,
+        first: Type<'input>,
+        second: Type<'input>,
         name: &'static str,
     ) -> Result<(), ResolveError<'input>> {
         if first != second {
@@ -515,9 +589,9 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        first: Type,
-        second: Type,
-    ) -> Result<Type, ResolveError<'input>> {
+        first: Type<'input>,
+        second: Type<'input>,
+    ) -> Result<Type<'input>, ResolveError<'input>> {
         if first != second {
             Err(self.error(
                 err_span,

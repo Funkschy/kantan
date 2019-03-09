@@ -1,4 +1,4 @@
-use std::{cell::Cell, fmt};
+use std::{cell::Cell, collections::HashMap, fmt};
 
 use super::{error::ParseError, token::Token, Spanned};
 use crate::types::Type;
@@ -12,13 +12,22 @@ pub enum TopLvl<'input> {
         name: Spanned<&'input str>,
         params: ParamList<'input>,
         body: Block<'input>,
-        ret_type: Spanned<Type>,
+        ret_type: Spanned<Type<'input>>,
         is_extern: bool,
     },
     Import {
         name: Spanned<&'input str>,
     },
+    TypeDef(TypeDef<'input>),
     Error(Spanned<ParseError<'input>>),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum TypeDef<'input> {
+    StructDef {
+        name: Spanned<&'input str>,
+        fields: HashMap<Spanned<&'input str>, Spanned<Type<'input>>>,
+    },
 }
 
 // TODO: refactor Spanned<&'input str> to identifier
@@ -29,7 +38,7 @@ pub enum Stmt<'input> {
         value: Spanned<Expr<'input>>,
         eq: Spanned<Token<'input>>,
         // is filled in by resolver if necessary
-        ty: Cell<Option<Spanned<Type>>>,
+        ty: Cell<Option<Spanned<Type<'input>>>>,
     },
     If {
         condition: Spanned<Expr<'input>>,
@@ -57,10 +66,10 @@ pub struct Block<'input>(pub Vec<Stmt<'input>>);
 pub struct ParamList<'input>(pub Vec<Param<'input>>);
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Param<'input>(pub Spanned<&'input str>, pub Type);
+pub struct Param<'input>(pub Spanned<&'input str>, pub Type<'input>);
 
 impl<'input> Param<'input> {
-    pub fn new(ident: Spanned<&'input str>, ty: Type) -> Self {
+    pub fn new(ident: Spanned<&'input str>, ty: Type<'input>) -> Self {
         Param(ident, ty)
     }
 }

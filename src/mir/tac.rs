@@ -80,7 +80,7 @@ impl<'input> Into<Instruction<'input>> for Label {
 #[derive(PartialEq, Debug)]
 pub enum Instruction<'input> {
     /// let x: i32
-    Decl(Address<'input>, Type),
+    Decl(Address<'input>, Type<'input>),
     /// x = <expr>
     Assignment(Address<'input>, Expression<'input>),
     /// goto l

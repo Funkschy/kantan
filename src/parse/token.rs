@@ -7,7 +7,7 @@ pub enum Token<'input> {
     Ident(&'input str),
     DecLit(&'input str),
     StringLit(&'input str),
-    TypeIdent(Type),
+    TypeIdent(Type<'input>),
 
     // Keywords
     Let,
@@ -18,6 +18,8 @@ pub enum Token<'input> {
     Return,
     Extern,
     While,
+    Type,
+    Struct,
 
     // Operators
     Equals, // =
@@ -48,8 +50,8 @@ pub enum Token<'input> {
 pub enum Precedence {
     None = 0,
     Assign = 1,
-    Comparison = 2,
-    Equality = 3,
+    Equality = 2,
+    Comparison = 3,
     Sum = 4,
     Product = 5,
     Call = 6,
@@ -59,8 +61,9 @@ impl<'input> Token<'input> {
     pub fn precedence(&self) -> Precedence {
         match self {
             Token::Equals => Precedence::Assign,
-            Token::Smaller | Token::SmallerEquals => Precedence::Comparison,
             Token::EqualsEquals => Precedence::Equality,
+            // TODO: add greater
+            Token::Smaller | Token::SmallerEquals => Precedence::Comparison,
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
             Token::LParen | Token::Dot => Precedence::Call,
@@ -77,6 +80,8 @@ impl<'input> fmt::Display for Token<'input> {
             Token::DecLit(lit) => write!(f, "{}", lit.to_string()),
             Token::TypeIdent(ty) => write!(f, "{}", ty.to_string()),
             // Keywords
+            Token::Type => write!(f, "type"),
+            Token::Struct => write!(f, "struct"),
             Token::Let => write!(f, "let"),
             Token::Fn => write!(f, "fn"),
             Token::If => write!(f, "if"),

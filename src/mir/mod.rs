@@ -45,9 +45,9 @@ impl<'input> Tac<'input> {
     pub fn add_function(
         &mut self,
         name: String,
-        params: Vec<(&'input str, Type)>,
+        params: Vec<(&'input str, Type<'input>)>,
         body: &Block<'input>,
-        ret_type: Type,
+        ret_type: Type<'input>,
         is_extern: bool,
     ) {
         // reset scopes
