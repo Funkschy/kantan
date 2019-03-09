@@ -2,7 +2,7 @@ use std::{borrow::Borrow, fmt};
 
 use crate::{parse::token::Token, types::Type};
 
-use super::address::{Address, CompilerConstant};
+use super::address::Address;
 
 #[derive(PartialEq, Debug)]
 pub struct BasicBlock<'input> {
@@ -227,34 +227,6 @@ impl<'a> From<&Token<'a>> for Option<IntBinaryType> {
             Token::Smaller => Some(Smaller),
             Token::SmallerEquals => Some(SmallerEq),
             _ => None,
-        }
-    }
-}
-
-macro_rules! boolean {
-    ($e:expr) => {
-        CompilerConstant::new(Type::Bool, ($e).to_string())
-    };
-}
-
-macro_rules! integer {
-    ($int_type:expr, $e:expr) => {
-        CompilerConstant::new($int_type, ($e).to_string())
-    };
-}
-
-impl IntBinaryType {
-    pub fn execute(self, ty: Type, left: i128, right: i128) -> CompilerConstant {
-        use IntBinaryType::*;
-
-        match self {
-            Add => integer!(ty, left + right),
-            Sub => integer!(ty, left - right),
-            Mul => integer!(ty, left * right),
-            Div => integer!(ty, left / right),
-            Eq => boolean!(left == right),
-            Smaller => boolean!(left < right),
-            SmallerEq => boolean!(left <= right),
         }
     }
 }

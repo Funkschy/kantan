@@ -67,11 +67,7 @@ impl KantanLLVMContext {
         }
     }
 
-    unsafe fn create_llvm_struct(
-        &mut self,
-        name: &String,
-        def: &UserTypeDefinition,
-    ) -> LLVMTypeRef {
+    unsafe fn create_llvm_struct(&mut self, name: &str, def: &UserTypeDefinition) -> LLVMTypeRef {
         let mut fields: Vec<LLVMTypeRef> = def
             .fields
             .iter()
@@ -79,7 +75,6 @@ impl KantanLLVMContext {
             .collect();
 
         let s = LLVMStructCreateNamed(self.context, self.cstring(name));
-        // TODO: memory leak?
         LLVMStructSetBody(s, fields.as_mut_ptr(), fields.len() as u32, false as i32);
         s
     }
@@ -133,7 +128,6 @@ impl KantanLLVMContext {
         cstr
     }
 
-    // TODO: params
     unsafe fn func_type(&mut self, ret: LLVMTypeRef, mut params: Vec<LLVMTypeRef>) -> LLVMTypeRef {
         LLVMFunctionType(ret, params.as_mut_ptr(), params.len() as u32, 0)
     }
@@ -171,6 +165,7 @@ impl KantanLLVMContext {
 
                 let mut bbs = Vec::with_capacity(function.blocks.blocks.len());
 
+                // generate basic blocks
                 for b in function.blocks.blocks.iter() {
                     if let Instruction::Label(label) = &b.instructions[0] {
                         let name: &str = label.borrow();
@@ -182,9 +177,17 @@ impl KantanLLVMContext {
                     }
                 }
 
-                // LLVMPositionBuilderAtEnd(self.builder, bbs[0]);
-                // function.
+                // allocate arguments on stack
+                LLVMPositionBuilderAtEnd(self.builder, bbs[0]);
+                for (i, (name, ty)) in function.params.iter().enumerate() {
+                    let n = self.cstring(name);
+                    dbg!(name);
+                    let stack_arg = LLVMBuildAlloca(self.builder, self.convert(*ty), n);
+                    LLVMBuildStore(self.builder, LLVMGetParam(f, i as u32), stack_arg);
+                    self.name_table.insert(name.to_string(), stack_arg);
+                }
 
+                // generate actual instructions
                 for (j, b) in function.blocks.blocks.iter().enumerate() {
                     LLVMPositionBuilderAtEnd(self.builder, bbs[j]);
 
@@ -297,7 +300,6 @@ impl KantanLLVMContext {
                 LLVMBuildLoad(self.builder, self.name_table[n], self.cstring("tmp"))
             }
             Address::Temp(t) => self.name_table[&t.to_string()],
-            Address::Arg(arg) => LLVMGetParam(self.current_function.unwrap(), arg.into()),
             // TODO: other types
             Address::Const(c) => LLVMConstInt(self.convert(c.ty), c.literal.parse().unwrap(), 1),
             Address::Global(g) => {
@@ -311,10 +313,10 @@ impl KantanLLVMContext {
                     self.cstring("geptmp"),
                 );
 
+                // TODO: not only strings
                 let ptr = LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE);
                 LLVMBuildPointerCast(self.builder, gep, ptr, self.cstring("tmpstring"))
             }
-            _ => unimplemented!(),
         }
     }
 
@@ -334,12 +336,10 @@ impl KantanLLVMContext {
                 let a = self.translate_mir_address(a);
                 let n = self.cstring(name);
 
-                let op = match uop {
+                match uop {
                     UnaryType::I32Negate => LLVMBuildNeg(self.builder, a, n),
                     UnaryType::BoolNegate => LLVMBuildNot(self.builder, a, n),
-                };
-
-                op
+                }
             }
             Expression::Call(label, args) => {
                 let n = self.cstring(name);
@@ -349,13 +349,17 @@ impl KantanLLVMContext {
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
 
                 let f = self.functions[&label.to_string()];
-                let op = LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, n);
-
-                op
+                LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, n)
             }
             Expression::StructGep(a, idx) => {
-                let address = self.translate_mir_address(a);
-                LLVMBuildStructGEP(self.builder, address, *idx, self.cstring(name))
+                let address = match a {
+                    Address::Name(n) => self.name_table[n],
+                    Address::Temp(t) => self.name_table[&t.to_string()],
+                    Address::Global(g) => self.globals[g],
+                    _ => unreachable!("{} is invalid here", a),
+                };
+                let gep = LLVMBuildStructGEP(self.builder, address, *idx, self.cstring("ptr"));
+                LLVMBuildLoad(self.builder, gep, self.cstring(name))
             }
             _ => unimplemented!(),
         }
@@ -370,7 +374,7 @@ impl KantanLLVMContext {
     ) -> LLVMValueRef {
         let n = self.cstring(name);
 
-        let op = match ty {
+        match ty {
             IntBinaryType::Add => LLVMBuildAdd(self.builder, left, right, n),
             IntBinaryType::Sub => LLVMBuildSub(self.builder, left, right, n),
             IntBinaryType::Mul => LLVMBuildMul(self.builder, left, right, n),
@@ -385,9 +389,7 @@ impl KantanLLVMContext {
             IntBinaryType::SmallerEq => {
                 LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntSLE, left, right, n)
             }
-        };
-
-        op
+        }
     }
 }
 

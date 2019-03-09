@@ -1,7 +1,7 @@
 //! The middle intermediate representation.
 //! This IR is very similar to LLVM-IR, but can also be compiled to Assembly directly.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, mem};
 
 use super::{
     parse::ast::*,
@@ -9,7 +9,7 @@ use super::{
     types::Type,
     Spanned, UserTypeMap,
 };
-use address::{Address, Argument, Constant};
+use address::{Address, Constant};
 use blockmap::BlockMap;
 use func::Func;
 use names::NameTable;
@@ -30,7 +30,7 @@ pub struct Tac<'input> {
     names: NameTable<'input>,
     temp_count: usize,
     label_count: usize,
-    current_params: Option<Vec<&'input str>>,
+    current_params: Option<Vec<(&'input str, Type<'input>)>>,
 }
 
 impl<'input> Tac<'input> {
@@ -59,7 +59,7 @@ impl<'input> Tac<'input> {
     ) {
         // reset scopes
         self.names = NameTable::new();
-        self.current_params = Some(params.iter().map(|(n, _)| *n).collect());
+        self.current_params = Some(params);
 
         let f = if !is_extern {
             let mut block = self.create_block(&body.0);
@@ -83,15 +83,29 @@ impl<'input> Tac<'input> {
             // the main function has to return an int
             let ret_type = if main_func { Type::I32 } else { ret_type };
 
+            // move params out of current_params and replace with None
+            let mut moved_params = None;
+            mem::swap(&mut self.current_params, &mut moved_params);
+
             Func::new(
                 name.into(),
-                params,
+                moved_params.unwrap(),
                 ret_type,
                 BlockMap::from_instructions(block),
                 false,
             )
         } else {
-            Func::new(name.into(), params, ret_type, BlockMap::default(), true)
+            // move params out of current_params and replace with None
+            let mut moved_params = None;
+            mem::swap(&mut self.current_params, &mut moved_params);
+
+            Func::new(
+                name.into(),
+                moved_params.unwrap(),
+                ret_type,
+                BlockMap::default(),
+                true,
+            )
         };
 
         self.functions.push(f);
@@ -215,7 +229,7 @@ impl<'input> Tac<'input> {
                         condition,
                         then_block,
                         else_branch,
-                    } = s
+                    } = s.as_ref()
                     {
                         self.if_branch(
                             &condition.node,
@@ -331,7 +345,7 @@ impl<'input> Tac<'input> {
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
             ExprKind::Ident(ident) => {
                 if let Some(arg) = self.find_param(ident) {
-                    Address::new_arg(arg)
+                    Address::Name(arg)
                 } else {
                     // Address::Name
                     self.names.lookup(ident).into()
@@ -341,11 +355,15 @@ impl<'input> Tac<'input> {
         })
     }
 
-    fn find_param(&self, ident: &str) -> Option<Argument> {
-        self.current_params
-            .as_ref()
-            .and_then(|params| params.iter().position(|p| *p == ident))
-            .map(Argument::from)
+    fn find_param(&self, ident: &str) -> Option<String> {
+        self.current_params.as_ref().and_then(|params| {
+            params.iter().find_map(|(name, _)| {
+                if *name == ident {
+                    return Some(name.to_string());
+                }
+                None
+            })
+        })
     }
 
     fn string_lit(&mut self, lit: &'input str) -> Label {

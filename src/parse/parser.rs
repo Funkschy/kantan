@@ -235,7 +235,7 @@ where
             self.consume(Token::Else)?;
 
             let else_branch = if self.peek_eq(Token::If) {
-                let else_if = self.if_stmt()?;
+                let else_if = Box::new(self.if_stmt()?);
                 Else::IfStmt(else_if)
             } else {
                 let block = self.block()?;

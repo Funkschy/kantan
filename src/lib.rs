@@ -204,6 +204,33 @@ pub struct Mir<'input> {
     pub types: UserTypeMap<'input>,
 }
 
+impl<'input> fmt::Display for Mir<'input> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let types = self
+            .types
+            .iter()
+            .map(|(_, v)| v.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        let globals = self
+            .globals
+            .iter()
+            .map(|(k, v)| format!("{} {}", k, v))
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        let funcs = self
+            .functions
+            .iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<String>>()
+            .join("\n\n");
+
+        write!(f, "{}\n{}\n{}", types, globals, funcs)
+    }
+}
+
 fn construct_tac<'input>(
     main: &'input str,
     ast_sources: &PrgMap<'input>,

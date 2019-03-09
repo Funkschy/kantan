@@ -55,7 +55,7 @@ pub enum Stmt<'input> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Else<'input> {
-    IfStmt(Stmt<'input>),
+    IfStmt(Box<Stmt<'input>>),
     Block(Block<'input>),
 }
 

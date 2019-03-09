@@ -94,22 +94,7 @@ mod tests {
         }
 
         let mir = compile_result.unwrap();
-
-        let globals = mir
-            .globals
-            .iter()
-            .map(|(k, v)| format!("{} {}", k, v))
-            .collect::<Vec<String>>()
-            .join("\n");
-
-        let funcs = mir
-            .functions
-            .iter()
-            .map(|f| f.to_string())
-            .collect::<Vec<String>>()
-            .join("\n");
-
-        println!("{}\n{}", globals, funcs);
+        println!("{}", mir);
 
         println!("----------");
 

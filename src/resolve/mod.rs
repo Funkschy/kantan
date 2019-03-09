@@ -258,7 +258,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 if let Some(else_branch) = else_branch {
                     match else_branch.as_ref() {
                         Else::IfStmt(s) => {
-                            if let Stmt::If { .. } = s {
+                            if let Stmt::If { .. } = s.as_ref() {
                                 self.resolve_stmt(s, errors);
                             } else {
                                 panic!("Only if statement allowed here");
@@ -486,7 +486,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
     ) -> Result<&UserTypeDefinition<'input>, ResolveError<'input>> {
         self.user_types
             .get(name.node)
-            .ok_or(self.not_defined_error(name.span, name.span, name.node))
+            .ok_or_else(|| self.not_defined_error(name.span, name.span, name.node))
     }
 
     fn get_field(
@@ -497,7 +497,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         user_type
             .fields
             .get(name.node)
-            .ok_or(self.no_such_field_error(user_type, name))
+            .ok_or_else(|| self.no_such_field_error(user_type, name))
             .map(|ty| ty.1.node)
     }
 
