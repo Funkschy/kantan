@@ -9,7 +9,7 @@ use context::*;
 use target::*;
 
 pub fn emit_to_file<W: Write>(mir: &Mir, filename: &str, err_writer: &mut W) {
-    let mut ctx = KantanLLVMContext::new("main");
+    let mut ctx = KantanLLVMContext::new("main", &mir.types);
     ctx.generate(&mir);
 
     let arch = ArchType::X86_64;

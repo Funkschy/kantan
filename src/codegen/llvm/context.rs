@@ -5,7 +5,7 @@ use llvm_sys::{analysis::*, core::*, prelude::*, LLVMIntPredicate, LLVMLinkage, 
 use crate::{
     mir::{address::*, tac::*},
     types::Type,
-    Mir,
+    Mir, UserTypeDefinition, UserTypeMap,
 };
 
 const ADDRESS_SPACE: u32 = 0;
@@ -21,12 +21,13 @@ pub struct KantanLLVMContext {
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
     blocks: HashMap<Label, LLVMBasicBlockRef>,
+    user_types: HashMap<String, LLVMTypeRef>,
     // TODO: make hashmap to save memory
     strings: Vec<CString>,
 }
 
 impl KantanLLVMContext {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: &str, types: &UserTypeMap) -> Self {
         unsafe {
             let name = CString::new(name).unwrap().into_raw();
 
@@ -39,19 +40,48 @@ impl KantanLLVMContext {
             let globals = HashMap::new();
             let blocks = HashMap::new();
 
-            KantanLLVMContext {
+            let user_types = HashMap::new();
+
+            let mut ctx = KantanLLVMContext {
                 context,
                 builder,
                 module,
                 temp_var_counter: 0,
                 name_table,
                 functions,
+                current_function: None,
                 globals,
                 blocks,
-                current_function: None,
+                user_types,
                 strings: vec![CString::from_raw(name)],
-            }
+            };
+
+            let user_types = types
+                .iter()
+                .map(|(n, ty)| (n.clone(), ctx.create_llvm_struct(n, ty)))
+                .collect();
+
+            ctx.user_types = user_types;
+
+            ctx
         }
+    }
+
+    unsafe fn create_llvm_struct(
+        &mut self,
+        name: &String,
+        def: &UserTypeDefinition,
+    ) -> LLVMTypeRef {
+        let mut fields: Vec<LLVMTypeRef> = def
+            .fields
+            .iter()
+            .map(|(_, (_, ty))| self.convert(ty.node))
+            .collect();
+
+        let s = LLVMStructCreateNamed(self.context, self.cstring(name));
+        // TODO: memory leak?
+        LLVMStructSetBody(s, fields.as_mut_ptr(), fields.len() as u32, false as i32);
+        s
     }
 }
 
@@ -90,7 +120,7 @@ impl KantanLLVMContext {
             Type::Bool => LLVMInt8TypeInContext(self.context),
             Type::Void => LLVMVoidTypeInContext(self.context),
             Type::String => LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
-            Type::UserType(..) => unimplemented!(),
+            Type::UserType(name) => self.user_types[name],
         }
     }
 }
@@ -151,6 +181,9 @@ impl KantanLLVMContext {
                         panic!("No label");
                     }
                 }
+
+                // LLVMPositionBuilderAtEnd(self.builder, bbs[0]);
+                // function.
 
                 for (j, b) in function.blocks.blocks.iter().enumerate() {
                     LLVMPositionBuilderAtEnd(self.builder, bbs[j]);
@@ -299,18 +332,17 @@ impl KantanLLVMContext {
             }
             Expression::Unary(uop, a) => {
                 let a = self.translate_mir_address(a);
-                let n = CString::new(name).unwrap().into_raw();
+                let n = self.cstring(name);
 
                 let op = match uop {
                     UnaryType::I32Negate => LLVMBuildNeg(self.builder, a, n),
                     UnaryType::BoolNegate => LLVMBuildNot(self.builder, a, n),
                 };
 
-                self.strings.push(CString::from_raw(n));
                 op
             }
             Expression::Call(label, args) => {
-                let n = CString::new(name).unwrap().into_raw();
+                let n = self.cstring(name);
                 let num_args = args.len() as u32;
 
                 let mut args: Vec<LLVMValueRef> =
@@ -319,8 +351,11 @@ impl KantanLLVMContext {
                 let f = self.functions[&label.to_string()];
                 let op = LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, n);
 
-                self.strings.push(CString::from_raw(n));
                 op
+            }
+            Expression::StructGep(a, idx) => {
+                let address = self.translate_mir_address(a);
+                LLVMBuildStructGEP(self.builder, address, *idx, self.cstring(name))
             }
             _ => unimplemented!(),
         }
@@ -333,7 +368,7 @@ impl KantanLLVMContext {
         ty: IntBinaryType,
         name: &str,
     ) -> LLVMValueRef {
-        let n = CString::new(name).unwrap().into_raw();
+        let n = self.cstring(name);
 
         let op = match ty {
             IntBinaryType::Add => LLVMBuildAdd(self.builder, left, right, n),
@@ -352,7 +387,6 @@ impl KantanLLVMContext {
             }
         };
 
-        self.strings.push(CString::from_raw(n));
         op
     }
 }

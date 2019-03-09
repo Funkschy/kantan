@@ -1,4 +1,4 @@
-use std::{cell::Cell, collections::HashMap, iter::Peekable};
+use std::{cell::Cell, iter::Peekable};
 
 use super::{ast::*, error::LexError, token::*, *};
 use crate::types::Type;
@@ -11,7 +11,7 @@ fn as_err_stmt<'input>(err: Spanned<ParseError<'input>>) -> Stmt<'input> {
     Stmt::Expr(Spanned::new(
         err.span.start,
         err.span.end,
-        Expr::Error(err.node),
+        Expr::new(ExprKind::Error(err.node)),
     ))
 }
 
@@ -106,14 +106,14 @@ where
         self.consume(Token::Struct)?;
         self.consume(Token::LBrace)?;
 
-        let mut fields = HashMap::new();
+        let mut fields = Vec::new();
 
         if !self.at_end() && !self.peek_eq(Token::RBrace) {
             loop {
                 let field_name = self.consume_ident()?;
                 self.consume(Token::Colon)?;
                 let field_type = self.consume_type()?;
-                fields.insert(field_name, field_type);
+                fields.push((field_name, field_type));
 
                 if self.at_end() || self.peek_eq(Token::RBrace) {
                     break;
@@ -278,8 +278,9 @@ where
     }
 
     pub fn expression(&mut self) -> Spanned<Expr<'input>> {
-        let as_err_stmt =
-            |err: Spanned<ParseError<'input>>| Spanned::from_span(err.span, Expr::Error(err.node));
+        let as_err_stmt = |err: Spanned<ParseError<'input>>| {
+            Spanned::from_span(err.span, Expr::new(ExprKind::Error(err.node)))
+        };
 
         self.parse_expression(Precedence::None)
             .unwrap_or_else(|err| {
@@ -430,27 +431,31 @@ where
 
                 let expr = match tok {
                     Token::EqualsEquals | Token::SmallerEquals | Token::Smaller => {
-                        Expr::BoolBinary(Box::new(left), *token, Box::new(right))
+                        ExprKind::BoolBinary(Box::new(left), *token, Box::new(right))
                     }
-                    _ => Expr::Binary(
+                    _ => ExprKind::Binary(
                         Box::new(left),
                         *token,
                         Box::new(Spanned::from_span(right.span, right.node)),
                     ),
                 };
-                Ok(Spanned::new(left_span.start, right_span.end, expr))
+                Ok(Spanned::new(
+                    left_span.start,
+                    right_span.end,
+                    Expr::new(expr),
+                ))
             }
             Token::Equals => {
-                if let Expr::Ident(name) = left.node {
+                if let ExprKind::Ident(name) = left.node.kind() {
                     let value = Box::new(self.expression());
                     Ok(Spanned::new(
                         left.span.start,
                         (*value).span.end,
-                        Expr::Assign {
+                        Expr::new(ExprKind::Assign {
                             name,
                             eq: *token,
                             value,
-                        },
+                        }),
                     ))
                 } else {
                     self.make_infix_err(token)
@@ -461,15 +466,15 @@ where
                 Ok(Spanned::new(
                     left.span.start,
                     ident.span.end,
-                    Expr::Access {
+                    Expr::new(ExprKind::Access {
                         left: Box::new(left),
                         identifier: ident,
-                    },
+                    }),
                 ))
             }
             Token::LParen => {
-                let valid = match left.node {
-                    Expr::Ident(_) | Expr::Access { .. } => true,
+                let valid = match left.node.kind() {
+                    ExprKind::Ident(_) | ExprKind::Access { .. } => true,
                     _ => false,
                 };
 
@@ -480,10 +485,10 @@ where
                     Ok(Spanned::new(
                         left.span.start,
                         end,
-                        Expr::Call {
+                        Expr::new(ExprKind::Call {
                             callee: Box::new(left),
                             args: arg_list,
-                        },
+                        }),
                     ))
                 } else {
                     // TODO: Implement meaningful error
@@ -495,11 +500,11 @@ where
     }
 
     fn prefix(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
-        let ok_spanned = |expr| Ok(Spanned::from_span(token.span, expr));
+        let ok_spanned = |kind| Ok(Spanned::from_span(token.span, Expr::new(kind)));
 
         match token.node {
-            Token::DecLit(lit) => ok_spanned(Expr::DecLit(lit)),
-            Token::StringLit(lit) => ok_spanned(Expr::StringLit(lit)),
+            Token::DecLit(lit) => ok_spanned(ExprKind::DecLit(lit)),
+            Token::StringLit(lit) => ok_spanned(ExprKind::StringLit(lit)),
             Token::LParen => {
                 let mut expr = self.expression();
                 self.consume(Token::RParen)?;
@@ -513,10 +518,10 @@ where
                 Ok(Spanned::new(
                     token.span.start,
                     next.span.end,
-                    Expr::Negate(*token, Box::new(next)),
+                    Expr::new(ExprKind::Negate(*token, Box::new(next))),
                 ))
             }
-            Token::Ident(ref name) => ok_spanned(Expr::Ident(name)),
+            Token::Ident(ref name) => ok_spanned(ExprKind::Ident(name)),
             _ => self.make_prefix_err(token),
         }
     }
@@ -576,10 +581,6 @@ where
     }
 
     fn sync(&mut self) {
-        if self.peek_eq(Token::RBrace) {
-            return;
-        }
-
         let mut previous = self.advance();
 
         while let Some(Ok(peek)) = self.scanner.peek() {
@@ -620,18 +621,16 @@ mod tests {
             Program(vec![
                 TopLvl::TypeDef(TypeDef::StructDef {
                     name: Spanned::new(5, 8, "Test"),
-                    fields: {
-                        let mut map = HashMap::new();
-                        map.insert(
+                    fields: vec![
+                        (
                             Spanned::new(18, 21, "test"),
-                            Spanned::new(24, 26, Type::I32),
-                        );
-                        map.insert(
+                            Spanned::new(24, 26, Type::I32)
+                        ),
+                        (
                             Spanned::new(29, 34, "second"),
-                            Spanned::new(37, 40, Type::Bool),
-                        );
-                        map
-                    }
+                            Spanned::new(37, 40, Type::Bool)
+                        ),
+                    ]
                 }),
                 TopLvl::FnDecl {
                     name: Spanned::new(46, 49, "main"),
@@ -656,18 +655,16 @@ mod tests {
             Program(vec![
                 TopLvl::TypeDef(TypeDef::StructDef {
                     name: Spanned::new(5, 8, "Test"),
-                    fields: {
-                        let mut map = HashMap::new();
-                        map.insert(
+                    fields: vec![
+                        (
                             Spanned::new(18, 21, "test"),
-                            Spanned::new(24, 26, Type::I32),
-                        );
-                        map.insert(
+                            Spanned::new(24, 26, Type::I32)
+                        ),
+                        (
                             Spanned::new(29, 34, "second"),
-                            Spanned::new(37, 40, Type::Bool),
-                        );
-                        map
-                    }
+                            Spanned::new(37, 40, Type::Bool)
+                        ),
+                    ]
                 }),
                 TopLvl::FnDecl {
                     name: Spanned::new(46, 49, "main"),
@@ -692,7 +689,7 @@ mod tests {
             Program(vec![
                 TopLvl::TypeDef(TypeDef::StructDef {
                     name: Spanned::new(5, 8, "Test"),
-                    fields: HashMap::new()
+                    fields: Vec::new()
                 }),
                 TopLvl::FnDecl {
                     name: Spanned::new(23, 26, "main"),
@@ -723,19 +720,23 @@ mod tests {
                     condition: Spanned::new(
                         24,
                         29,
-                        Expr::BoolBinary(
-                            Box::new(Spanned::new(24, 24, Expr::DecLit("1"))),
+                        Expr::new(ExprKind::BoolBinary(
+                            Box::new(Spanned::new(24, 24, Expr::new(ExprKind::DecLit("1")))),
                             Spanned::new(26, 27, Token::EqualsEquals),
-                            Box::new(Spanned::new(29, 29, Expr::DecLit("1"))),
-                        )
+                            Box::new(Spanned::new(29, 29, Expr::new(ExprKind::DecLit("1")))),
+                        ))
                     ),
                     body: Block(vec![Stmt::Expr(Spanned::new(
                         33,
                         38,
-                        Expr::Call {
-                            callee: Box::new(Spanned::new(33, 36, Expr::Ident("test"))),
+                        Expr::new(ExprKind::Call {
+                            callee: Box::new(Spanned::new(
+                                33,
+                                36,
+                                Expr::new(ExprKind::Ident("test"))
+                            )),
                             args: ArgList(vec![])
-                        }
+                        })
                     ))])
                 }])
             }]),
@@ -759,17 +760,21 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     28,
-                    Expr::Call {
+                    Expr::new(ExprKind::Call {
                         callee: Box::new(Spanned::new(
                             18,
                             26,
-                            Expr::Access {
-                                left: Box::new(Spanned::new(18, 21, Expr::Ident("test"))),
+                            Expr::new(ExprKind::Access {
+                                left: Box::new(Spanned::new(
+                                    18,
+                                    21,
+                                    Expr::new(ExprKind::Ident("test"))
+                                )),
                                 identifier: Spanned::new(23, 26, "func")
-                            }
+                            })
                         )),
                         args: ArgList(vec![])
-                    }
+                    })
                 ))])
             }]),
             prg
@@ -816,17 +821,21 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     27,
-                    Expr::Call {
+                    Expr::new(ExprKind::Call {
                         callee: Box::new(Spanned::new(
                             18,
                             25,
-                            Expr::Access {
-                                left: Box::new(Spanned::new(18, 21, Expr::Ident("test"))),
+                            Expr::new(ExprKind::Access {
+                                left: Box::new(Spanned::new(
+                                    18,
+                                    21,
+                                    Expr::new(ExprKind::Ident("test"))
+                                )),
                                 identifier: Spanned::new(23, 25, "fun")
-                            }
+                            })
                         )),
                         args: ArgList(vec![])
-                    }
+                    })
                 ))])
             }]),
             prg
@@ -849,10 +858,10 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     23,
-                    Expr::Call {
-                        callee: Box::new(Spanned::new(18, 21, Expr::Ident("test"))),
+                    Expr::new(ExprKind::Call {
+                        callee: Box::new(Spanned::new(18, 21, Expr::new(ExprKind::Ident("test")))),
                         args: ArgList(vec![])
-                    }
+                    })
                 ))])
             }]),
             prg
@@ -874,17 +883,17 @@ mod tests {
                 params: ParamList(vec![]),
                 body: Block(vec![
                     Stmt::Expr(Spanned {
-                        node: Expr::Error(ParseError::PrefixError(
+                        node: Expr::new(ExprKind::Error(ParseError::PrefixError(
                             "Invalid token in prefix rule: '+'".to_owned()
-                        ),),
+                        ),)),
                         span: Span::new(20, 20)
                     }),
                     Stmt::Expr(Spanned {
-                        node: Expr::Binary(
-                            Box::new(Spanned::new(25, 25, Expr::DecLit("3"))),
+                        node: Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(25, 25, Expr::new(ExprKind::DecLit("3")))),
                             Spanned::new(27, 27, Token::Plus),
-                            Box::new(Spanned::new(29, 29, Expr::DecLit("4")))
-                        ),
+                            Box::new(Spanned::new(29, 29, Expr::new(ExprKind::DecLit("4"))))
+                        )),
                         span: Span::new(25, 29)
                     })
                 ])
@@ -908,7 +917,7 @@ mod tests {
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::VarDecl {
                     name: Spanned::new(22, 24, "var"),
-                    value: Spanned::new(28, 28, Expr::DecLit("5")),
+                    value: Spanned::new(28, 28, Expr::new(ExprKind::DecLit("5"))),
                     eq: Spanned::new(26, 26, Token::Equals),
                     ty: Cell::new(None)
                 }])
@@ -954,11 +963,11 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     17,
                     21,
-                    Expr::Binary(
-                        Box::new(Spanned::new(17, 17, Expr::DecLit("1"))),
+                    Expr::new(ExprKind::Binary(
+                        Box::new(Spanned::new(17, 17, Expr::new(ExprKind::DecLit("1")))),
                         Spanned::new(19, 19, Token::Plus),
-                        Box::new(Spanned::new(21, 21, Expr::DecLit("1")))
-                    )
+                        Box::new(Spanned::new(21, 21, Expr::new(ExprKind::DecLit("1"))))
+                    ))
                 ))])
             }]),
             prg
@@ -974,7 +983,7 @@ mod tests {
         let mut parser = Parser::new(lexer);
 
         let expr = parser.expression().node;
-        assert_eq!(Expr::DecLit("42"), expr);
+        assert_eq!(Expr::new(ExprKind::DecLit("42")), expr);
     }
 
     #[test]
@@ -986,19 +995,19 @@ mod tests {
         let expr = parser.expression();
         assert_eq!(
             Spanned {
-                node: Expr::Binary(
-                    Box::new(Spanned::new(0, 1, Expr::DecLit("1"))),
+                node: Expr::new(ExprKind::Binary(
+                    Box::new(Spanned::new(0, 1, Expr::new(ExprKind::DecLit("1")))),
                     Spanned::new(2, 2, Token::Plus),
                     Box::new(Spanned::new(
                         4,
                         8,
-                        Expr::Binary(
-                            Box::new(Spanned::new(4, 4, Expr::DecLit("2"))),
+                        Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(4, 4, Expr::new(ExprKind::DecLit("2")))),
                             Spanned::new(6, 6, Token::Star),
-                            Box::new(Spanned::new(8, 8, Expr::DecLit("3")))
-                        )
+                            Box::new(Spanned::new(8, 8, Expr::new(ExprKind::DecLit("3"))))
+                        ))
                     ))
-                ),
+                )),
                 span: Span::new(0, 8)
             },
             expr
@@ -1011,19 +1020,19 @@ mod tests {
         let expr = parser.expression();
         assert_eq!(
             Spanned {
-                node: Expr::Binary(
+                node: Expr::new(ExprKind::Binary(
                     Box::new(Spanned::new(
                         0,
                         4,
-                        Expr::Binary(
-                            Box::new(Spanned::new(0, 1, Expr::DecLit("2"))),
+                        Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(0, 1, Expr::new(ExprKind::DecLit("2")))),
                             Spanned::new(2, 2, Token::Star),
-                            Box::new(Spanned::new(4, 4, Expr::DecLit("3")))
-                        )
+                            Box::new(Spanned::new(4, 4, Expr::new(ExprKind::DecLit("3"))))
+                        ))
                     )),
                     Spanned::new(6, 6, Token::Plus),
-                    Box::new(Spanned::new(8, 8, Expr::DecLit("1"))),
-                ),
+                    Box::new(Spanned::new(8, 8, Expr::new(ExprKind::DecLit("1")))),
+                )),
                 span: Span::new(0, 8)
             },
             expr
@@ -1036,19 +1045,19 @@ mod tests {
         let expr = parser.expression();
         assert_eq!(
             Spanned {
-                node: Expr::Binary(
+                node: Expr::new(ExprKind::Binary(
                     Box::new(Spanned::new(
                         0,
                         6,
-                        Expr::Binary(
-                            Box::new(Spanned::new(1, 1, Expr::DecLit("2"))),
+                        Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(1, 1, Expr::new(ExprKind::DecLit("2")))),
                             Spanned::new(3, 3, Token::Plus),
-                            Box::new(Spanned::new(5, 5, Expr::DecLit("3")))
-                        )
+                            Box::new(Spanned::new(5, 5, Expr::new(ExprKind::DecLit("3"))))
+                        ))
                     )),
                     Spanned::new(8, 8, Token::Star),
-                    Box::new(Spanned::new(10, 10, Expr::DecLit("1"))),
-                ),
+                    Box::new(Spanned::new(10, 10, Expr::new(ExprKind::DecLit("1")))),
+                )),
                 span: Span::new(0, 10)
             },
             expr
@@ -1061,19 +1070,19 @@ mod tests {
         let expr = parser.expression();
         assert_eq!(
             Spanned {
-                node: Expr::Binary(
-                    Box::new(Spanned::new(0, 1, Expr::DecLit("1"))),
+                node: Expr::new(ExprKind::Binary(
+                    Box::new(Spanned::new(0, 1, Expr::new(ExprKind::DecLit("1")))),
                     Spanned::new(2, 2, Token::Plus),
                     Box::new(Spanned::new(
                         4,
                         10,
-                        Expr::Binary(
-                            Box::new(Spanned::new(5, 5, Expr::DecLit("2"))),
+                        Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(5, 5, Expr::new(ExprKind::DecLit("2")))),
                             Spanned::new(7, 7, Token::Star),
-                            Box::new(Spanned::new(9, 9, Expr::DecLit("3")))
-                        )
+                            Box::new(Spanned::new(9, 9, Expr::new(ExprKind::DecLit("3"))))
+                        ))
                     ))
-                ),
+                )),
                 span: Span::new(0, 10)
             },
             expr

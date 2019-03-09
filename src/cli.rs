@@ -24,26 +24,20 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
     fn find_errors_rec(stmt: &Stmt, errors: &mut Vec<(Span, String)>) {
         match stmt {
             Stmt::VarDecl { value, .. } => {
-                if let Spanned {
-                    node: Expr::Error(err),
-                    span,
-                } = value
-                {
-                    errors.push((*span, err.to_string()))
+                if value.node.is_err() {
+                    errors.push((value.span, value.node.to_string()))
                 }
             }
             Stmt::Expr(Spanned { node: expr, span }) => {
-                if let Expr::Error(err) = expr {
-                    errors.push((*span, err.to_string()));
+                if expr.is_err() {
+                    errors.push((*span, expr.to_string()));
                 }
             }
             Stmt::Return(val) => {
-                if let Some(Spanned {
-                    span,
-                    node: Expr::Error(err),
-                }) = val
-                {
-                    errors.push((*span, err.to_string()));
+                if let Some(Spanned { node: expr, span }) = val {
+                    if expr.is_err() {
+                        errors.push((*span, expr.to_string()));
+                    }
                 }
             }
             Stmt::While {
@@ -54,9 +48,10 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     },
                 body,
             } => {
-                if let Expr::Error(err) = condition {
-                    errors.push((*span, err.to_string()));
+                if condition.is_err() {
+                    errors.push((*span, condition.to_string()));
                 }
+
                 for s in &body.0 {
                     find_errors_rec(s, errors);
                 }
@@ -70,9 +65,10 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                 then_block,
                 else_branch,
             } => {
-                if let Expr::Error(err) = condition {
-                    errors.push((*span, err.to_string()));
+                if condition.is_err() {
+                    errors.push((*span, condition.to_string()));
                 }
+
                 for s in &then_block.0 {
                     find_errors_rec(s, errors);
                 }

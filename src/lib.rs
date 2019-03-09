@@ -12,12 +12,34 @@ mod types;
 use self::{
     mir::{func::Func, tac::Label, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
-    resolve::{symbol::SymbolTable, Resolver},
+    resolve::{ResolveResult, Resolver},
+    types::Type,
 };
 
 pub(crate) use self::cli::*;
 
 pub type PrgMap<'input> = HashMap<&'input str, (&'input Source, Program<'input>)>;
+
+#[derive(Debug)]
+pub struct UserTypeDefinition<'input> {
+    pub name: &'input str,
+    pub fields: HashMap<&'input str, (u32, Spanned<Type<'input>>)>,
+}
+
+impl<'input> fmt::Display for UserTypeDefinition<'input> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let fields = self
+            .fields
+            .iter()
+            .map(|(name, (_, Spanned { node, .. }))| format!("    {}: {}", name, node))
+            .collect::<Vec<String>>()
+            .join(",\n");
+
+        write!(f, "type {} struct {{\n{}\n}}", self.name, fields)
+    }
+}
+
+pub type UserTypeMap<'input> = HashMap<String, UserTypeDefinition<'input>>;
 
 #[derive(Debug)]
 pub struct Source {
@@ -158,7 +180,7 @@ fn type_check<'input, W: Write>(
     main: &'input str,
     ast_sources: &mut PrgMap<'input>,
     writer: &mut W,
-) -> Result<SymbolTable<'input>, CompilationError> {
+) -> Result<ResolveResult<'input>, CompilationError> {
     let mut resolver = Resolver::new(main, ast_sources);
     let errors: Vec<String> = resolver
         .resolve()
@@ -171,7 +193,7 @@ fn type_check<'input, W: Write>(
         return Err(CompilationError::TypeCheckError);
     }
 
-    Ok(resolver.sym_table)
+    Ok(resolver.get_result())
 }
 
 // TODO: move to mir module
@@ -179,14 +201,15 @@ fn type_check<'input, W: Write>(
 pub struct Mir<'input> {
     pub globals: HashMap<Label, &'input str>,
     pub functions: Vec<Func<'input>>,
+    pub types: UserTypeMap<'input>,
 }
 
 fn construct_tac<'input>(
     main: &'input str,
     ast_sources: &PrgMap<'input>,
-    symbols: SymbolTable<'input>,
+    resolve_result: ResolveResult<'input>,
 ) -> Mir<'input> {
-    let mut tac = Tac::new(symbols);
+    let mut tac = Tac::new(resolve_result);
     for (src_name, (_, prg)) in ast_sources.iter() {
         for top_lvl in &prg.0 {
             if let TopLvl::FnDecl {
@@ -213,6 +236,7 @@ fn construct_tac<'input>(
     Mir {
         globals: tac.literals,
         functions: tac.functions,
+        types: tac.types,
     }
 }
 

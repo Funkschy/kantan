@@ -3,7 +3,12 @@
 
 use std::collections::HashMap;
 
-use super::{parse::ast::*, resolve::symbol::SymbolTable, types::Type, Spanned};
+use super::{
+    parse::ast::*,
+    resolve::{symbol::SymbolTable, ResolveResult},
+    types::Type,
+    Spanned, UserTypeMap,
+};
 use address::{Address, Argument, Constant};
 use blockmap::BlockMap;
 use func::Func;
@@ -20,6 +25,7 @@ pub(crate) mod tac;
 pub struct Tac<'input> {
     pub(crate) functions: Vec<Func<'input>>,
     pub(crate) literals: HashMap<Label, &'input str>,
+    pub(crate) types: UserTypeMap<'input>,
     symbols: SymbolTable<'input>,
     names: NameTable<'input>,
     temp_count: usize,
@@ -28,12 +34,13 @@ pub struct Tac<'input> {
 }
 
 impl<'input> Tac<'input> {
-    pub fn new(symbols: SymbolTable<'input>) -> Self {
+    pub fn new(resolve_result: ResolveResult<'input>) -> Self {
         Tac {
             functions: vec![],
             literals: HashMap::new(),
             names: NameTable::new(),
-            symbols,
+            symbols: resolve_result.symbols,
+            types: resolve_result.user_types,
             temp_count: 0,
             label_count: 0,
             current_params: None,
@@ -234,8 +241,8 @@ impl<'input> Tac<'input> {
         expr: &Expr<'input>,
         block: &mut InstructionBlock<'input>,
     ) -> Expression<'input> {
-        match expr {
-            Expr::Binary(l, op, r) | Expr::BoolBinary(l, op, r) => {
+        match expr.kind() {
+            ExprKind::Binary(l, op, r) | ExprKind::BoolBinary(l, op, r) => {
                 // TODO: find correct dec size
                 let bin_type = Option::from(&op.node).map(BinaryType::I32).unwrap();
 
@@ -244,7 +251,7 @@ impl<'input> Tac<'input> {
 
                 Expression::Binary(left, bin_type, right)
             }
-            Expr::Call { callee, args } => {
+            ExprKind::Call { callee, args } => {
                 let args: Vec<Address> = args
                     .0
                     .iter()
@@ -255,7 +262,7 @@ impl<'input> Tac<'input> {
 
                 Expression::Call(label, args)
             }
-            Expr::Assign { name, value, .. } => {
+            ExprKind::Assign { name, value, .. } => {
                 let expr = if let Some(rval) = self.rvalue(&value.node) {
                     rval.into()
                 } else {
@@ -265,12 +272,23 @@ impl<'input> Tac<'input> {
                 let address = self.names.lookup(name).into();
                 Expression::Copy(self.assign(address, expr.clone(), block))
             }
-            Expr::Negate(op, expr) => {
+            ExprKind::Negate(op, expr) => {
                 // TODO: find correct dec size
                 let u_type = Option::from(&op.node).unwrap();
                 let address = self.expr_instr(&expr.node, block);
 
                 Expression::Unary(u_type, address)
+            }
+            ExprKind::Access { left, identifier } => {
+                let address = self.expr_instr(&left.node, block);
+                if let Some(Type::UserType(ty)) = left.node.ty() {
+                    // the index of the field inside the struct
+                    let idx = self.types[ty].fields[identifier.node].0;
+                    Expression::StructGep(address, idx)
+                } else {
+                    // The resolver should insert the type information
+                    unreachable!("No type information for '{}' available", left.node);
+                }
             }
             _ => unimplemented!(),
         }
@@ -308,10 +326,10 @@ impl<'input> Tac<'input> {
     }
 
     fn rvalue(&mut self, expr: &Expr<'input>) -> Option<Address<'input>> {
-        Some(match expr {
-            Expr::DecLit(lit) => Address::new_const(Type::I32, lit),
-            Expr::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
-            Expr::Ident(ident) => {
+        Some(match expr.kind() {
+            ExprKind::DecLit(lit) => Address::new_const(Type::I32, lit),
+            ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
+            ExprKind::Ident(ident) => {
                 if let Some(arg) = self.find_param(ident) {
                     Address::new_arg(arg)
                 } else {

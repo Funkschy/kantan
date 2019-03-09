@@ -1,4 +1,4 @@
-use std::{cell::Cell, collections::HashMap, fmt};
+use std::{cell::Cell, fmt, hash};
 
 use super::{error::ParseError, token::Token, Spanned};
 use crate::types::Type;
@@ -26,7 +26,7 @@ pub enum TopLvl<'input> {
 pub enum TypeDef<'input> {
     StructDef {
         name: Spanned<&'input str>,
-        fields: HashMap<Spanned<&'input str>, Spanned<Type<'input>>>,
+        fields: Vec<(Spanned<&'input str>, Spanned<Type<'input>>)>,
     },
 }
 
@@ -89,8 +89,59 @@ impl<'input> fmt::Display for ArgList<'input> {
     }
 }
 
+#[derive(Debug, Eq)]
+pub struct Expr<'input> {
+    // is filled in by resolver if necessary
+    ty: Cell<Option<Type<'input>>>,
+    kind: ExprKind<'input>,
+}
+
+impl<'input> Expr<'input> {
+    pub fn new(kind: ExprKind<'input>) -> Self {
+        Expr {
+            ty: Cell::new(None),
+            kind,
+        }
+    }
+
+    pub fn is_err(&self) -> bool {
+        if let ExprKind::Error(..) = self.kind {
+            return true;
+        }
+        false
+    }
+
+    #[inline]
+    pub fn kind(&self) -> &ExprKind<'input> {
+        &self.kind
+    }
+
+    #[inline]
+    pub fn ty(&self) -> Option<Type<'input>> {
+        self.ty.get()
+    }
+
+    /// This method is used by the resolver to insert type information into
+    /// the Expression
+    pub fn set_ty(&self, ty: Type<'input>) {
+        self.ty.set(Some(ty))
+    }
+}
+
+impl<'input> hash::Hash for Expr<'input> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.kind.hash(state);
+    }
+}
+
+impl<'input> PartialEq for Expr<'input> {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind().eq(other.kind())
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub enum Expr<'input> {
+pub enum ExprKind<'input> {
     Error(ParseError<'input>),
     DecLit(&'input str),
     StringLit(&'input str),
@@ -121,20 +172,11 @@ pub enum Expr<'input> {
     },
 }
 
-impl<'input> Expr<'input> {
-    pub fn is_err(&self) -> bool {
-        if let Expr::Error(..) = self {
-            return true;
-        }
-        false
-    }
-}
-
 impl<'input> fmt::Display for Expr<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::Expr::*;
+        use self::ExprKind::*;
 
-        match self {
+        match self.kind() {
             Error(err) => write!(f, "{}", err),
             DecLit(lit) => write!(f, "{}", lit),
             StringLit(lit) => write!(f, "{}", lit),

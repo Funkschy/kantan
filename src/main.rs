@@ -32,6 +32,13 @@ fn main() -> Result<(), Box<dyn error::Error>> {
 
     let mir = compile(&sources, &mut err_writer)?;
 
+    let types = mir
+        .types
+        .iter()
+        .map(|(_, v)| v.to_string())
+        .collect::<Vec<String>>()
+        .join("\n");
+
     let globals = mir
         .globals
         .iter()
@@ -46,7 +53,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         .collect::<Vec<String>>()
         .join("\n");
 
-    println!("{}\n{}", globals, funcs);
+    println!("{}\n{}\n{}", types, globals, funcs);
 
     emit_to_file(&mir, "test.s", &mut err_writer);
 
