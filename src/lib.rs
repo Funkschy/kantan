@@ -174,6 +174,7 @@ fn type_check<'input, W: Write>(
     Ok(resolver.sym_table)
 }
 
+// TODO: move to mir module
 #[derive(Debug)]
 pub struct Mir<'input> {
     pub globals: HashMap<Label, &'input str>,
