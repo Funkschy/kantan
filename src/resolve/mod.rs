@@ -382,41 +382,53 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     panic!("Cannot access field of primitive type: {}", left_ty);
                 }
             }
-            ExprKind::Assign { name, eq, value } => {
-                // Lookup variable in defined scopes
-                let (ty, sym_span) = {
-                    let Spanned {
-                        span,
-                        node: Symbol { ty, .. },
-                    } = self
-                        .sym_table
-                        .lookup(name)
-                        .ok_or_else(|| self.not_defined_error(span, span, name))?;
-                    (*ty, *span)
-                };
+            ExprKind::StructInit { identifier, fields } => {
+                for (name, value) in fields.0.iter() {
+                    let user_type = self.get_user_type(*identifier)?;
+                    let field_type = self.get_field(&user_type, name)?;
+                    let value_type = self.resolve_expr(value.span, &value.node)?;
+                    self.compare_types(value.span, span, field_type, value_type, "struct literal")?
+                }
+                Ok(Type::UserType(identifier.node))
+            }
+            ExprKind::Assign { left, eq, value } => {
+                if let ExprKind::Ident(name) = left.node.kind() {
+                    // Lookup variable in defined scopes
+                    let (ty, sym_span) = {
+                        let Spanned {
+                            span,
+                            node: Symbol { ty, .. },
+                        } = self
+                            .sym_table
+                            .lookup(name)
+                            .ok_or_else(|| self.not_defined_error(span, span, name))?;
+                        (*ty, *span)
+                    };
 
-                let &Spanned {
-                    span: value_span,
-                    ref node,
-                } = &**value;
+                    // get type of right expression
+                    let val_type = self.resolve_expr(value.span, &value.node)?;
+                    // check if type of right expression is the same as that of
+                    // the declared variable
+                    self.compare_binary_types(eq.span, span, ty, val_type)
+                        .map_err(
+                            |ResolveError {
+                                 error,
+                                 err_span,
+                                 expr_span,
+                                 ..
+                             }| {
+                                self.illegal_op_to_illegal_assignment(
+                                    err_span, expr_span, name, error, sym_span,
+                                )
+                            },
+                        )
+                } else {
+                    let ty = self.resolve_expr(left.span, &left.node)?;
+                    // get type of right expression
+                    let val_type = self.resolve_expr(value.span, &value.node)?;
 
-                // get type of right expression
-                let val_type = self.resolve_expr(value_span, node)?;
-                // check if type of right expression is the same as that of
-                // the declared variable
-                self.compare_binary_types(eq.span, span, ty, val_type)
-                    .map_err(
-                        |ResolveError {
-                             error,
-                             err_span,
-                             expr_span,
-                             ..
-                         }| {
-                            self.illegal_op_to_illegal_assignment(
-                                err_span, expr_span, name, error, sym_span,
-                            )
-                        },
-                    )
+                    self.compare_binary_types(eq.span, span, ty, val_type)
+                }
             }
             ExprKind::Ident(name) => self
                 .sym_table
@@ -785,7 +797,7 @@ mod tests {
                     30,
                     35,
                     Expr::new(ExprKind::Assign {
-                        name: "x",
+                        left: Box::new(Spanned::new(30, 30, Expr::new(ExprKind::Ident("x")))),
                         eq: Spanned::new(32, 32, Token::Equals),
                         value: Box::new(Spanned::new(35, 35, Expr::new(ExprKind::StringLit("")))),
                     }),

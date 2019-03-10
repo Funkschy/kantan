@@ -358,8 +358,7 @@ impl KantanLLVMContext {
                     Address::Global(g) => self.globals[g],
                     _ => unreachable!("{} is invalid here", a),
                 };
-                let gep = LLVMBuildStructGEP(self.builder, address, *idx, self.cstring("ptr"));
-                LLVMBuildLoad(self.builder, gep, self.cstring(name))
+                LLVMBuildStructGEP(self.builder, address, *idx, self.cstring("ptr"))
             }
             _ => unimplemented!(),
         }

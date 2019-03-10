@@ -141,6 +141,9 @@ impl<'input> PartialEq for Expr<'input> {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
+pub struct InitList<'input>(pub Vec<(Spanned<&'input str>, Spanned<Expr<'input>>)>);
+
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub enum ExprKind<'input> {
     Error(ParseError<'input>),
     DecLit(&'input str),
@@ -158,7 +161,7 @@ pub enum ExprKind<'input> {
     ),
     Ident(&'input str),
     Assign {
-        name: &'input str,
+        left: Box<Spanned<Expr<'input>>>,
         eq: Spanned<Token<'input>>,
         value: Box<Spanned<Expr<'input>>>,
     },
@@ -169,6 +172,10 @@ pub enum ExprKind<'input> {
     Access {
         left: Box<Spanned<Expr<'input>>>,
         identifier: Spanned<&'input str>,
+    },
+    StructInit {
+        identifier: Spanned<&'input str>,
+        fields: InitList<'input>,
     },
 }
 
@@ -184,9 +191,20 @@ impl<'input> fmt::Display for Expr<'input> {
             Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
             BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
             Ident(name) => write!(f, "{}", name),
-            Assign { name, value, .. } => write!(f, "{} = {}", name, value.node),
+            Assign { left, value, .. } => write!(f, "{} = {}", left.node, value.node),
             Call { callee, args } => write!(f, "{}({})", callee.node, args),
             Access { left, identifier } => write!(f, "{}.{}", left.node, identifier.node),
+            StructInit { identifier, fields } => write!(
+                f,
+                "{} {{ {} }}",
+                identifier.node,
+                fields
+                    .0
+                    .iter()
+                    .map(|(n, e)| format!("{}: {}", n.node, e.node))
+                    .collect::<Vec<String>>()
+                    .join(",\n")
+            ),
         }
     }
 }

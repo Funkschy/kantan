@@ -276,14 +276,18 @@ impl<'input> Tac<'input> {
 
                 Expression::Call(label, args)
             }
-            ExprKind::Assign { name, value, .. } => {
+            ExprKind::Assign { left, value, .. } => {
                 let expr = if let Some(rval) = self.rvalue(&value.node) {
                     rval.into()
                 } else {
                     self.expr(&value.node, block)
                 };
 
-                let address = self.names.lookup(name).into();
+                let address = if let ExprKind::Ident(name) = left.node.kind() {
+                    self.names.lookup(name).into()
+                } else {
+                    self.expr_instr(&left.as_ref().node, block)
+                };
                 Expression::Copy(self.assign(address, expr.clone(), block))
             }
             ExprKind::Negate(op, expr) => {
@@ -304,6 +308,7 @@ impl<'input> Tac<'input> {
                     unreachable!("No type information for '{}' available", left.node);
                 }
             }
+            ExprKind::StructInit { .. } => unimplemented!(),
             _ => unimplemented!(),
         }
     }
