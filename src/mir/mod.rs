@@ -138,6 +138,8 @@ impl<'input> Tac<'input> {
                     self.assign(address, expr, &mut block);
                 }
                 Stmt::Return(e) => {
+                    // TODO: initialize return value as variable, otherwise structs cannot be
+                    // returned directly
                     let ret = if let Some(Spanned { node, .. }) = e {
                         let address = self.expr_instr(node, &mut block);
                         Instruction::Return(Some(address))
@@ -308,7 +310,14 @@ impl<'input> Tac<'input> {
                     unreachable!("No type information for '{}' available", left.node);
                 }
             }
-            ExprKind::StructInit { .. } => unimplemented!(),
+            ExprKind::StructInit { identifier, fields } => {
+                let values = fields
+                    .0
+                    .iter()
+                    .map(|(_, e)| self.expr_instr(&e.node, block))
+                    .collect();
+                Expression::StructInit(identifier.node, values)
+            }
             _ => unimplemented!(),
         }
     }

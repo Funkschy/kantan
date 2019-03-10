@@ -133,6 +133,8 @@ pub enum Expression<'input> {
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset
     StructGep(Address<'input>, u32),
+    /// x = test { 41, "test" }
+    StructInit(&'input str, Vec<Address<'input>>),
 }
 
 impl<'input> fmt::Display for Expression<'input> {
@@ -146,6 +148,15 @@ impl<'input> fmt::Display for Expression<'input> {
             Ref(a) => format!("ref {}", a),
             DeRef(a) => format!("deref {}", a),
             StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
+            StructInit(ident, values) => format!(
+                "{} {{ {} }}",
+                ident,
+                values
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
             Call(f, args) => {
                 let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
                 let args = args.join(", ");

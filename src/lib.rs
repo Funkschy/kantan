@@ -199,7 +199,7 @@ fn type_check<'input, W: Write>(
 // TODO: move to mir module
 #[derive(Debug)]
 pub struct Mir<'input> {
-    pub globals: HashMap<Label, &'input str>,
+    pub global_strings: HashMap<Label, &'input str>,
     pub functions: Vec<Func<'input>>,
     pub types: UserTypeMap<'input>,
 }
@@ -213,8 +213,8 @@ impl<'input> fmt::Display for Mir<'input> {
             .collect::<Vec<String>>()
             .join("\n");
 
-        let globals = self
-            .globals
+        let global_strings = self
+            .global_strings
             .iter()
             .map(|(k, v)| format!("{} {}", k, v))
             .collect::<Vec<String>>()
@@ -227,7 +227,7 @@ impl<'input> fmt::Display for Mir<'input> {
             .collect::<Vec<String>>()
             .join("\n\n");
 
-        write!(f, "{}\n{}\n{}", types, globals, funcs)
+        write!(f, "{}\n{}\n{}", types, global_strings, funcs)
     }
 }
 
@@ -261,7 +261,7 @@ fn construct_tac<'input>(
         }
     }
     Mir {
-        globals: tac.literals,
+        global_strings: tac.literals,
         functions: tac.functions,
         types: tac.types,
     }
