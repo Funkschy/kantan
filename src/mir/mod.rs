@@ -123,7 +123,7 @@ impl<'input> Tac<'input> {
                 Stmt::VarDecl {
                     name, value, ty, ..
                 } => {
-                    let expr = if let Some(rval) = self.rvalue(&value.node) {
+                    let expr = if let Some(rval) = self.address_expr(&value.node) {
                         rval.into()
                     } else {
                         self.expr(&value.node, &mut block)
@@ -138,10 +138,21 @@ impl<'input> Tac<'input> {
                     self.assign(address, expr, &mut block);
                 }
                 Stmt::Return(e) => {
-                    // TODO: initialize return value as variable, otherwise structs cannot be
-                    // returned directly
                     let ret = if let Some(Spanned { node, .. }) = e {
-                        let address = self.expr_instr(node, &mut block);
+                        // If the return value is a struct initilizer, we need to first declare it
+                        // as a variabel, because the llvm codegenerator expects that the target of
+                        // the struct memcpy was already alloca'd
+                        let address = if let ExprKind::StructInit { .. } = node.kind() {
+                            let address = self.temp();
+                            let ty = node.ty().unwrap();
+                            block.push(Instruction::Decl(address.clone(), ty.clone()));
+                            let expr = self.expr(node, &mut block);
+                            let address = self.assign(address, expr, &mut block);
+                            // Wrap in Name, so context will generate a load instruction
+                            Address::new_copy_name(address.to_string())
+                        } else {
+                            self.expr_instr(node, &mut block)
+                        };
                         Instruction::Return(Some(address))
                     } else {
                         Instruction::Return(None)
@@ -279,7 +290,7 @@ impl<'input> Tac<'input> {
                 Expression::Call(label, args)
             }
             ExprKind::Assign { left, value, .. } => {
-                let expr = if let Some(rval) = self.rvalue(&value.node) {
+                let expr = if let Some(rval) = self.address_expr(&value.node) {
                     rval.into()
                 } else {
                     self.expr(&value.node, block)
@@ -328,7 +339,7 @@ impl<'input> Tac<'input> {
         expr: &Expr<'input>,
         block: &mut InstructionBlock<'input>,
     ) -> Address<'input> {
-        let rval = self.rvalue(&expr);
+        let rval = self.address_expr(&expr);
         if let Some(rval) = rval {
             return rval;
         }
@@ -353,7 +364,7 @@ impl<'input> Tac<'input> {
         address
     }
 
-    fn rvalue(&mut self, expr: &Expr<'input>) -> Option<Address<'input>> {
+    fn address_expr(&mut self, expr: &Expr<'input>) -> Option<Address<'input>> {
         Some(match expr.kind() {
             ExprKind::DecLit(lit) => Address::new_const(Type::I32, lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
