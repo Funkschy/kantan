@@ -239,7 +239,23 @@ impl<'input> Lexer<'input> {
             ')' => consume_single!(self, start, Token::RParen),
             '{' => consume_single!(self, start, Token::LBrace),
             '}' => consume_single!(self, start, Token::RBrace),
-            '.' => consume_single!(self, start, Token::Dot),
+            '.' => {
+                let dots = self.read_while(|c| c == '.');
+                Ok(self.spanned(
+                    start,
+                    match dots.len() {
+                        1 => Token::Dot,
+                        3 => Token::TripleDot,
+                        _ => {
+                            return Some(Err(Spanned::new(
+                                start,
+                                self.pos(),
+                                ParseError::LexError(LexError::with_cause("too many '.'")),
+                            )));
+                        }
+                    },
+                ))
+            }
             ',' => consume_single!(self, start, Token::Comma),
             '"' => self.scan_string(),
             c if c.is_alphabetic() => self.scan_ident(),
@@ -269,6 +285,35 @@ impl<'input> Iterator for Lexer<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_scan_double_dot_returns_error() {
+        let source = "..";
+        let mut lexer = Lexer::new(&source);
+
+        let tok = lexer.next().unwrap();
+        assert!(tok.is_err());
+        let err = tok.unwrap_err();
+        assert_eq!(
+            "Failed to lex token, because: too many '.'",
+            err.node.to_string()
+        );
+    }
+
+    #[test]
+    fn test_scan_triple_dot() {
+        let source = ". ...";
+        let lexer = Lexer::new(&source);
+
+        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        assert_eq!(
+            vec![
+                Spanned::new(0, 1, Token::Dot),
+                Spanned::new(2, 4, Token::TripleDot),
+            ],
+            tokens
+        );
+    }
 
     #[test]
     fn test_comments_are_ignored() {

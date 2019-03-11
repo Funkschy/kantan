@@ -253,10 +253,16 @@ fn construct_tac<'input>(
                     name.node.to_owned()
                 };
 
-                let params = params.0.iter().map(|Param(n, ty)| (n.node, *ty)).collect();
+                let varargs = params.varargs;
+
+                let params = params
+                    .params
+                    .iter()
+                    .map(|Param(n, ty)| (n.node, *ty))
+                    .collect();
                 let ret_type = ret_type.node;
 
-                tac.add_function(name, params, &body, ret_type, *is_extern);
+                tac.add_function(name, params, &body, ret_type, *is_extern, varargs);
             }
         }
     }
@@ -272,7 +278,8 @@ pub fn stdlib() -> Vec<Source> {
     let io = Source::new(
         "io",
         "extern fn putchar(i: i32): i32; 
-         extern fn puts(s: string): i32;",
+         extern fn puts(s: string): i32;
+         extern fn printf(fmt: string, ...): i32;",
     );
     vec![io]
 }

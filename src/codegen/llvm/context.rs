@@ -161,6 +161,8 @@ impl KantanLLVMContext {
             Type::Void => LLVMVoidTypeInContext(self.context),
             Type::String => LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
             Type::UserType(name) => self.user_types[name],
+            // varargs is just handled as a type for convenience
+            Type::Varargs => panic!("Varargs is not a real type"),
         }
     }
 }
@@ -173,8 +175,32 @@ impl KantanLLVMContext {
         cstr
     }
 
-    unsafe fn func_type(&mut self, ret: LLVMTypeRef, mut params: Vec<LLVMTypeRef>) -> LLVMTypeRef {
-        LLVMFunctionType(ret, params.as_mut_ptr(), params.len() as u32, 0)
+    unsafe fn func_type(
+        &mut self,
+        varargs: bool,
+        ret: LLVMTypeRef,
+        params: &[(&str, Type)],
+    ) -> LLVMTypeRef {
+        let iter = params.iter();
+
+        let mut params: Vec<LLVMTypeRef> = if !varargs {
+            iter.map(|(_, t)| self.convert(*t)).collect()
+        } else if params.len() > 1 {
+            iter.rev()
+                .skip(1) // skip last parameter, because ... is not a type
+                .map(|(_, t)| self.convert(*t))
+                .rev()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        LLVMFunctionType(
+            ret,
+            params.as_mut_ptr(),
+            params.len() as u32,
+            varargs as i32,
+        )
     }
 
     pub fn generate(&mut self, mir: &Mir) {
@@ -189,13 +215,7 @@ impl KantanLLVMContext {
             for function in &mir.functions {
                 let ret_type = self.convert(function.ret);
 
-                let params: Vec<LLVMTypeRef> = function
-                    .params
-                    .iter()
-                    .map(|(_, t)| self.convert(*t))
-                    .collect();
-
-                let func_type = self.func_type(ret_type, params);
+                let func_type = self.func_type(function.is_varargs, ret_type, &function.params);
                 let f = self.add_func(func_type, &function.label, function.is_extern);
                 llvm_funcs.push(f);
             }
@@ -226,7 +246,6 @@ impl KantanLLVMContext {
                 LLVMPositionBuilderAtEnd(self.builder, bbs[0]);
                 for (i, (name, ty)) in function.params.iter().enumerate() {
                     let n = self.cstring(name);
-                    dbg!(name);
                     let stack_arg = LLVMBuildAlloca(self.builder, self.convert(*ty), n);
                     LLVMBuildStore(self.builder, LLVMGetParam(f, i as u32), stack_arg);
                     self.name_table.insert(name.to_string(), stack_arg);
@@ -252,9 +271,12 @@ impl KantanLLVMContext {
     }
 
     unsafe fn add_global_string(&mut self, label: &Label, string: &str) {
+        // TODO: find better solution
+        let string = string.replace("\\n", "\n");
+
         let length = string.len() as u32;
         let name = self.global_string_name();
-        let string = self.cstring(string);
+        let string = self.cstring(&string);
 
         let glob_str = LLVMAddGlobal(
             self.module,

@@ -19,6 +19,7 @@ pub mod symbol;
 struct FunctionDefinition<'input> {
     ret_type: Type<'input>,
     params: Vec<Type<'input>>,
+    varargs: bool,
 }
 
 pub struct ResolveResult<'input> {
@@ -101,10 +102,13 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     panic!("Duplicate function '{}'", name);
                 }
 
-                let func_params = params.0.iter().map(|Param(_, ty)| *ty).collect();
+                let varargs = params.varargs;
+
+                let func_params = params.params.iter().map(|Param(_, ty)| *ty).collect();
                 let func_def = FunctionDefinition {
                     ret_type: ret_type.node,
                     params: func_params,
+                    varargs,
                 };
 
                 self.functions.insert(name, func_def);
@@ -169,7 +173,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             self.current_func_ret_type = *ret_type;
             self.sym_table.scope_enter();
 
-            for p in &params.0 {
+            for p in &params.params {
                 self.sym_table.bind(p.0.node, p.0.span, p.1, true);
             }
 
@@ -446,7 +450,10 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     .ok_or_else(|| self.not_defined_error(callee.span, span, callee_name))?
                     .clone();
 
-                if func_type.params.len() != args.0.len() {
+                let varargs = func_type.varargs;
+
+                // don't check number of arguments for variadic functions
+                if !varargs && func_type.params.len() != args.0.len() {
                     // TODO: emit custom error
                     panic!(
                         "Expected {} arguments, but got {}!",
@@ -605,7 +612,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         second: Type<'input>,
         name: &'static str,
     ) -> Result<(), ResolveError<'input>> {
-        if first != second {
+        // varargs disables type checking
+        if first != second && first != Type::Varargs && second != Type::Varargs {
             return Err(self.error(
                 err_span,
                 expr_span,
@@ -660,7 +668,7 @@ mod tests {
             TopLvl::FnDecl {
                 name: Spanned::new(16, 19, "main"),
                 ret_type: Spanned::new(24, 27, Type::Void),
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     32,
@@ -688,7 +696,7 @@ mod tests {
             name: Spanned::new(3, 6, "func"),
             ret_type: Spanned::new(11, 14, Type::Void),
             is_extern: false,
-            params: ParamList(vec![]),
+            params: ParamList::default(),
             body: Block(vec![]),
         }]);
 
@@ -711,7 +719,7 @@ mod tests {
             TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
@@ -725,7 +733,7 @@ mod tests {
             TopLvl::FnDecl {
                 name: Spanned::new(25, 28, "test"),
                 ret_type: Spanned::new(39, 42, Type::Void),
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 is_extern: false,
                 body: Block(vec![]),
             },
@@ -748,7 +756,7 @@ mod tests {
         let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
             ret_type: Spanned::new(11, 14, Type::Void),
-            params: ParamList(vec![]),
+            params: ParamList::default(),
             is_extern: false,
             body: Block(vec![Stmt::VarDecl {
                 name: Spanned::new(22, 22, "x"),
@@ -784,7 +792,7 @@ mod tests {
         let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
             ret_type: Spanned::new(11, 14, Type::Void),
-            params: ParamList(vec![]),
+            params: ParamList::default(),
             is_extern: false,
             body: Block(vec![
                 Stmt::VarDecl {

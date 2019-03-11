@@ -62,8 +62,11 @@ pub enum Else<'input> {
 #[derive(Default, Debug, Eq, PartialEq)]
 pub struct Block<'input>(pub Vec<Stmt<'input>>);
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct ParamList<'input>(pub Vec<Param<'input>>);
+#[derive(Debug, Eq, PartialEq, Default)]
+pub struct ParamList<'input> {
+    pub varargs: bool,
+    pub params: Vec<Param<'input>>,
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Param<'input>(pub Spanned<&'input str>, pub Type<'input>);

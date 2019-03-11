@@ -30,10 +30,11 @@ pub enum Token<'input> {
 
     Smaller, // <
 
-    Colon, // :
-    Semi,  // ;
-    Dot,   // .
-    Comma, // ,
+    TripleDot, // ...
+    Colon,     // :
+    Semi,      // ;
+    Dot,       // .
+    Comma,     // ,
 
     LParen, // (
     RParen, // )
@@ -100,6 +101,7 @@ impl<'input> fmt::Display for Token<'input> {
 
             Token::Smaller => write!(f, "<"),
 
+            Token::TripleDot => write!(f, "..."),
             Token::Colon => write!(f, ":"),
             Token::Semi => write!(f, ";"),
             Token::Dot => write!(f, "."),

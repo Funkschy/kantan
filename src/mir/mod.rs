@@ -56,6 +56,7 @@ impl<'input> Tac<'input> {
         body: &Block<'input>,
         ret_type: Type<'input>,
         is_extern: bool,
+        is_varargs: bool,
     ) {
         // reset scopes
         self.names = NameTable::new();
@@ -92,7 +93,8 @@ impl<'input> Tac<'input> {
                 moved_params.unwrap(),
                 ret_type,
                 BlockMap::from_instructions(block),
-                false,
+                is_extern,
+                is_varargs,
             )
         } else {
             // move params out of current_params and replace with None
@@ -104,7 +106,8 @@ impl<'input> Tac<'input> {
                 moved_params.unwrap(),
                 ret_type,
                 BlockMap::default(),
-                true,
+                is_extern,
+                is_varargs,
             )
         };
 
@@ -479,7 +482,14 @@ mod tests {
         bb.terminator = Instruction::Return(Some(Address::Const(Constant::new(Type::I32, "0"))));
         bm.blocks = vec![bb];
 
-        let expected = vec![Func::new(Label::from("main"), vec![], Type::I32, bm, false)];
+        let expected = vec![Func::new(
+            Label::from("main"),
+            vec![],
+            Type::I32,
+            bm,
+            false,
+            false,
+        )];
 
         assert_eq!(expected, funcs);
     }
@@ -551,6 +561,7 @@ mod tests {
             vec![],
             Type::I32,
             bm,
+            false,
             false,
         )];
 
@@ -638,6 +649,7 @@ mod tests {
             Type::I32,
             bm,
             false,
+            false,
         )];
 
         assert_eq!(expected, funcs);
@@ -722,6 +734,7 @@ mod tests {
             Type::I32,
             bm,
             false,
+            false,
         )];
 
         assert_eq!(expected, funcs);
@@ -767,8 +780,22 @@ mod tests {
         test_bm.blocks = vec![test_bb];
 
         let expected = vec![
-            Func::new(Label::from("test"), vec![], Type::Void, test_bm, false),
-            Func::new(Label::from("main"), vec![], Type::I32, main_bm, false),
+            Func::new(
+                Label::from("test"),
+                vec![],
+                Type::Void,
+                test_bm,
+                false,
+                false,
+            ),
+            Func::new(
+                Label::from("main"),
+                vec![],
+                Type::I32,
+                main_bm,
+                false,
+                false,
+            ),
         ];
 
         assert_eq!(expected, funcs);
