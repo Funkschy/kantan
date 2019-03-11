@@ -129,7 +129,7 @@ mod tests {
 
             fn main(): i32 {
                 let p = make_peter(20);
-                io.puts(p.name);
+                io.printf("%s\n", p.name);
                 return p.age;
             }
         "#;

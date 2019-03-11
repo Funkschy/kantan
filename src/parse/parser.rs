@@ -79,7 +79,7 @@ where
 
         self.consume(Token::Fn)?;
         let name = self.consume_ident()?;
-        let params = self.param_list()?;
+        let params = self.param_list(is_extern)?;
 
         self.consume(Token::Colon)?;
         let ret_type = self.consume_type()?;
@@ -135,17 +135,36 @@ where
         Ok(TopLvl::Import { name })
     }
 
-    fn param_list(&mut self) -> Result<ParamList<'input>, Spanned<ParseError<'input>>> {
+    fn param_list(
+        &mut self,
+        is_extern: bool,
+    ) -> Result<ParamList<'input>, Spanned<ParseError<'input>>> {
         self.consume(Token::LParen)?;
+        let mut varargs = false;
 
         if self.peek_eq(Token::RParen) {
             self.consume(Token::RParen)?;
-            return Ok(ParamList(vec![]));
+            return Ok(ParamList::default());
         }
 
         let mut params = vec![];
 
         while !self.peek_eq(Token::RParen) {
+            if self.peek_eq(Token::TripleDot) {
+                if !is_extern {
+                    // TODO: replace with custom error
+                    panic!("Varargs are currently only supported in extern functions");
+                }
+
+                let triple_dot = self.consume(Token::TripleDot)?;
+                varargs = true;
+                let spanned = Spanned::from_span(triple_dot.span, "...");
+                params.push(Param::new(spanned, Type::Varargs));
+                // ... has to be the last param
+                // TODO: replace consume error with special error
+                break;
+            }
+
             let ident = self.consume_ident()?;
             self.consume(Token::Colon)?;
             // TODO: user defined types
@@ -158,7 +177,7 @@ where
         }
 
         self.consume(Token::RParen)?;
-        Ok(ParamList(params))
+        Ok(ParamList { varargs, params })
     }
 
     fn block(&mut self) -> Result<Block<'input>, Spanned<ParseError<'input>>> {
@@ -665,7 +684,7 @@ mod tests {
                 }),
                 TopLvl::FnDecl {
                     name: Spanned::new(46, 49, "main"),
-                    params: ParamList(vec![]),
+                    params: ParamList::default(),
                     ret_type: Spanned::new(54, 57, Type::UserType("Test")),
                     is_extern: false,
                     body: Block(vec![])
@@ -699,7 +718,7 @@ mod tests {
                 }),
                 TopLvl::FnDecl {
                     name: Spanned::new(46, 49, "main"),
-                    params: ParamList(vec![]),
+                    params: ParamList::default(),
                     ret_type: Spanned::new(54, 57, Type::Void),
                     is_extern: false,
                     body: Block(vec![])
@@ -724,7 +743,7 @@ mod tests {
                 }),
                 TopLvl::FnDecl {
                     name: Spanned::new(23, 26, "main"),
-                    params: ParamList(vec![]),
+                    params: ParamList::default(),
                     ret_type: Spanned::new(31, 34, Type::Void),
                     is_extern: false,
                     body: Block(vec![])
@@ -744,7 +763,7 @@ mod tests {
         assert_eq!(
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 ret_type: Spanned::new(11, 14, Type::Void),
                 is_extern: false,
                 body: Block(vec![Stmt::While {
@@ -785,7 +804,7 @@ mod tests {
         assert_eq!(
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 ret_type: Spanned::new(11, 14, Type::Void),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -828,7 +847,7 @@ mod tests {
                     name: Spanned::new(15, 18, "main"),
                     is_extern: false,
                     ret_type: Spanned::new(23, 26, Type::Void),
-                    params: ParamList(vec![]),
+                    params: ParamList::default(),
                     body: Block(vec![])
                 }
             ]),
@@ -848,7 +867,7 @@ mod tests {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
                 is_extern: false,
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     27,
@@ -885,7 +904,7 @@ mod tests {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
                 is_extern: false,
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     23,
@@ -911,7 +930,7 @@ mod tests {
                 name: Spanned::new(3, 5, "err"),
                 ret_type: Spanned::new(10, 13, Type::Void),
                 is_extern: false,
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 body: Block(vec![
                     Stmt::Expr(Spanned {
                         node: Expr::new(ExprKind::Error(ParseError::PrefixError(
@@ -945,7 +964,7 @@ mod tests {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
                 is_extern: false,
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 body: Block(vec![Stmt::VarDecl {
                     name: Spanned::new(22, 24, "var"),
                     value: Spanned::new(28, 28, Expr::new(ExprKind::DecLit("5"))),
@@ -971,7 +990,7 @@ mod tests {
                 name: Spanned::new(3, 6, "main"),
                 is_extern: false,
                 ret_type: Spanned::new(11, 14, Type::Void),
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 body: Block(vec![])
             }]),
             prg
@@ -989,7 +1008,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Void),
-                params: ParamList(vec![]),
+                params: ParamList::default(),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     17,

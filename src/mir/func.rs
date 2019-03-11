@@ -10,6 +10,7 @@ pub struct Func<'input> {
     pub(crate) ret: Type<'input>,
     pub(crate) blocks: BlockMap<'input>,
     pub(crate) is_extern: bool,
+    pub(crate) is_varargs: bool,
 }
 
 impl<'input> Func<'input> {
@@ -19,13 +20,29 @@ impl<'input> Func<'input> {
         ret: Type<'input>,
         blocks: BlockMap<'input>,
         is_extern: bool,
+        is_varargs: bool,
     ) -> Self {
+        let mut params = params;
+
+        if is_varargs {
+            if let Some((_, ty)) = params.last() {
+                if *ty == Type::Varargs {
+                    // If this is a variadic function, remove the last argument,
+                    // because otherwise the codegenerator will try to allocate
+                    // stack storage for the variadic argument
+                    // TODO: instead handle Varargs like array argument
+                    params.pop();
+                }
+            }
+        }
+
         Func {
             label,
             params,
             ret,
             blocks,
             is_extern,
+            is_varargs,
         }
     }
 }

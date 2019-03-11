@@ -6,6 +6,7 @@ pub enum Type<'input> {
     Bool,
     String,
     Void,
+    Varargs,
     UserType(&'input str),
 }
 
@@ -16,6 +17,7 @@ impl<'input> fmt::Display for Type<'input> {
             Type::String => "string",
             Type::Bool => "bool",
             Type::Void => "void",
+            Type::Varargs => "...",
             Type::UserType(name) => name,
         };
 
