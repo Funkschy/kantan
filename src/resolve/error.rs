@@ -77,6 +77,15 @@ impl<'input> fmt::Display for ResolveError<'input> {
                 self.err_span,
                 "cannot import self",
             ),
+            ResolveErrorType::NoSuchField(StructFieldError {
+                struct_name,
+                field_name,
+            }) => format_error(
+                self.source,
+                self.expr_span,
+                self.err_span,
+                &format!("'{}' has no field named '{}'", struct_name, field_name),
+            ),
         };
 
         write!(f, "{}", s)
@@ -87,8 +96,9 @@ impl<'input> fmt::Display for ResolveError<'input> {
 pub enum ResolveErrorType<'input> {
     IllegalAssignment(AssignmentError<'input>),
     NotDefined(DefinitionError<'input>),
-    IllegalOperation(BinaryOperationError),
-    IllegalType(IllegalTypeError),
+    IllegalOperation(BinaryOperationError<'input>),
+    IllegalType(IllegalTypeError<'input>),
+    NoSuchField(StructFieldError<'input>),
     SelfImport(SelfImportError),
 }
 
@@ -96,9 +106,9 @@ pub enum ResolveErrorType<'input> {
 pub struct SelfImportError;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct IllegalTypeError {
-    pub expected_type: Type,
-    pub actual_type: Type,
+pub struct IllegalTypeError<'input> {
+    pub expected_type: Type<'input>,
+    pub actual_type: Type<'input>,
     // e.g. "If condition" or "while condition"
     pub name: &'static str,
 }
@@ -107,16 +117,22 @@ pub struct IllegalTypeError {
 pub struct AssignmentError<'input> {
     pub name: &'input str,
     pub definition_span: Span,
-    pub bin_op_err: BinaryOperationError,
+    pub bin_op_err: BinaryOperationError<'input>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct BinaryOperationError {
-    pub left_type: Type,
-    pub right_type: Type,
+pub struct BinaryOperationError<'input> {
+    pub left_type: Type<'input>,
+    pub right_type: Type<'input>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DefinitionError<'input> {
     pub name: &'input str,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct StructFieldError<'input> {
+    pub struct_name: &'input str,
+    pub field_name: &'input str,
 }

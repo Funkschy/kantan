@@ -1,10 +1,15 @@
 //! The middle intermediate representation.
 //! This IR is very similar to LLVM-IR, but can also be compiled to Assembly directly.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, mem};
 
-use super::{parse::ast::*, resolve::symbol::SymbolTable, types::Type, Spanned};
-use address::{Address, Argument, Constant};
+use super::{
+    parse::ast::*,
+    resolve::{symbol::SymbolTable, ResolveResult},
+    types::Type,
+    Spanned, UserTypeMap,
+};
+use address::{Address, Constant};
 use blockmap::BlockMap;
 use func::Func;
 use names::NameTable;
@@ -20,20 +25,22 @@ pub(crate) mod tac;
 pub struct Tac<'input> {
     pub(crate) functions: Vec<Func<'input>>,
     pub(crate) literals: HashMap<Label, &'input str>,
+    pub(crate) types: UserTypeMap<'input>,
     symbols: SymbolTable<'input>,
     names: NameTable<'input>,
     temp_count: usize,
     label_count: usize,
-    current_params: Option<Vec<&'input str>>,
+    current_params: Option<Vec<(&'input str, Type<'input>)>>,
 }
 
 impl<'input> Tac<'input> {
-    pub fn new(symbols: SymbolTable<'input>) -> Self {
+    pub fn new(resolve_result: ResolveResult<'input>) -> Self {
         Tac {
             functions: vec![],
             literals: HashMap::new(),
             names: NameTable::new(),
-            symbols,
+            symbols: resolve_result.symbols,
+            types: resolve_result.user_types,
             temp_count: 0,
             label_count: 0,
             current_params: None,
@@ -45,14 +52,14 @@ impl<'input> Tac<'input> {
     pub fn add_function(
         &mut self,
         name: String,
-        params: Vec<(&'input str, Type)>,
+        params: Vec<(&'input str, Type<'input>)>,
         body: &Block<'input>,
-        ret_type: Type,
+        ret_type: Type<'input>,
         is_extern: bool,
     ) {
         // reset scopes
         self.names = NameTable::new();
-        self.current_params = Some(params.iter().map(|(n, _)| *n).collect());
+        self.current_params = Some(params);
 
         let f = if !is_extern {
             let mut block = self.create_block(&body.0);
@@ -76,15 +83,29 @@ impl<'input> Tac<'input> {
             // the main function has to return an int
             let ret_type = if main_func { Type::I32 } else { ret_type };
 
+            // move params out of current_params and replace with None
+            let mut moved_params = None;
+            mem::swap(&mut self.current_params, &mut moved_params);
+
             Func::new(
                 name.into(),
-                params,
+                moved_params.unwrap(),
                 ret_type,
                 BlockMap::from_instructions(block),
                 false,
             )
         } else {
-            Func::new(name.into(), params, ret_type, BlockMap::default(), true)
+            // move params out of current_params and replace with None
+            let mut moved_params = None;
+            mem::swap(&mut self.current_params, &mut moved_params);
+
+            Func::new(
+                name.into(),
+                moved_params.unwrap(),
+                ret_type,
+                BlockMap::default(),
+                true,
+            )
         };
 
         self.functions.push(f);
@@ -102,7 +123,7 @@ impl<'input> Tac<'input> {
                 Stmt::VarDecl {
                     name, value, ty, ..
                 } => {
-                    let expr = if let Some(rval) = self.rvalue(&value.node) {
+                    let expr = if let Some(rval) = self.address_expr(&value.node) {
                         rval.into()
                     } else {
                         self.expr(&value.node, &mut block)
@@ -118,7 +139,20 @@ impl<'input> Tac<'input> {
                 }
                 Stmt::Return(e) => {
                     let ret = if let Some(Spanned { node, .. }) = e {
-                        let address = self.expr_instr(node, &mut block);
+                        // If the return value is a struct initilizer, we need to first declare it
+                        // as a variabel, because the llvm codegenerator expects that the target of
+                        // the struct memcpy was already alloca'd
+                        let address = if let ExprKind::StructInit { .. } = node.kind() {
+                            let address = self.temp();
+                            let ty = node.ty().unwrap();
+                            block.push(Instruction::Decl(address.clone(), ty.clone()));
+                            let expr = self.expr(node, &mut block);
+                            let address = self.assign(address, expr, &mut block);
+                            // Wrap in Name, so context will generate a load instruction
+                            Address::new_copy_name(address.to_string())
+                        } else {
+                            self.expr_instr(node, &mut block)
+                        };
                         Instruction::Return(Some(address))
                     } else {
                         Instruction::Return(None)
@@ -208,7 +242,7 @@ impl<'input> Tac<'input> {
                         condition,
                         then_block,
                         else_branch,
-                    } = s
+                    } = s.as_ref()
                     {
                         self.if_branch(
                             &condition.node,
@@ -234,8 +268,8 @@ impl<'input> Tac<'input> {
         expr: &Expr<'input>,
         block: &mut InstructionBlock<'input>,
     ) -> Expression<'input> {
-        match expr {
-            Expr::Binary(l, op, r) | Expr::BoolBinary(l, op, r) => {
+        match expr.kind() {
+            ExprKind::Binary(l, op, r) | ExprKind::BoolBinary(l, op, r) => {
                 // TODO: find correct dec size
                 let bin_type = Option::from(&op.node).map(BinaryType::I32).unwrap();
 
@@ -244,7 +278,7 @@ impl<'input> Tac<'input> {
 
                 Expression::Binary(left, bin_type, right)
             }
-            Expr::Call { callee, args } => {
+            ExprKind::Call { callee, args } => {
                 let args: Vec<Address> = args
                     .0
                     .iter()
@@ -255,22 +289,45 @@ impl<'input> Tac<'input> {
 
                 Expression::Call(label, args)
             }
-            Expr::Assign { name, value, .. } => {
-                let expr = if let Some(rval) = self.rvalue(&value.node) {
+            ExprKind::Assign { left, value, .. } => {
+                let expr = if let Some(rval) = self.address_expr(&value.node) {
                     rval.into()
                 } else {
                     self.expr(&value.node, block)
                 };
 
-                let address = self.names.lookup(name).into();
+                let address = if let ExprKind::Ident(name) = left.node.kind() {
+                    self.names.lookup(name).into()
+                } else {
+                    self.expr_instr(&left.as_ref().node, block)
+                };
                 Expression::Copy(self.assign(address, expr.clone(), block))
             }
-            Expr::Negate(op, expr) => {
+            ExprKind::Negate(op, expr) => {
                 // TODO: find correct dec size
                 let u_type = Option::from(&op.node).unwrap();
                 let address = self.expr_instr(&expr.node, block);
 
                 Expression::Unary(u_type, address)
+            }
+            ExprKind::Access { left, identifier } => {
+                let address = self.expr_instr(&left.node, block);
+                if let Some(Type::UserType(ty)) = left.node.ty() {
+                    // the index of the field inside the struct
+                    let idx = self.types[ty].fields[identifier.node].0;
+                    Expression::StructGep(address, idx)
+                } else {
+                    // The resolver should insert the type information
+                    unreachable!("No type information for '{}' available", left.node);
+                }
+            }
+            ExprKind::StructInit { identifier, fields } => {
+                let values = fields
+                    .0
+                    .iter()
+                    .map(|(_, e)| self.expr_instr(&e.node, block))
+                    .collect();
+                Expression::StructInit(identifier.node, values)
             }
             _ => unimplemented!(),
         }
@@ -282,7 +339,7 @@ impl<'input> Tac<'input> {
         expr: &Expr<'input>,
         block: &mut InstructionBlock<'input>,
     ) -> Address<'input> {
-        let rval = self.rvalue(&expr);
+        let rval = self.address_expr(&expr);
         if let Some(rval) = rval {
             return rval;
         }
@@ -307,13 +364,13 @@ impl<'input> Tac<'input> {
         address
     }
 
-    fn rvalue(&mut self, expr: &Expr<'input>) -> Option<Address<'input>> {
-        Some(match expr {
-            Expr::DecLit(lit) => Address::new_const(Type::I32, lit),
-            Expr::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
-            Expr::Ident(ident) => {
+    fn address_expr(&mut self, expr: &Expr<'input>) -> Option<Address<'input>> {
+        Some(match expr.kind() {
+            ExprKind::DecLit(lit) => Address::new_const(Type::I32, lit),
+            ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
+            ExprKind::Ident(ident) => {
                 if let Some(arg) = self.find_param(ident) {
-                    Address::new_arg(arg)
+                    Address::Name(arg)
                 } else {
                     // Address::Name
                     self.names.lookup(ident).into()
@@ -323,11 +380,15 @@ impl<'input> Tac<'input> {
         })
     }
 
-    fn find_param(&self, ident: &str) -> Option<Argument> {
-        self.current_params
-            .as_ref()
-            .and_then(|params| params.iter().position(|p| *p == ident))
-            .map(Argument::from)
+    fn find_param(&self, ident: &str) -> Option<String> {
+        self.current_params.as_ref().and_then(|params| {
+            params.iter().find_map(|(name, _)| {
+                if *name == ident {
+                    return Some(name.to_string());
+                }
+                None
+            })
+        })
     }
 
     fn string_lit(&mut self, lit: &'input str) -> Label {

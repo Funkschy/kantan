@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     parse::{ast::*, Span, Spanned},
     types::Type,
-    Source,
+    Source, UserTypeDefinition, UserTypeMap,
 };
 
 use self::error::*;
@@ -16,9 +16,14 @@ mod error;
 pub mod symbol;
 
 #[derive(Clone)]
-struct FunctionDefinition {
-    ret_type: Type,
-    params: Vec<Type>,
+struct FunctionDefinition<'input> {
+    ret_type: Type<'input>,
+    params: Vec<Type<'input>>,
+}
+
+pub struct ResolveResult<'input> {
+    pub symbols: SymbolTable<'input>,
+    pub user_types: UserTypeMap<'input>,
 }
 
 pub(crate) struct Resolver<'input, 'ast> {
@@ -26,8 +31,9 @@ pub(crate) struct Resolver<'input, 'ast> {
     programs: &'ast PrgMap<'input>,
     resolved: HashSet<&'input str>,
     pub(crate) sym_table: SymbolTable<'input>,
-    functions: HashMap<String, FunctionDefinition>,
-    current_func_ret_type: Spanned<Type>,
+    functions: HashMap<String, FunctionDefinition<'input>>,
+    user_types: UserTypeMap<'input>,
+    current_func_ret_type: Spanned<Type<'input>>,
 }
 
 impl<'input, 'ast> Resolver<'input, 'ast> {
@@ -38,7 +44,15 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             resolved: HashSet::new(),
             sym_table: SymbolTable::new(),
             functions: HashMap::new(),
+            user_types: HashMap::new(),
             current_func_ret_type: Spanned::new(0, 0, Type::Void),
+        }
+    }
+
+    pub fn get_result(self) -> ResolveResult<'input> {
+        ResolveResult {
+            symbols: self.sym_table,
+            user_types: self.user_types,
         }
     }
 }
@@ -55,6 +69,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         for top_lvl in &prg.0 {
             self.declare_top_lvl(&top_lvl, &mut errors, prefix);
         }
+
+        // TODO: check for recursive type defs
 
         for top_lvl in &prg.0 {
             self.resolve_top_lvl(&top_lvl, &mut errors);
@@ -113,7 +129,27 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     errors.push(self.not_defined_error(name.span, name.span, name.node));
                 }
             }
-            _ => panic!("Invalid top level declaration {:#?}", top_lvl),
+            TopLvl::TypeDef(TypeDef::StructDef { name, fields }) => {
+                let full_name = prefix
+                    .map(|prefix| format!("{}.{}", prefix, name.node))
+                    .unwrap_or_else(|| name.node.to_owned());
+
+                let fields = fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (Spanned { node, .. }, ty))| (*node, (i as u32, *ty)))
+                    .collect();
+
+                let def = UserTypeDefinition {
+                    name: name.node,
+                    fields,
+                };
+
+                self.user_types.insert(full_name, def);
+            }
+            TopLvl::Error(err) => {
+                panic!("Invalid top level declaration {:#?}\n{}", top_lvl, err.node)
+            }
         }
     }
 
@@ -222,7 +258,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 if let Some(else_branch) = else_branch {
                     match else_branch.as_ref() {
                         Else::IfStmt(s) => {
-                            if let Stmt::If { .. } = s {
+                            if let Stmt::If { .. } = s.as_ref() {
                                 self.resolve_stmt(s, errors);
                             } else {
                                 panic!("Only if statement allowed here");
@@ -298,73 +334,110 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &mut self,
         span: Span,
         expr: &Expr<'input>,
-    ) -> Result<Type, ResolveError<'input>> {
-        match &expr {
-            Expr::Error(_) => {
+    ) -> Result<Type<'input>, ResolveError<'input>> {
+        let ty = self.check_expr(span, expr);
+        if let Ok(ty) = ty {
+            // Insert type information
+            expr.set_ty(ty);
+        }
+        ty
+    }
+
+    fn check_expr(
+        &mut self,
+        span: Span,
+        expr: &Expr<'input>,
+    ) -> Result<Type<'input>, ResolveError<'input>> {
+        match expr.kind() {
+            ExprKind::Error(_) => {
                 unreachable!("If errors occur during parsing, the program should not be resolved")
             }
-            Expr::DecLit(_) => Ok(Type::I32),
-            Expr::StringLit(_) => Ok(Type::String),
-            Expr::Negate(op, expr) => {
+            ExprKind::DecLit(_) => Ok(Type::I32),
+            ExprKind::StringLit(_) => Ok(Type::String),
+            ExprKind::Negate(op, expr) => {
                 let ty = self.resolve_expr(expr.span, &expr.node)?;
                 // TODO: unary operation error
                 self.compare_binary_types(op.span, span, ty, Type::I32)
             }
-            Expr::Binary(l, op, r) => {
+            ExprKind::Binary(l, op, r) => {
                 let left = self.resolve_expr(l.span, &l.node)?;
                 let right = self.resolve_expr(r.span, &r.node)?;
                 self.compare_binary_types(op.span, span, left, right)
             }
-            Expr::BoolBinary(l, op, r) => {
+            ExprKind::BoolBinary(l, op, r) => {
                 let left = self.resolve_expr(l.span, &l.node)?;
                 let right = self.resolve_expr(r.span, &r.node)?;
                 self.compare_binary_types(op.span, span, left, right)?;
                 Ok(Type::Bool)
             }
-            Expr::Access { .. } => unimplemented!("No structs yet. Imports are resolved by name"),
-            Expr::Assign { name, eq, value } => {
-                // Lookup variable in defined scopes
-                let (ty, sym_span) = {
-                    let Spanned {
-                        span,
-                        node: Symbol { ty, .. },
-                    } = self
-                        .sym_table
-                        .lookup(name)
-                        .ok_or_else(|| self.not_defined_error(span, span, name))?;
-                    (*ty, *span)
-                };
-
-                let &Spanned {
-                    span: value_span,
-                    ref node,
-                } = &**value;
-
-                // get type of right expression
-                let val_type = self.resolve_expr(value_span, node)?;
-                // check if type of right expression is the same as that of
-                // the declared variable
-                self.compare_binary_types(eq.span, span, ty, val_type)
-                    .map_err(
-                        |ResolveError {
-                             error,
-                             err_span,
-                             expr_span,
-                             ..
-                         }| {
-                            self.illegal_op_to_illegal_assignment(
-                                err_span, expr_span, name, error, sym_span,
-                            )
-                        },
-                    )
+            // currently only field access
+            ExprKind::Access { left, identifier } => {
+                let left_ty = self.resolve_expr(left.span, &left.node)?;
+                if let Type::UserType(type_name) = left_ty {
+                    let user_type = self.get_user_type(Spanned::from_span(span, type_name))?;
+                    let field_type = self.get_field(&user_type, identifier)?;
+                    Ok(field_type)
+                } else {
+                    // TODO: replace with custom error
+                    panic!("Cannot access field of primitive type: {}", left_ty);
+                }
             }
-            Expr::Ident(name) => self
+            ExprKind::StructInit { identifier, fields } => {
+                for (name, value) in fields.0.iter() {
+                    let user_type = self.get_user_type(*identifier)?;
+                    let field_type = self.get_field(&user_type, name)?;
+                    let value_type = self.resolve_expr(value.span, &value.node)?;
+                    self.compare_types(value.span, span, field_type, value_type, "struct literal")?
+                }
+                Ok(Type::UserType(identifier.node))
+            }
+            ExprKind::Assign { left, eq, value } => {
+                if let ExprKind::Ident(name) = left.node.kind() {
+                    // Lookup variable in defined scopes
+                    let (ty, sym_span) = {
+                        let Spanned {
+                            span,
+                            node: Symbol { ty, .. },
+                        } = self
+                            .sym_table
+                            .lookup(name)
+                            .ok_or_else(|| self.not_defined_error(span, span, name))?;
+                        (*ty, *span)
+                    };
+
+                    // get type of right expression
+                    let val_type = self.resolve_expr(value.span, &value.node)?;
+                    // check if type of right expression is the same as that of
+                    // the declared variable
+                    self.compare_binary_types(eq.span, span, ty, val_type)
+                        .map_err(
+                            |ResolveError {
+                                 error,
+                                 err_span,
+                                 expr_span,
+                                 ..
+                             }| {
+                                self.illegal_op_to_illegal_assignment(
+                                    err_span, expr_span, name, error, sym_span,
+                                )
+                            },
+                        )
+                } else {
+                    let ty = self.resolve_expr(left.span, &left.node)?;
+                    // get type of right expression
+                    let val_type = self.resolve_expr(value.span, &value.node)?;
+
+                    self.compare_binary_types(eq.span, span, ty, val_type)
+                }
+            }
+            ExprKind::Ident(name) => self
                 .sym_table
                 .lookup(name)
                 .ok_or_else(|| self.not_defined_error(span, span, name))
                 .map(|sym| sym.node.ty),
 
-            Expr::Call { callee, args } => {
+            ExprKind::Call { callee, args } => {
+                // TODO: replace with proper resolution to enable UFCS
                 let callee_name = self.current_source().slice(callee.span);
 
                 let func_type = self
@@ -419,6 +492,27 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         src
     }
 
+    fn get_user_type(
+        &self,
+        name: Spanned<&'input str>,
+    ) -> Result<&UserTypeDefinition<'input>, ResolveError<'input>> {
+        self.user_types
+            .get(name.node)
+            .ok_or_else(|| self.not_defined_error(name.span, name.span, name.node))
+    }
+
+    fn get_field(
+        &self,
+        user_type: &UserTypeDefinition<'input>,
+        name: &Spanned<&'input str>,
+    ) -> Result<Type<'input>, ResolveError<'input>> {
+        user_type
+            .fields
+            .get(name.node)
+            .ok_or_else(|| self.no_such_field_error(user_type, name))
+            .map(|ty| ty.1.node)
+    }
+
     fn error(
         &self,
         err_span: Span,
@@ -431,6 +525,21 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             err_span,
             expr_span,
         }
+    }
+
+    fn no_such_field_error(
+        &self,
+        user_type: &UserTypeDefinition<'input>,
+        name: &Spanned<&'input str>,
+    ) -> ResolveError<'input> {
+        self.error(
+            name.span,
+            name.span,
+            ResolveErrorType::NoSuchField(StructFieldError {
+                struct_name: user_type.name,
+                field_name: name.node,
+            }),
+        )
     }
 
     fn illegal_op_to_illegal_assignment(
@@ -461,8 +570,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         err_span: Span,
         expr_span: Span,
         name: &'static str,
-        expected_type: Type,
-        actual_type: Type,
+        expected_type: Type<'input>,
+        actual_type: Type<'input>,
     ) -> ResolveError<'input> {
         self.error(
             err_span,
@@ -492,8 +601,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        first: Type,
-        second: Type,
+        first: Type<'input>,
+        second: Type<'input>,
         name: &'static str,
     ) -> Result<(), ResolveError<'input>> {
         if first != second {
@@ -515,9 +624,9 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        first: Type,
-        second: Type,
-    ) -> Result<Type, ResolveError<'input>> {
+        first: Type<'input>,
+        second: Type<'input>,
+    ) -> Result<Type<'input>, ResolveError<'input>> {
         if first != second {
             Err(self.error(
                 err_span,
@@ -556,17 +665,21 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     32,
                     34,
-                    Expr::Call {
+                    Expr::new(ExprKind::Call {
                         callee: Box::new(Spanned::new(
                             29,
                             37,
-                            Expr::Access {
-                                left: Box::new(Spanned::new(29, 32, Expr::Ident("test"))),
+                            Expr::new(ExprKind::Access {
+                                left: Box::new(Spanned::new(
+                                    29,
+                                    32,
+                                    Expr::new(ExprKind::Ident("test")),
+                                )),
                                 identifier: Spanned::new(34, 37, "func"),
-                            },
+                            }),
                         )),
                         args: ArgList(vec![]),
-                    },
+                    }),
                 ))]),
             },
         ]);
@@ -603,10 +716,10 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     23,
-                    Expr::Call {
-                        callee: Box::new(Spanned::new(18, 21, Expr::Ident("test"))),
+                    Expr::new(ExprKind::Call {
+                        callee: Box::new(Spanned::new(18, 21, Expr::new(ExprKind::Ident("test")))),
                         args: ArgList(vec![]),
-                    },
+                    }),
                 ))]),
             },
             TopLvl::FnDecl {
@@ -639,7 +752,7 @@ mod tests {
             is_extern: false,
             body: Block(vec![Stmt::VarDecl {
                 name: Spanned::new(22, 22, "x"),
-                value: Spanned::new(26, 28, Expr::DecLit("10")),
+                value: Spanned::new(26, 28, Expr::new(ExprKind::DecLit("10"))),
                 eq: Spanned::new(24, 24, Token::Equals),
                 ty: Cell::new(None),
             }]),
@@ -653,6 +766,15 @@ mod tests {
 
         let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
+
+        if let TopLvl::FnDecl { body, .. } = &(&map["test"].1).0[0] {
+            if let Stmt::VarDecl { value, .. } = &body.0[0] {
+                assert_eq!(value.node.ty(), Some(Type::I32));
+                return;
+            }
+        }
+
+        panic!("Type not inserted");
     }
 
     #[test]
@@ -667,18 +789,18 @@ mod tests {
             body: Block(vec![
                 Stmt::VarDecl {
                     name: Spanned::new(22, 22, "x"),
-                    value: Spanned::new(26, 28, Expr::DecLit("10")),
+                    value: Spanned::new(26, 28, Expr::new(ExprKind::DecLit("10"))),
                     eq: Spanned::new(24, 24, Token::Equals),
                     ty: Cell::new(None),
                 },
                 Stmt::Expr(Spanned::new(
                     30,
                     35,
-                    Expr::Assign {
-                        name: "x",
+                    Expr::new(ExprKind::Assign {
+                        left: Box::new(Spanned::new(30, 30, Expr::new(ExprKind::Ident("x")))),
                         eq: Spanned::new(32, 32, Token::Equals),
-                        value: Box::new(Spanned::new(35, 35, Expr::StringLit(""))),
-                    },
+                        value: Box::new(Spanned::new(35, 35, Expr::new(ExprKind::StringLit("")))),
+                    }),
                 )),
             ]),
         }]);

@@ -2,7 +2,7 @@ use std::{borrow::Borrow, fmt};
 
 use crate::{parse::token::Token, types::Type};
 
-use super::address::{Address, CompilerConstant};
+use super::address::Address;
 
 #[derive(PartialEq, Debug)]
 pub struct BasicBlock<'input> {
@@ -80,7 +80,7 @@ impl<'input> Into<Instruction<'input>> for Label {
 #[derive(PartialEq, Debug)]
 pub enum Instruction<'input> {
     /// let x: i32
-    Decl(Address<'input>, Type),
+    Decl(Address<'input>, Type<'input>),
     /// x = <expr>
     Assignment(Address<'input>, Expression<'input>),
     /// goto l
@@ -130,6 +130,11 @@ pub enum Expression<'input> {
     DeRef(Address<'input>),
     /// x = call f (y, z)
     Call(Label, Vec<Address<'input>>),
+    /// Gets a pointer to the Xth element of a struct or array
+    /// x = base + offset
+    StructGep(Address<'input>, u32),
+    /// x = test { 41, "test" }
+    StructInit(&'input str, Vec<Address<'input>>),
 }
 
 impl<'input> fmt::Display for Expression<'input> {
@@ -142,6 +147,16 @@ impl<'input> fmt::Display for Expression<'input> {
             Copy(a) => format!("{}", a),
             Ref(a) => format!("ref {}", a),
             DeRef(a) => format!("deref {}", a),
+            StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
+            StructInit(ident, values) => format!(
+                "{} {{ {} }}",
+                ident,
+                values
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
             Call(f, args) => {
                 let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
                 let args = args.join(", ");
@@ -223,34 +238,6 @@ impl<'a> From<&Token<'a>> for Option<IntBinaryType> {
             Token::Smaller => Some(Smaller),
             Token::SmallerEquals => Some(SmallerEq),
             _ => None,
-        }
-    }
-}
-
-macro_rules! boolean {
-    ($e:expr) => {
-        CompilerConstant::new(Type::Bool, ($e).to_string())
-    };
-}
-
-macro_rules! integer {
-    ($int_type:expr, $e:expr) => {
-        CompilerConstant::new($int_type, ($e).to_string())
-    };
-}
-
-impl IntBinaryType {
-    pub fn execute(self, ty: Type, left: i128, right: i128) -> CompilerConstant {
-        use IntBinaryType::*;
-
-        match self {
-            Add => integer!(ty, left + right),
-            Sub => integer!(ty, left - right),
-            Mul => integer!(ty, left * right),
-            Div => integer!(ty, left / right),
-            Eq => boolean!(left == right),
-            Smaller => boolean!(left < right),
-            SmallerEq => boolean!(left <= right),
         }
     }
 }

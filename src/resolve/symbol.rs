@@ -12,13 +12,13 @@ pub enum SymbolKind {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Symbol<'input> {
-    pub ty: Type,
+    pub ty: Type<'input>,
     pub kind: SymbolKind,
     pub name: &'input str,
 }
 
 impl<'input> Symbol<'input> {
-    fn new(name: &'input str, ty: Type, kind: SymbolKind) -> Self {
+    fn new(name: &'input str, ty: Type<'input>, kind: SymbolKind) -> Self {
         Symbol { ty, kind, name }
     }
 }
@@ -48,7 +48,7 @@ impl<'input> SymbolTable<'input> {
         self.scopes.pop();
     }
 
-    pub fn bind(&mut self, name: &'input str, span: Span, ty: Type, is_param: bool) {
+    pub fn bind(&mut self, name: &'input str, span: Span, ty: Type<'input>, is_param: bool) {
         let global = self.in_global_scope();
         let scope = self.scopes.last_mut().unwrap();
 
@@ -70,7 +70,7 @@ impl<'input> SymbolTable<'input> {
         self.scopes.len() <= 1
     }
 
-    pub fn lookup(&self, name: &'input str) -> Option<&Spanned<Symbol>> {
+    pub fn lookup(&self, name: &'input str) -> Option<&Spanned<Symbol<'input>>> {
         for scope in self.scopes.iter().rev() {
             let symbol = scope.get(name);
             if symbol.is_some() {

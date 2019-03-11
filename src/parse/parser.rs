@@ -11,7 +11,7 @@ fn as_err_stmt<'input>(err: Spanned<ParseError<'input>>) -> Stmt<'input> {
     Stmt::Expr(Spanned::new(
         err.span.start,
         err.span.end,
-        Expr::Error(err.node),
+        Expr::new(ExprKind::Error(err.node)),
     ))
 }
 
@@ -48,27 +48,31 @@ where
         let mut top_lvl_decls = vec![];
 
         while self.scanner.peek().is_some() {
-            let is_extern = self.peek_eq(Token::Extern);
-
-            let decl = self.top_lvl_decl(is_extern);
+            let decl = self.top_lvl_decl();
             if let Ok(decl) = decl {
                 top_lvl_decls.push(decl);
             } else if let Err(err) = decl {
                 top_lvl_decls.push(TopLvl::Error(err));
                 self.err_count += 1;
-                // TODO: fix sync
-                self.sync();
+                while !(self.peek_eq(Token::Fn) || self.peek_eq(Token::Type) || self.at_end()) {
+                    self.advance().unwrap();
+                }
             }
         }
 
         Program(top_lvl_decls)
     }
 
-    fn top_lvl_decl(&mut self, is_extern: bool) -> TopLvlResult<'input> {
+    fn top_lvl_decl(&mut self) -> TopLvlResult<'input> {
         if self.peek_eq(Token::Import) {
             return self.import();
         }
 
+        if self.peek_eq(Token::Type) {
+            return self.type_definition();
+        }
+
+        let is_extern = self.peek_eq(Token::Extern);
         if is_extern {
             self.consume(Token::Extern)?;
         }
@@ -96,6 +100,34 @@ where
         })
     }
 
+    fn type_definition(&mut self) -> TopLvlResult<'input> {
+        self.consume(Token::Type)?;
+        let name = self.consume_ident()?;
+
+        self.consume(Token::Struct)?;
+        self.consume(Token::LBrace)?;
+
+        let mut fields = Vec::new();
+
+        if !self.at_end() && !self.peek_eq(Token::RBrace) {
+            loop {
+                let field_name = self.consume_ident()?;
+                self.consume(Token::Colon)?;
+                let field_type = self.consume_type()?;
+                fields.push((field_name, field_type));
+
+                if self.at_end() || self.peek_eq(Token::RBrace) {
+                    break;
+                }
+
+                self.consume(Token::Comma)?;
+            }
+        }
+
+        self.consume(Token::RBrace)?;
+        Ok(TopLvl::TypeDef(TypeDef::StructDef { name, fields }))
+    }
+
     fn import(&mut self) -> TopLvlResult<'input> {
         self.consume(Token::Import)?;
         let name = self.consume_ident()?;
@@ -120,7 +152,7 @@ where
             let ty = self.consume_type()?;
             params.push(Param::new(ident, ty.node));
 
-            if self.peek_eq(Token::Comma) {
+            if !self.peek_eq(Token::RParen) {
                 self.consume(Token::Comma)?;
             }
         }
@@ -144,7 +176,10 @@ where
             }
         }
 
-        self.consume(Token::RBrace)?;
+        // Unexpected end of file
+        if !self.at_end() {
+            self.consume(Token::RBrace)?;
+        }
         Ok(Block(stmts))
     }
 
@@ -165,17 +200,14 @@ where
         }
 
         // If no statement rule applies, assume an expression
-        let expr = self.expression();
-        // sync already consumes ;
-        if !expr.node.is_err() {
-            self.consume(Token::Semi)?;
-        }
+        let expr = self.expression()?;
+        self.consume(Token::Semi)?;
         Ok(Stmt::Expr(expr))
     }
 
     fn while_stmt(&mut self) -> StmtResult<'input> {
         self.consume(Token::While)?;
-        let condition = self.expression();
+        let condition = self.expression()?;
         let body = self.block()?;
 
         Ok(Stmt::While { condition, body })
@@ -187,7 +219,7 @@ where
         let ret = Ok(Stmt::Return(if self.peek_eq(Token::Semi) {
             None
         } else {
-            Some(self.expression())
+            Some(self.expression()?)
         }));
 
         self.consume(Token::Semi)?;
@@ -197,14 +229,14 @@ where
     fn if_stmt(&mut self) -> StmtResult<'input> {
         self.consume(Token::If)?;
 
-        let condition = self.expression();
+        let condition = self.expression()?;
         let then_block = self.block()?;
 
         let else_branch = if self.peek_eq(Token::Else) {
             self.consume(Token::Else)?;
 
             let else_branch = if self.peek_eq(Token::If) {
-                let else_if = self.if_stmt()?;
+                let else_if = Box::new(self.if_stmt()?);
                 Else::IfStmt(else_if)
             } else {
                 let block = self.block()?;
@@ -237,7 +269,7 @@ where
 
         let eq = self.consume(Token::Equals)?;
 
-        let value = self.expression();
+        let value = self.expression()?;
         Ok(Stmt::VarDecl {
             name,
             value,
@@ -246,16 +278,23 @@ where
         })
     }
 
-    pub fn expression(&mut self) -> Spanned<Expr<'input>> {
-        let as_err_stmt =
-            |err: Spanned<ParseError<'input>>| Spanned::from_span(err.span, Expr::Error(err.node));
+    pub fn expression(&mut self) -> ExprResult<'input> {
+        let mut left = self.parse_expression(Precedence::Assign)?;
+        while self.peek_eq(Token::Equals) {
+            let eq = self.consume(Token::Equals)?;
+            let value = Box::new(self.parse_expression(Precedence::Assign)?);
+            left = Spanned::new(
+                left.span.start,
+                value.span.end,
+                Expr::new(ExprKind::Assign {
+                    left: Box::new(left),
+                    eq,
+                    value,
+                }),
+            );
+        }
 
-        self.parse_expression(Precedence::None)
-            .unwrap_or_else(|err| {
-                self.err_count += 1;
-                self.sync();
-                as_err_stmt(err)
-            })
+        Ok(left)
     }
 
     fn parse_expression(&mut self, precedence: Precedence) -> ExprResult<'input> {
@@ -321,22 +360,29 @@ where
         Err(self.eof().unwrap_err())
     }
 
-    fn consume_type(&mut self) -> Result<Spanned<Type>, Spanned<ParseError<'input>>> {
+    fn consume_type(&mut self) -> Result<Spanned<Type<'input>>, Spanned<ParseError<'input>>> {
         if let Some(peek) = self.scanner.peek().cloned() {
             return match peek {
-                Ok(peek) => {
-                    if let Spanned {
+                Ok(peek) => match peek {
+                    Spanned {
                         node: Token::TypeIdent(ty),
                         span,
-                    } = peek
-                    {
+                    } => {
                         self.advance()?;
-                        return Ok(Spanned::from_span(span, ty));
-                    } else {
-                        let tok = Spanned::clone(&peek);
-                        return Err(self.make_consume_err(&tok, "Type".to_owned()).unwrap_err());
+                        Ok(Spanned::from_span(span, ty))
                     }
-                }
+                    Spanned {
+                        node: Token::Ident(ident),
+                        span,
+                    } => {
+                        self.advance()?;
+                        Ok(Spanned::from_span(span, Type::UserType(ident)))
+                    }
+                    _ => {
+                        let tok = Spanned::clone(&peek);
+                        Err(self.make_consume_err(&tok, "Type".to_owned()).unwrap_err())
+                    }
+                },
                 Err(err) => Err(err),
             };
         }
@@ -392,46 +438,34 @@ where
 
                 let expr = match tok {
                     Token::EqualsEquals | Token::SmallerEquals | Token::Smaller => {
-                        Expr::BoolBinary(Box::new(left), *token, Box::new(right))
+                        ExprKind::BoolBinary(Box::new(left), *token, Box::new(right))
                     }
-                    _ => Expr::Binary(
+                    _ => ExprKind::Binary(
                         Box::new(left),
                         *token,
                         Box::new(Spanned::from_span(right.span, right.node)),
                     ),
                 };
-                Ok(Spanned::new(left_span.start, right_span.end, expr))
-            }
-            Token::Equals => {
-                if let Expr::Ident(name) = left.node {
-                    let value = Box::new(self.expression());
-                    Ok(Spanned::new(
-                        left.span.start,
-                        (*value).span.end,
-                        Expr::Assign {
-                            name,
-                            eq: *token,
-                            value,
-                        },
-                    ))
-                } else {
-                    self.make_infix_err(token)
-                }
+                Ok(Spanned::new(
+                    left_span.start,
+                    right_span.end,
+                    Expr::new(expr),
+                ))
             }
             Token::Dot => {
                 let ident = self.consume_ident()?;
                 Ok(Spanned::new(
                     left.span.start,
                     ident.span.end,
-                    Expr::Access {
+                    Expr::new(ExprKind::Access {
                         left: Box::new(left),
                         identifier: ident,
-                    },
+                    }),
                 ))
             }
             Token::LParen => {
-                let valid = match left.node {
-                    Expr::Ident(_) | Expr::Access { .. } => true,
+                let valid = match left.node.kind() {
+                    ExprKind::Ident(_) | ExprKind::Access { .. } => true,
                     _ => false,
                 };
 
@@ -442,10 +476,10 @@ where
                     Ok(Spanned::new(
                         left.span.start,
                         end,
-                        Expr::Call {
+                        Expr::new(ExprKind::Call {
                             callee: Box::new(left),
                             args: arg_list,
-                        },
+                        }),
                     ))
                 } else {
                     // TODO: Implement meaningful error
@@ -457,38 +491,69 @@ where
     }
 
     fn prefix(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
-        let ok_spanned = |expr| Ok(Spanned::from_span(token.span, expr));
+        let ok_spanned = |kind| Ok(Spanned::from_span(token.span, Expr::new(kind)));
 
         match token.node {
-            Token::DecLit(lit) => ok_spanned(Expr::DecLit(lit)),
-            Token::StringLit(lit) => ok_spanned(Expr::StringLit(lit)),
+            Token::DecLit(lit) => ok_spanned(ExprKind::DecLit(lit)),
+            Token::StringLit(lit) => ok_spanned(ExprKind::StringLit(lit)),
             Token::LParen => {
-                let mut expr = self.expression();
+                let mut expr = self.expression()?;
                 self.consume(Token::RParen)?;
                 expr.span.start -= 1;
                 expr.span.end += 1;
                 Ok(expr)
             }
             Token::Minus => {
-                let next = self.expression();
+                let next = self.expression()?;
 
                 Ok(Spanned::new(
                     token.span.start,
                     next.span.end,
-                    Expr::Negate(*token, Box::new(next)),
+                    Expr::new(ExprKind::Negate(*token, Box::new(next))),
                 ))
             }
-            Token::Ident(ref name) => ok_spanned(Expr::Ident(name)),
+            Token::Ident(ref name) => {
+                if self.match_tok(Token::LBrace)? {
+                    let init_list = self.init_list()?;
+                    let brace = self.consume(Token::RBrace)?;
+                    Ok(Spanned::new(
+                        token.span.start,
+                        brace.span.end,
+                        Expr::new(ExprKind::StructInit {
+                            identifier: Spanned::from_span(token.span, *name),
+                            fields: init_list,
+                        }),
+                    ))
+                } else {
+                    ok_spanned(ExprKind::Ident(name))
+                }
+            }
             _ => self.make_prefix_err(token),
         }
+    }
+
+    fn init_list(&mut self) -> Result<InitList<'input>, Spanned<ParseError<'input>>> {
+        let mut inits = vec![];
+
+        while !self.at_end() && !self.peek_eq(Token::RBrace) {
+            let ident = self.consume_ident()?;
+            self.consume(Token::Colon)?;
+            let expr = self.expression()?;
+            inits.push((ident, expr));
+            if !self.peek_eq(Token::RBrace) {
+                self.consume(Token::Comma)?;
+            }
+        }
+
+        Ok(InitList(inits))
     }
 
     fn arg_list(&mut self) -> Result<ArgList<'input>, Spanned<ParseError<'input>>> {
         let mut args = vec![];
 
         while !self.at_end() && !self.peek_eq(Token::RParen) {
-            args.push(self.expression());
-            if self.peek_eq(Token::Comma) {
+            args.push(self.expression()?);
+            if !self.peek_eq(Token::RParen) {
                 self.consume(Token::Comma)?;
             }
         }
@@ -538,10 +603,6 @@ where
     }
 
     fn sync(&mut self) {
-        if self.peek_eq(Token::RBrace) {
-            return;
-        }
-
         let mut previous = self.advance();
 
         while let Some(Ok(peek)) = self.scanner.peek() {
@@ -553,7 +614,7 @@ where
             }
 
             match peek.node {
-                Token::Fn | Token::If | Token::Let | Token::Return => return,
+                Token::Type | Token::Fn | Token::If | Token::Let | Token::Return => return,
                 _ => {}
             }
 
@@ -572,6 +633,108 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse_assignment_chain() {
+        let source = "x = y = 0";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        parser.expression().unwrap();
+    }
+
+    #[test]
+    fn test_parse_return_struct() {
+        let source = "type Test struct {test: i32, second: bool} fn main(): Test { }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![
+                TopLvl::TypeDef(TypeDef::StructDef {
+                    name: Spanned::new(5, 8, "Test"),
+                    fields: vec![
+                        (
+                            Spanned::new(18, 21, "test"),
+                            Spanned::new(24, 26, Type::I32)
+                        ),
+                        (
+                            Spanned::new(29, 34, "second"),
+                            Spanned::new(37, 40, Type::Bool)
+                        ),
+                    ]
+                }),
+                TopLvl::FnDecl {
+                    name: Spanned::new(46, 49, "main"),
+                    params: ParamList(vec![]),
+                    ret_type: Spanned::new(54, 57, Type::UserType("Test")),
+                    is_extern: false,
+                    body: Block(vec![])
+                }
+            ]),
+            prg
+        );
+    }
+
+    #[test]
+    fn test_parse_struct_definition() {
+        let source = "type Test struct {test: i32, second: bool} fn main(): void { }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![
+                TopLvl::TypeDef(TypeDef::StructDef {
+                    name: Spanned::new(5, 8, "Test"),
+                    fields: vec![
+                        (
+                            Spanned::new(18, 21, "test"),
+                            Spanned::new(24, 26, Type::I32)
+                        ),
+                        (
+                            Spanned::new(29, 34, "second"),
+                            Spanned::new(37, 40, Type::Bool)
+                        ),
+                    ]
+                }),
+                TopLvl::FnDecl {
+                    name: Spanned::new(46, 49, "main"),
+                    params: ParamList(vec![]),
+                    ret_type: Spanned::new(54, 57, Type::Void),
+                    is_extern: false,
+                    body: Block(vec![])
+                }
+            ]),
+            prg
+        );
+    }
+
+    #[test]
+    fn test_parse_empty_struct_definition() {
+        let source = "type Test struct {} fn main(): void { }";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let prg = parser.parse();
+        assert_eq!(
+            Program(vec![
+                TopLvl::TypeDef(TypeDef::StructDef {
+                    name: Spanned::new(5, 8, "Test"),
+                    fields: Vec::new()
+                }),
+                TopLvl::FnDecl {
+                    name: Spanned::new(23, 26, "main"),
+                    params: ParamList(vec![]),
+                    ret_type: Spanned::new(31, 34, Type::Void),
+                    is_extern: false,
+                    body: Block(vec![])
+                }
+            ]),
+            prg
+        );
+    }
+
+    #[test]
     fn test_parse_while_statement() {
         let source = "fn main(): void { while 1 == 1 { test(); } }";
         let lexer = Lexer::new(&source);
@@ -588,19 +751,23 @@ mod tests {
                     condition: Spanned::new(
                         24,
                         29,
-                        Expr::BoolBinary(
-                            Box::new(Spanned::new(24, 24, Expr::DecLit("1"))),
+                        Expr::new(ExprKind::BoolBinary(
+                            Box::new(Spanned::new(24, 24, Expr::new(ExprKind::DecLit("1")))),
                             Spanned::new(26, 27, Token::EqualsEquals),
-                            Box::new(Spanned::new(29, 29, Expr::DecLit("1"))),
-                        )
+                            Box::new(Spanned::new(29, 29, Expr::new(ExprKind::DecLit("1")))),
+                        ))
                     ),
                     body: Block(vec![Stmt::Expr(Spanned::new(
                         33,
                         38,
-                        Expr::Call {
-                            callee: Box::new(Spanned::new(33, 36, Expr::Ident("test"))),
+                        Expr::new(ExprKind::Call {
+                            callee: Box::new(Spanned::new(
+                                33,
+                                36,
+                                Expr::new(ExprKind::Ident("test"))
+                            )),
                             args: ArgList(vec![])
-                        }
+                        })
                     ))])
                 }])
             }]),
@@ -624,17 +791,21 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     28,
-                    Expr::Call {
+                    Expr::new(ExprKind::Call {
                         callee: Box::new(Spanned::new(
                             18,
                             26,
-                            Expr::Access {
-                                left: Box::new(Spanned::new(18, 21, Expr::Ident("test"))),
+                            Expr::new(ExprKind::Access {
+                                left: Box::new(Spanned::new(
+                                    18,
+                                    21,
+                                    Expr::new(ExprKind::Ident("test"))
+                                )),
                                 identifier: Spanned::new(23, 26, "func")
-                            }
+                            })
                         )),
                         args: ArgList(vec![])
-                    }
+                    })
                 ))])
             }]),
             prg
@@ -681,17 +852,21 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     27,
-                    Expr::Call {
+                    Expr::new(ExprKind::Call {
                         callee: Box::new(Spanned::new(
                             18,
                             25,
-                            Expr::Access {
-                                left: Box::new(Spanned::new(18, 21, Expr::Ident("test"))),
+                            Expr::new(ExprKind::Access {
+                                left: Box::new(Spanned::new(
+                                    18,
+                                    21,
+                                    Expr::new(ExprKind::Ident("test"))
+                                )),
                                 identifier: Spanned::new(23, 25, "fun")
-                            }
+                            })
                         )),
                         args: ArgList(vec![])
-                    }
+                    })
                 ))])
             }]),
             prg
@@ -714,10 +889,10 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
                     23,
-                    Expr::Call {
-                        callee: Box::new(Spanned::new(18, 21, Expr::Ident("test"))),
+                    Expr::new(ExprKind::Call {
+                        callee: Box::new(Spanned::new(18, 21, Expr::new(ExprKind::Ident("test")))),
                         args: ArgList(vec![])
-                    }
+                    })
                 ))])
             }]),
             prg
@@ -739,17 +914,17 @@ mod tests {
                 params: ParamList(vec![]),
                 body: Block(vec![
                     Stmt::Expr(Spanned {
-                        node: Expr::Error(ParseError::PrefixError(
+                        node: Expr::new(ExprKind::Error(ParseError::PrefixError(
                             "Invalid token in prefix rule: '+'".to_owned()
-                        ),),
+                        ),)),
                         span: Span::new(20, 20)
                     }),
                     Stmt::Expr(Spanned {
-                        node: Expr::Binary(
-                            Box::new(Spanned::new(25, 25, Expr::DecLit("3"))),
+                        node: Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(25, 25, Expr::new(ExprKind::DecLit("3")))),
                             Spanned::new(27, 27, Token::Plus),
-                            Box::new(Spanned::new(29, 29, Expr::DecLit("4")))
-                        ),
+                            Box::new(Spanned::new(29, 29, Expr::new(ExprKind::DecLit("4"))))
+                        )),
                         span: Span::new(25, 29)
                     })
                 ])
@@ -773,7 +948,7 @@ mod tests {
                 params: ParamList(vec![]),
                 body: Block(vec![Stmt::VarDecl {
                     name: Spanned::new(22, 24, "var"),
-                    value: Spanned::new(28, 28, Expr::DecLit("5")),
+                    value: Spanned::new(28, 28, Expr::new(ExprKind::DecLit("5"))),
                     eq: Spanned::new(26, 26, Token::Equals),
                     ty: Cell::new(None)
                 }])
@@ -819,11 +994,11 @@ mod tests {
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     17,
                     21,
-                    Expr::Binary(
-                        Box::new(Spanned::new(17, 17, Expr::DecLit("1"))),
+                    Expr::new(ExprKind::Binary(
+                        Box::new(Spanned::new(17, 17, Expr::new(ExprKind::DecLit("1")))),
                         Spanned::new(19, 19, Token::Plus),
-                        Box::new(Spanned::new(21, 21, Expr::DecLit("1")))
-                    )
+                        Box::new(Spanned::new(21, 21, Expr::new(ExprKind::DecLit("1"))))
+                    ))
                 ))])
             }]),
             prg
@@ -838,8 +1013,8 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().node;
-        assert_eq!(Expr::DecLit("42"), expr);
+        let expr = parser.expression().unwrap().node;
+        assert_eq!(Expr::new(ExprKind::DecLit("42")), expr);
     }
 
     #[test]
@@ -848,22 +1023,22 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression();
+        let expr = parser.expression().unwrap();
         assert_eq!(
             Spanned {
-                node: Expr::Binary(
-                    Box::new(Spanned::new(0, 1, Expr::DecLit("1"))),
+                node: Expr::new(ExprKind::Binary(
+                    Box::new(Spanned::new(0, 1, Expr::new(ExprKind::DecLit("1")))),
                     Spanned::new(2, 2, Token::Plus),
                     Box::new(Spanned::new(
                         4,
                         8,
-                        Expr::Binary(
-                            Box::new(Spanned::new(4, 4, Expr::DecLit("2"))),
+                        Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(4, 4, Expr::new(ExprKind::DecLit("2")))),
                             Spanned::new(6, 6, Token::Star),
-                            Box::new(Spanned::new(8, 8, Expr::DecLit("3")))
-                        )
+                            Box::new(Spanned::new(8, 8, Expr::new(ExprKind::DecLit("3"))))
+                        ))
                     ))
-                ),
+                )),
                 span: Span::new(0, 8)
             },
             expr
@@ -873,22 +1048,22 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression();
+        let expr = parser.expression().unwrap();
         assert_eq!(
             Spanned {
-                node: Expr::Binary(
+                node: Expr::new(ExprKind::Binary(
                     Box::new(Spanned::new(
                         0,
                         4,
-                        Expr::Binary(
-                            Box::new(Spanned::new(0, 1, Expr::DecLit("2"))),
+                        Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(0, 1, Expr::new(ExprKind::DecLit("2")))),
                             Spanned::new(2, 2, Token::Star),
-                            Box::new(Spanned::new(4, 4, Expr::DecLit("3")))
-                        )
+                            Box::new(Spanned::new(4, 4, Expr::new(ExprKind::DecLit("3"))))
+                        ))
                     )),
                     Spanned::new(6, 6, Token::Plus),
-                    Box::new(Spanned::new(8, 8, Expr::DecLit("1"))),
-                ),
+                    Box::new(Spanned::new(8, 8, Expr::new(ExprKind::DecLit("1")))),
+                )),
                 span: Span::new(0, 8)
             },
             expr
@@ -898,22 +1073,22 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression();
+        let expr = parser.expression().unwrap();
         assert_eq!(
             Spanned {
-                node: Expr::Binary(
+                node: Expr::new(ExprKind::Binary(
                     Box::new(Spanned::new(
                         0,
                         6,
-                        Expr::Binary(
-                            Box::new(Spanned::new(1, 1, Expr::DecLit("2"))),
+                        Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(1, 1, Expr::new(ExprKind::DecLit("2")))),
                             Spanned::new(3, 3, Token::Plus),
-                            Box::new(Spanned::new(5, 5, Expr::DecLit("3")))
-                        )
+                            Box::new(Spanned::new(5, 5, Expr::new(ExprKind::DecLit("3"))))
+                        ))
                     )),
                     Spanned::new(8, 8, Token::Star),
-                    Box::new(Spanned::new(10, 10, Expr::DecLit("1"))),
-                ),
+                    Box::new(Spanned::new(10, 10, Expr::new(ExprKind::DecLit("1")))),
+                )),
                 span: Span::new(0, 10)
             },
             expr
@@ -923,22 +1098,22 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression();
+        let expr = parser.expression().unwrap();
         assert_eq!(
             Spanned {
-                node: Expr::Binary(
-                    Box::new(Spanned::new(0, 1, Expr::DecLit("1"))),
+                node: Expr::new(ExprKind::Binary(
+                    Box::new(Spanned::new(0, 1, Expr::new(ExprKind::DecLit("1")))),
                     Spanned::new(2, 2, Token::Plus),
                     Box::new(Spanned::new(
                         4,
                         10,
-                        Expr::Binary(
-                            Box::new(Spanned::new(5, 5, Expr::DecLit("2"))),
+                        Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(5, 5, Expr::new(ExprKind::DecLit("2")))),
                             Spanned::new(7, 7, Token::Star),
-                            Box::new(Spanned::new(9, 9, Expr::DecLit("3")))
-                        )
+                            Box::new(Spanned::new(9, 9, Expr::new(ExprKind::DecLit("3"))))
+                        ))
                     ))
-                ),
+                )),
                 span: Span::new(0, 10)
             },
             expr

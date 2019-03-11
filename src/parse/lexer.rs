@@ -162,21 +162,26 @@ impl<'input> Lexer<'input> {
         start: CharPos,
         slice: &'input str,
     ) -> Option<Spanned<Token<'input>>> {
-        Some(match slice {
-            "i32" => self.spanned(start, Token::TypeIdent(Type::I32)),
-            "string" => self.spanned(start, Token::TypeIdent(Type::String)),
-            "bool" => self.spanned(start, Token::TypeIdent(Type::Bool)),
-            "void" => self.spanned(start, Token::TypeIdent(Type::Void)),
-            "return" => self.spanned(start, Token::Return),
-            "let" => self.spanned(start, Token::Let),
-            "fn" => self.spanned(start, Token::Fn),
-            "if" => self.spanned(start, Token::If),
-            "else" => self.spanned(start, Token::Else),
-            "import" => self.spanned(start, Token::Import),
-            "extern" => self.spanned(start, Token::Extern),
-            "while" => self.spanned(start, Token::While),
-            _ => return None,
-        })
+        Some(self.spanned(
+            start,
+            match slice {
+                "i32" => Token::TypeIdent(Type::I32),
+                "string" => Token::TypeIdent(Type::String),
+                "bool" => Token::TypeIdent(Type::Bool),
+                "void" => Token::TypeIdent(Type::Void),
+                "return" => Token::Return,
+                "let" => Token::Let,
+                "fn" => Token::Fn,
+                "if" => Token::If,
+                "else" => Token::Else,
+                "import" => Token::Import,
+                "extern" => Token::Extern,
+                "while" => Token::While,
+                "type" => Token::Type,
+                "struct" => Token::Struct,
+                _ => return None,
+            },
+        ))
     }
 
     fn scan_dec_num(&mut self) -> Scanned<'input> {

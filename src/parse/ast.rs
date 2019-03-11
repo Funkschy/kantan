@@ -1,4 +1,4 @@
-use std::{cell::Cell, fmt};
+use std::{cell::Cell, fmt, hash};
 
 use super::{error::ParseError, token::Token, Spanned};
 use crate::types::Type;
@@ -12,13 +12,22 @@ pub enum TopLvl<'input> {
         name: Spanned<&'input str>,
         params: ParamList<'input>,
         body: Block<'input>,
-        ret_type: Spanned<Type>,
+        ret_type: Spanned<Type<'input>>,
         is_extern: bool,
     },
     Import {
         name: Spanned<&'input str>,
     },
+    TypeDef(TypeDef<'input>),
     Error(Spanned<ParseError<'input>>),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum TypeDef<'input> {
+    StructDef {
+        name: Spanned<&'input str>,
+        fields: Vec<(Spanned<&'input str>, Spanned<Type<'input>>)>,
+    },
 }
 
 // TODO: refactor Spanned<&'input str> to identifier
@@ -29,7 +38,7 @@ pub enum Stmt<'input> {
         value: Spanned<Expr<'input>>,
         eq: Spanned<Token<'input>>,
         // is filled in by resolver if necessary
-        ty: Cell<Option<Spanned<Type>>>,
+        ty: Cell<Option<Spanned<Type<'input>>>>,
     },
     If {
         condition: Spanned<Expr<'input>>,
@@ -46,7 +55,7 @@ pub enum Stmt<'input> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Else<'input> {
-    IfStmt(Stmt<'input>),
+    IfStmt(Box<Stmt<'input>>),
     Block(Block<'input>),
 }
 
@@ -57,10 +66,10 @@ pub struct Block<'input>(pub Vec<Stmt<'input>>);
 pub struct ParamList<'input>(pub Vec<Param<'input>>);
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Param<'input>(pub Spanned<&'input str>, pub Type);
+pub struct Param<'input>(pub Spanned<&'input str>, pub Type<'input>);
 
 impl<'input> Param<'input> {
-    pub fn new(ident: Spanned<&'input str>, ty: Type) -> Self {
+    pub fn new(ident: Spanned<&'input str>, ty: Type<'input>) -> Self {
         Param(ident, ty)
     }
 }
@@ -80,8 +89,62 @@ impl<'input> fmt::Display for ArgList<'input> {
     }
 }
 
+#[derive(Debug, Eq)]
+pub struct Expr<'input> {
+    // is filled in by resolver if necessary
+    ty: Cell<Option<Type<'input>>>,
+    kind: ExprKind<'input>,
+}
+
+impl<'input> Expr<'input> {
+    pub fn new(kind: ExprKind<'input>) -> Self {
+        Expr {
+            ty: Cell::new(None),
+            kind,
+        }
+    }
+
+    pub fn is_err(&self) -> bool {
+        if let ExprKind::Error(..) = self.kind {
+            return true;
+        }
+        false
+    }
+
+    #[inline]
+    pub fn kind(&self) -> &ExprKind<'input> {
+        &self.kind
+    }
+
+    #[inline]
+    pub fn ty(&self) -> Option<Type<'input>> {
+        self.ty.get()
+    }
+
+    /// This method is used by the resolver to insert type information into
+    /// the Expression
+    pub fn set_ty(&self, ty: Type<'input>) {
+        self.ty.set(Some(ty))
+    }
+}
+
+impl<'input> hash::Hash for Expr<'input> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.kind.hash(state);
+    }
+}
+
+impl<'input> PartialEq for Expr<'input> {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind().eq(other.kind())
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub enum Expr<'input> {
+pub struct InitList<'input>(pub Vec<(Spanned<&'input str>, Spanned<Expr<'input>>)>);
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+pub enum ExprKind<'input> {
     Error(ParseError<'input>),
     DecLit(&'input str),
     StringLit(&'input str),
@@ -98,7 +161,7 @@ pub enum Expr<'input> {
     ),
     Ident(&'input str),
     Assign {
-        name: &'input str,
+        left: Box<Spanned<Expr<'input>>>,
         eq: Spanned<Token<'input>>,
         value: Box<Spanned<Expr<'input>>>,
     },
@@ -110,22 +173,17 @@ pub enum Expr<'input> {
         left: Box<Spanned<Expr<'input>>>,
         identifier: Spanned<&'input str>,
     },
-}
-
-impl<'input> Expr<'input> {
-    pub fn is_err(&self) -> bool {
-        if let Expr::Error(..) = self {
-            return true;
-        }
-        false
-    }
+    StructInit {
+        identifier: Spanned<&'input str>,
+        fields: InitList<'input>,
+    },
 }
 
 impl<'input> fmt::Display for Expr<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::Expr::*;
+        use self::ExprKind::*;
 
-        match self {
+        match self.kind() {
             Error(err) => write!(f, "{}", err),
             DecLit(lit) => write!(f, "{}", lit),
             StringLit(lit) => write!(f, "{}", lit),
@@ -133,9 +191,20 @@ impl<'input> fmt::Display for Expr<'input> {
             Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
             BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
             Ident(name) => write!(f, "{}", name),
-            Assign { name, value, .. } => write!(f, "{} = {}", name, value.node),
+            Assign { left, value, .. } => write!(f, "{} = {}", left.node, value.node),
             Call { callee, args } => write!(f, "{}({})", callee.node, args),
             Access { left, identifier } => write!(f, "{}.{}", left.node, identifier.node),
+            StructInit { identifier, fields } => write!(
+                f,
+                "{} {{ {} }}",
+                identifier.node,
+                fields
+                    .0
+                    .iter()
+                    .map(|(n, e)| format!("{}: {}", n.node, e.node))
+                    .collect::<Vec<String>>()
+                    .join(",\n")
+            ),
         }
     }
 }

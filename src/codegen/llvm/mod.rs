@@ -9,7 +9,7 @@ use context::*;
 use target::*;
 
 pub fn emit_to_file<W: Write>(mir: &Mir, filename: &str, err_writer: &mut W) {
-    let mut ctx = KantanLLVMContext::new("main");
+    let mut ctx = KantanLLVMContext::new("main", &mir.types);
     ctx.generate(&mir);
 
     let arch = ArchType::X86_64;
@@ -41,10 +41,37 @@ mod tests {
     use crate::{compile, stdlib, Source};
     use std::io::Cursor;
 
-    #[test]
-    fn test_emit_to_file() {
+    fn call_emit_to_file(source: &str) {
         let mut cursor = Cursor::new(Vec::default());
 
+        let io = stdlib().remove(0);
+        let sources = vec![Source::new("main", source), io];
+        let compile_result = compile(&sources, &mut cursor);
+
+        if let Err(err) = compile_result {
+            println!("{}", err);
+            println!("{}", String::from_utf8(cursor.into_inner()).unwrap());
+            panic!("Compilation error");
+        }
+
+        let mir = compile_result.unwrap();
+        println!("{}", mir);
+
+        println!("----------");
+
+        emit_to_file(&mir, "target/test.s", &mut cursor);
+        let inner = cursor.into_inner();
+        let len = inner.len();
+
+        if !inner.is_empty() {
+            eprintln!("{}", String::from_utf8(inner).unwrap());
+        }
+
+        assert_eq!(0, len);
+    }
+
+    #[test]
+    fn test_control_flow() {
         let source = r#"
             import io
 
@@ -83,44 +110,30 @@ mod tests {
             }
         "#;
 
-        let io = stdlib().remove(0);
-        let sources = vec![Source::new("main", source), io];
-        let compile_result = compile(&sources, &mut cursor);
+        call_emit_to_file(source);
+    }
 
-        if let Err(err) = compile_result {
-            println!("{}", err);
-            println!("{}", String::from_utf8(cursor.into_inner()).unwrap());
-            panic!("Compilation error");
-        }
+    #[test]
+    fn test_struct_init_return() {
+        let source = r#"
+            import io
 
-        let mir = compile_result.unwrap();
+            type Person struct {
+                name: string,
+                age: i32
+            }
 
-        let globals = mir
-            .globals
-            .iter()
-            .map(|(k, v)| format!("{} {}", k, v))
-            .collect::<Vec<String>>()
-            .join("\n");
+            fn make_peter(age: i32): Person {
+                return Person { name: "Peter", age: age };
+            }
 
-        let funcs = mir
-            .functions
-            .iter()
-            .map(|f| f.to_string())
-            .collect::<Vec<String>>()
-            .join("\n");
+            fn main(): i32 {
+                let p = make_peter(20);
+                io.puts(p.name);
+                return p.age;
+            }
+        "#;
 
-        println!("{}\n{}", globals, funcs);
-
-        println!("----------");
-
-        emit_to_file(&mir, "target/test.s", &mut cursor);
-        let inner = cursor.into_inner();
-        let len = inner.len();
-
-        if !inner.is_empty() {
-            eprintln!("{}", String::from_utf8(inner).unwrap());
-        }
-
-        assert_eq!(0, len);
+        call_emit_to_file(source);
     }
 }

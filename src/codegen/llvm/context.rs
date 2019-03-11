@@ -5,10 +5,14 @@ use llvm_sys::{analysis::*, core::*, prelude::*, LLVMIntPredicate, LLVMLinkage, 
 use crate::{
     mir::{address::*, tac::*},
     types::Type,
-    Mir,
+    Mir, UserTypeDefinition, UserTypeMap,
 };
 
 const ADDRESS_SPACE: u32 = 0;
+
+enum Intrinsic {
+    MemCpy = 0,
+}
 
 pub struct KantanLLVMContext {
     context: LLVMContextRef,
@@ -17,16 +21,18 @@ pub struct KantanLLVMContext {
     module: LLVMModuleRef,
     temp_var_counter: usize,
     name_table: HashMap<String, LLVMValueRef>,
-    functions: HashMap<String, LLVMValueRef>,
+    functions: HashMap<String, (LLVMValueRef, LLVMTypeRef)>,
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
     blocks: HashMap<Label, LLVMBasicBlockRef>,
+    user_types: HashMap<String, LLVMTypeRef>,
     // TODO: make hashmap to save memory
     strings: Vec<CString>,
+    intrinsics: Vec<LLVMValueRef>,
 }
 
 impl KantanLLVMContext {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: &str, types: &UserTypeMap) -> Self {
         unsafe {
             let name = CString::new(name).unwrap().into_raw();
 
@@ -39,19 +45,70 @@ impl KantanLLVMContext {
             let globals = HashMap::new();
             let blocks = HashMap::new();
 
-            KantanLLVMContext {
+            let user_types = HashMap::new();
+
+            let mut ctx = KantanLLVMContext {
                 context,
                 builder,
                 module,
                 temp_var_counter: 0,
                 name_table,
                 functions,
+                current_function: None,
                 globals,
                 blocks,
-                current_function: None,
+                user_types,
                 strings: vec![CString::from_raw(name)],
-            }
+                intrinsics: Vec::new(),
+            };
+
+            ctx.add_intrinsics();
+
+            let user_types = types
+                .iter()
+                .map(|(n, ty)| (n.clone(), ctx.create_llvm_struct(n, ty)))
+                .collect();
+
+            ctx.user_types = user_types;
+
+            ctx
         }
+    }
+
+    unsafe fn add_intrinsics(&mut self) {
+        let mut memcpy_params = vec![
+            LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
+            LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
+            LLVMInt64TypeInContext(self.context),
+            LLVMInt1TypeInContext(self.context),
+        ];
+
+        let memcpy_type = LLVMFunctionType(
+            LLVMVoidTypeInContext(self.context),
+            memcpy_params.as_mut_ptr(),
+            memcpy_params.len() as u32,
+            false as i32,
+        );
+
+        let memcpy_func = LLVMAddFunction(
+            self.module,
+            self.cstring("llvm.memcpy.p0i8.p0i8.i64"),
+            memcpy_type,
+        );
+
+        self.intrinsics.push(memcpy_func);
+    }
+
+    unsafe fn create_llvm_struct(&mut self, name: &str, def: &UserTypeDefinition) -> LLVMTypeRef {
+        let mut fields = vec![ptr::null_mut(); def.fields.len()];
+
+        for (_, (i, ty)) in def.fields.iter() {
+            fields[*i as usize] = self.convert(ty.node);
+        }
+
+        let s = LLVMStructCreateNamed(self.context, self.cstring(name));
+        LLVMStructSetBody(s, fields.as_mut_ptr(), fields.len() as u32, false as i32);
+        s
     }
 }
 
@@ -84,12 +141,26 @@ impl KantanLLVMContext {
         self.module
     }
 
+    fn get_intrinsic(&self, intrinsic: Intrinsic) -> LLVMValueRef {
+        self.intrinsics[intrinsic as usize]
+    }
+
+    #[inline(always)]
+    unsafe fn llvm_bool(&self, value: bool) -> LLVMValueRef {
+        LLVMConstInt(
+            LLVMInt1TypeInContext(self.context),
+            value as u64,
+            true as i32,
+        )
+    }
+
     unsafe fn convert(&self, ty: Type) -> LLVMTypeRef {
         match ty {
             Type::I32 => LLVMInt32TypeInContext(self.context),
             Type::Bool => LLVMInt8TypeInContext(self.context),
             Type::Void => LLVMVoidTypeInContext(self.context),
             Type::String => LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
+            Type::UserType(name) => self.user_types[name],
         }
     }
 }
@@ -102,14 +173,13 @@ impl KantanLLVMContext {
         cstr
     }
 
-    // TODO: params
     unsafe fn func_type(&mut self, ret: LLVMTypeRef, mut params: Vec<LLVMTypeRef>) -> LLVMTypeRef {
         LLVMFunctionType(ret, params.as_mut_ptr(), params.len() as u32, 0)
     }
 
     pub fn generate(&mut self, mir: &Mir) {
         unsafe {
-            for (label, string) in &mir.globals {
+            for (label, string) in &mir.global_strings {
                 self.add_global_string(label, string);
             }
 
@@ -140,6 +210,7 @@ impl KantanLLVMContext {
 
                 let mut bbs = Vec::with_capacity(function.blocks.blocks.len());
 
+                // generate basic blocks
                 for b in function.blocks.blocks.iter() {
                     if let Instruction::Label(label) = &b.instructions[0] {
                         let name: &str = label.borrow();
@@ -151,6 +222,17 @@ impl KantanLLVMContext {
                     }
                 }
 
+                // allocate arguments on stack
+                LLVMPositionBuilderAtEnd(self.builder, bbs[0]);
+                for (i, (name, ty)) in function.params.iter().enumerate() {
+                    let n = self.cstring(name);
+                    dbg!(name);
+                    let stack_arg = LLVMBuildAlloca(self.builder, self.convert(*ty), n);
+                    LLVMBuildStore(self.builder, LLVMGetParam(f, i as u32), stack_arg);
+                    self.name_table.insert(name.to_string(), stack_arg);
+                }
+
+                // generate actual instructions
                 for (j, b) in function.blocks.blocks.iter().enumerate() {
                     LLVMPositionBuilderAtEnd(self.builder, bbs[j]);
 
@@ -207,7 +289,7 @@ impl KantanLLVMContext {
         let real_name = self.cstring(real_name);
 
         let f = LLVMAddFunction(self.module, real_name, func_type);
-        self.functions.insert(n.to_owned(), f);
+        self.functions.insert(n.to_owned(), (f, func_type));
         f
     }
 
@@ -236,7 +318,27 @@ impl KantanLLVMContext {
                 let n = a.to_string();
                 let expr = self.translate_mir_expr(e, &n);
 
-                if let Some(ptr) = self.name_table.get(&n) {
+                // translate_mir_expr allocas a new struct, which needs to be memcpyed
+                if let Expression::StructInit(identifier, _) = e {
+                    let a = self.name_table[&n];
+                    let ptr_ty =
+                        LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE);
+
+                    let dest = LLVMBuildBitCast(self.builder, a, ptr_ty, self.cstring("dest"));
+                    let src = LLVMBuildBitCast(self.builder, expr, ptr_ty, self.cstring("src"));
+                    let size = LLVMSizeOf(self.user_types[identifier.to_owned()]);
+
+                    let memcpy = self.get_intrinsic(Intrinsic::MemCpy);
+                    let mut memcpy_args = vec![dest, src, size, self.llvm_bool(false)];
+
+                    LLVMBuildCall(
+                        self.builder,
+                        memcpy,
+                        memcpy_args.as_mut_ptr(),
+                        memcpy_args.len() as u32,
+                        self.cstring(""),
+                    );
+                } else if let Some(ptr) = self.name_table.get(&n) {
                     LLVMBuildStore(self.builder, expr, *ptr);
                 } else {
                     self.name_table.insert(n, expr);
@@ -263,7 +365,6 @@ impl KantanLLVMContext {
                 LLVMBuildLoad(self.builder, self.name_table[n], self.cstring("tmp"))
             }
             Address::Temp(t) => self.name_table[&t.to_string()],
-            Address::Arg(arg) => LLVMGetParam(self.current_function.unwrap(), arg.into()),
             // TODO: other types
             Address::Const(c) => LLVMConstInt(self.convert(c.ty), c.literal.parse().unwrap(), 1),
             Address::Global(g) => {
@@ -277,10 +378,10 @@ impl KantanLLVMContext {
                     self.cstring("geptmp"),
                 );
 
+                // TODO: not only strings
                 let ptr = LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE);
                 LLVMBuildPointerCast(self.builder, gep, ptr, self.cstring("tmpstring"))
             }
-            _ => unimplemented!(),
         }
     }
 
@@ -298,28 +399,53 @@ impl KantanLLVMContext {
             }
             Expression::Unary(uop, a) => {
                 let a = self.translate_mir_address(a);
-                let n = CString::new(name).unwrap().into_raw();
+                let n = self.cstring(name);
 
-                let op = match uop {
+                match uop {
                     UnaryType::I32Negate => LLVMBuildNeg(self.builder, a, n),
                     UnaryType::BoolNegate => LLVMBuildNot(self.builder, a, n),
-                };
-
-                self.strings.push(CString::from_raw(n));
-                op
+                }
             }
             Expression::Call(label, args) => {
-                let n = CString::new(name).unwrap().into_raw();
+                let n = self.cstring(name);
                 let num_args = args.len() as u32;
 
                 let mut args: Vec<LLVMValueRef> =
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
 
-                let f = self.functions[&label.to_string()];
-                let op = LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, n);
-
-                self.strings.push(CString::from_raw(n));
-                op
+                let (f, f_type) = self.functions[&label.to_string()];
+                let name = if LLVMGetReturnType(f_type) != LLVMVoidTypeInContext(self.context) {
+                    n
+                } else {
+                    // void functions can't have a name
+                    self.cstring("")
+                };
+                LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, name)
+            }
+            Expression::StructGep(a, idx) => {
+                let address = match a {
+                    Address::Name(n) => self.name_table[n],
+                    Address::Temp(t) => self.name_table[&t.to_string()],
+                    Address::Global(g) => self.globals[g],
+                    _ => unreachable!("{} is invalid here", a),
+                };
+                let gep = LLVMBuildStructGEP(self.builder, address, *idx, self.cstring("ptr"));
+                LLVMBuildLoad(self.builder, gep, self.cstring("value"))
+            }
+            Expression::StructInit(identifier, values) => {
+                let struct_ty = self.user_types[identifier.to_owned()];
+                let struct_alloca = LLVMBuildAlloca(self.builder, struct_ty, self.cstring("tmp"));
+                for (i, value) in values.iter().enumerate() {
+                    let a = self.translate_mir_address(value);
+                    let ptr = LLVMBuildStructGEP(
+                        self.builder,
+                        struct_alloca,
+                        i as u32,
+                        self.cstring(&format!("value.{}", i)),
+                    );
+                    LLVMBuildStore(self.builder, a, ptr);
+                }
+                struct_alloca
             }
             _ => unimplemented!(),
         }
@@ -332,9 +458,9 @@ impl KantanLLVMContext {
         ty: IntBinaryType,
         name: &str,
     ) -> LLVMValueRef {
-        let n = CString::new(name).unwrap().into_raw();
+        let n = self.cstring(name);
 
-        let op = match ty {
+        match ty {
             IntBinaryType::Add => LLVMBuildAdd(self.builder, left, right, n),
             IntBinaryType::Sub => LLVMBuildSub(self.builder, left, right, n),
             IntBinaryType::Mul => LLVMBuildMul(self.builder, left, right, n),
@@ -349,10 +475,7 @@ impl KantanLLVMContext {
             IntBinaryType::SmallerEq => {
                 LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntSLE, left, right, n)
             }
-        };
-
-        self.strings.push(CString::from_raw(n));
-        op
+        }
     }
 }
 

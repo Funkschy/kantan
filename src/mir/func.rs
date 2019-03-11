@@ -6,8 +6,8 @@ use crate::types::Type;
 #[derive(PartialEq, Debug)]
 pub struct Func<'input> {
     pub(crate) label: Label,
-    pub(crate) params: Vec<(&'input str, Type)>,
-    pub(crate) ret: Type,
+    pub(crate) params: Vec<(&'input str, Type<'input>)>,
+    pub(crate) ret: Type<'input>,
     pub(crate) blocks: BlockMap<'input>,
     pub(crate) is_extern: bool,
 }
@@ -15,8 +15,8 @@ pub struct Func<'input> {
 impl<'input> Func<'input> {
     pub fn new(
         label: Label,
-        params: Vec<(&'input str, Type)>,
-        ret: Type,
+        params: Vec<(&'input str, Type<'input>)>,
+        ret: Type<'input>,
         blocks: BlockMap<'input>,
         is_extern: bool,
     ) -> Self {
@@ -35,8 +35,7 @@ impl<'input> fmt::Display for Func<'input> {
         let params = self
             .params
             .iter()
-            .enumerate()
-            .map(|(i, (_, t))| format!("_arg{}: {}", i, t))
+            .map(|(n, t)| format!("{}: {}", n, t))
             .collect::<Vec<String>>()
             .join(", ");
 
