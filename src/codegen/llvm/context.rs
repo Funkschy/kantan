@@ -451,8 +451,7 @@ impl KantanLLVMContext {
                     Address::Global(g) => self.globals[g],
                     _ => unreachable!("{} is invalid here", a),
                 };
-                let gep = LLVMBuildStructGEP(self.builder, address, *idx, self.cstring("ptr"));
-                LLVMBuildLoad(self.builder, gep, self.cstring("value"))
+                LLVMBuildStructGEP(self.builder, address, *idx, self.cstring("ptr"))
             }
             Expression::StructInit(identifier, values) => {
                 let struct_ty = self.user_types[identifier.to_owned()];
@@ -469,6 +468,11 @@ impl KantanLLVMContext {
                 }
                 struct_alloca
             }
+            Expression::DeRef(a) => LLVMBuildLoad(
+                self.builder,
+                self.name_table[&a.to_string()],
+                self.cstring("tmp"),
+            ),
             _ => unimplemented!(),
         }
     }

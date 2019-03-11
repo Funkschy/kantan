@@ -143,7 +143,7 @@ impl<'input> Tac<'input> {
                 Stmt::Return(e) => {
                     let ret = if let Some(Spanned { node, .. }) = e {
                         // If the return value is a struct initilizer, we need to first declare it
-                        // as a variabel, because the llvm codegenerator expects that the target of
+                        // as a variable, because the llvm codegenerator expects that the target of
                         // the struct memcpy was already alloca'd
                         let address = if let ExprKind::StructInit { .. } = node.kind() {
                             let address = self.temp();
@@ -302,7 +302,20 @@ impl<'input> Tac<'input> {
                 let address = if let ExprKind::Ident(name) = left.node.kind() {
                     self.names.lookup(name).into()
                 } else {
-                    self.expr_instr(&left.as_ref().node, block)
+                    let left_expr = if let Some(rval) = self.address_expr(&left.node) {
+                        rval.into()
+                    } else {
+                        let e = self.expr(&left.node, block);
+                        // remove the deref, so that the value can be assigned
+                        if let Expression::DeRef(a) = &e {
+                            Expression::Copy(a.clone())
+                        } else {
+                            e
+                        }
+                    };
+
+                    let temp = self.temp();
+                    self.assign(temp, left_expr, block)
                 };
                 Expression::Copy(self.assign(address, expr.clone(), block))
             }
@@ -318,7 +331,11 @@ impl<'input> Tac<'input> {
                 if let Some(Type::UserType(ty)) = left.node.ty() {
                     // the index of the field inside the struct
                     let idx = self.types[ty].fields[identifier.node].0;
-                    Expression::StructGep(address, idx)
+                    let temp = self.temp();
+                    let address = self.assign(temp, Expression::StructGep(address, idx), block);
+                    // Deref by default. This deref has to be removed if the value
+                    // should be assigned
+                    Expression::DeRef(address)
                 } else {
                     // The resolver should insert the type information
                     unreachable!("No type information for '{}' available", left.node);
