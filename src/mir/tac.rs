@@ -124,10 +124,6 @@ pub enum Expression<'input> {
     Unary(UnaryType, Address<'input>),
     /// x = y
     Copy(Address<'input>),
-    /// x = &y
-    Ref(Address<'input>),
-    /// x = *y
-    DeRef(Address<'input>),
     /// x = call f (y, z)
     Call(Label, Vec<Address<'input>>),
     /// Gets a pointer to the Xth element of a struct or array
@@ -145,8 +141,6 @@ impl<'input> fmt::Display for Expression<'input> {
             Binary(l, op, r) => format!("{} {} {}", l, op, r),
             Unary(op, a) => format!("{} {}", op, a),
             Copy(a) => format!("{}", a),
-            Ref(a) => format!("ref {}", a),
-            DeRef(a) => format!("deref {}", a),
             StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
             StructInit(ident, values) => format!(
                 "{} {{ {} }}",

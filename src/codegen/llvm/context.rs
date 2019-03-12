@@ -473,12 +473,6 @@ impl KantanLLVMContext {
                 }
                 struct_alloca
             }
-            Expression::DeRef(a) => LLVMBuildLoad(
-                self.builder,
-                self.name_table[&a.to_string()],
-                self.cstring("dereftmp"),
-            ),
-            _ => unimplemented!(),
         }
     }
 

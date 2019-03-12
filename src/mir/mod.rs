@@ -303,7 +303,7 @@ impl<'input> Tac<'input> {
                     self.names.lookup(name).into()
                 } else {
                     let e = self.expr(&left.node, block);
-                    // remove the deref, so that the value can be assigned
+                    // remove the deref/copy, so that the value can be assigned
                     if let Expression::Copy(a) = &e {
                         a.clone()
                     } else {
@@ -329,7 +329,7 @@ impl<'input> Tac<'input> {
                     let idx = ty.0;
                     let temp = self.temp();
                     let address = self.assign(temp, Expression::StructGep(address, idx), block);
-                    // Deref by default. This deref has to be removed if the value
+                    // Deref by default. This copy has to be removed if the value
                     // should be assigned
                     Expression::Copy(address)
                 } else {
