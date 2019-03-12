@@ -148,7 +148,7 @@ impl<'input> Tac<'input> {
                         let address = if let ExprKind::StructInit { .. } = node.kind() {
                             let address = self.temp();
                             let ty = node.ty().unwrap();
-                            block.push(Instruction::Decl(address.clone(), ty.clone()));
+                            block.push(Instruction::Decl(address.clone(), ty));
                             let expr = self.expr(node, &mut block);
                             let address = self.assign(address, expr, &mut block);
                             // Wrap in Name, so context will generate a load instruction
@@ -302,20 +302,14 @@ impl<'input> Tac<'input> {
                 let address = if let ExprKind::Ident(name) = left.node.kind() {
                     self.names.lookup(name).into()
                 } else {
-                    let left_expr = if let Some(rval) = self.address_expr(&left.node) {
-                        rval.into()
+                    let e = self.expr(&left.node, block);
+                    // remove the deref, so that the value can be assigned
+                    if let Expression::Copy(a) = &e {
+                        a.clone()
                     } else {
-                        let e = self.expr(&left.node, block);
-                        // remove the deref, so that the value can be assigned
-                        if let Expression::DeRef(a) = &e {
-                            Expression::Copy(a.clone())
-                        } else {
-                            e
-                        }
-                    };
-
-                    let temp = self.temp();
-                    self.assign(temp, left_expr, block)
+                        let temp = self.temp();
+                        self.assign(temp, e, block)
+                    }
                 };
                 Expression::Copy(self.assign(address, expr.clone(), block))
             }
@@ -327,15 +321,17 @@ impl<'input> Tac<'input> {
                 Expression::Unary(u_type, address)
             }
             ExprKind::Access { left, identifier } => {
-                let address = self.expr_instr(&left.node, block);
-                if let Some(Type::UserType(ty)) = left.node.ty() {
+                if let Some(Type::UserType(ty_name)) = left.node.ty() {
+                    let address = self.expr_instr(&left.node, block);
+
                     // the index of the field inside the struct
-                    let idx = self.types[ty].fields[identifier.node].0;
+                    let ty = self.types[ty_name].fields[identifier.node];
+                    let idx = ty.0;
                     let temp = self.temp();
                     let address = self.assign(temp, Expression::StructGep(address, idx), block);
                     // Deref by default. This deref has to be removed if the value
                     // should be assigned
-                    Expression::DeRef(address)
+                    Expression::Copy(address)
                 } else {
                     // The resolver should insert the type information
                     unreachable!("No type information for '{}' available", left.node);
@@ -370,6 +366,8 @@ impl<'input> Tac<'input> {
         }
 
         let temp = self.temp();
+        let ty = expr.ty().unwrap();
+        block.push(Instruction::Decl(temp.clone(), ty));
         self.assign(temp, e, block)
     }
 
@@ -473,6 +471,7 @@ mod tests {
                 Address::Name("y0".to_string()),
                 Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
             ),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::I32),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
@@ -542,6 +541,7 @@ mod tests {
                 Address::Name("x0".to_string()),
                 Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
             ),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Bool),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
@@ -619,6 +619,7 @@ mod tests {
                 Address::Name("x0".to_string()),
                 Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
             ),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Bool),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
@@ -710,6 +711,7 @@ mod tests {
         let mut bb2 = BasicBlock::default();
         bb2.instructions = vec![
             Instruction::Label(Label::new(1)),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Bool),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(

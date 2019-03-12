@@ -120,11 +120,24 @@ mod tests {
 
             type Person struct {
                 name: string,
-                age: i32
+                age: i32,
+                address: Address
+            }
+
+            type Address struct {
+                city: string,
+                hnr: string // number of the house
             }
 
             fn make_peter(age: i32): Person {
-                return Person { name: "Peter", age: age };
+                return Person { 
+                    name: "Peter", 
+                    age: age, 
+                    address: Address {
+                        city: "Berlin",
+                        hnr: "100"
+                    } 
+                };
             }
 
             fn main(): i32 {
@@ -132,6 +145,62 @@ mod tests {
                 io.printf("%s\n", p.name);
                 p.name = "Hans";
                 io.printf("%s\n", p.name);
+                io.printf(
+                    "%s, lives in %s in house number %s\n", 
+                    p.name, p.address.city, p.address.hnr
+                );
+                return p.age;
+            }
+        "#;
+
+        call_emit_to_file(source);
+    }
+
+    #[test]
+    fn test_inner_struct_assign() {
+        let source = r#"
+            import io
+
+            type Person struct {
+                name: string,
+                age: i32,
+                address: Address
+            }
+
+            type Address struct {
+                city: City,
+                hnr: string // number of the house
+            }
+
+            type City struct {
+                name: string
+            }
+
+            fn make_peter(age: i32): Person {
+                return Person { 
+                    name: "Peter", 
+                    age: age, 
+                    address: Address {
+                        city: City { name: "Berlin" },
+                        hnr: "100"
+                    } 
+                };
+            }
+
+            fn main(): i32 {
+                let p = make_peter(20);
+                let hans = p;
+                hans.address.city.name = "Neuss";
+                hans.address.hnr = "200";
+                hans.name = "Hans";
+                io.printf(
+                    "%s, lives in %s in house number %s\n", 
+                    p.name, p.address.city, p.address.hnr
+                );
+                io.printf(
+                    "%s, lives in %s in house number %s\n", 
+                    hans.name, hans.address.city, hans.address.hnr
+                );
                 return p.age;
             }
         "#;

@@ -64,12 +64,15 @@ impl KantanLLVMContext {
 
             ctx.add_intrinsics();
 
-            let user_types = types
-                .iter()
-                .map(|(n, ty)| (n.clone(), ctx.create_llvm_struct(n, ty)))
-                .collect();
+            for (n, _ty) in types.iter() {
+                // forward declaration of types
+                let s = LLVMStructCreateNamed(ctx.context, ctx.cstring(n));
+                ctx.user_types.insert(n.to_owned(), s);
+            }
 
-            ctx.user_types = user_types;
+            for (n, ty) in types.iter() {
+                ctx.add_llvm_struct(n, ty);
+            }
 
             ctx
         }
@@ -99,16 +102,15 @@ impl KantanLLVMContext {
         self.intrinsics.push(memcpy_func);
     }
 
-    unsafe fn create_llvm_struct(&mut self, name: &str, def: &UserTypeDefinition) -> LLVMTypeRef {
+    unsafe fn add_llvm_struct(&mut self, name: &str, def: &UserTypeDefinition) {
         let mut fields = vec![ptr::null_mut(); def.fields.len()];
 
         for (_, (i, ty)) in def.fields.iter() {
             fields[*i as usize] = self.convert(ty.node);
         }
 
-        let s = LLVMStructCreateNamed(self.context, self.cstring(name));
+        let s = self.user_types[name];
         LLVMStructSetBody(s, fields.as_mut_ptr(), fields.len() as u32, false as i32);
-        s
     }
 }
 
@@ -157,7 +159,7 @@ impl KantanLLVMContext {
     unsafe fn convert(&self, ty: Type) -> LLVMTypeRef {
         match ty {
             Type::I32 => LLVMInt32TypeInContext(self.context),
-            Type::Bool => LLVMInt8TypeInContext(self.context),
+            Type::Bool => LLVMInt1TypeInContext(self.context),
             Type::Void => LLVMVoidTypeInContext(self.context),
             Type::String => LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
             Type::UserType(name) => self.user_types[name],
@@ -383,10 +385,12 @@ impl KantanLLVMContext {
 
     unsafe fn translate_mir_address(&mut self, a: &Address) -> LLVMValueRef {
         match a {
-            Address::Name(n) => {
-                LLVMBuildLoad(self.builder, self.name_table[n], self.cstring("tmp"))
-            }
-            Address::Temp(t) => self.name_table[&t.to_string()],
+            Address::Name(n) => LLVMBuildLoad(self.builder, self.name_table[n], self.cstring(&n)),
+            Address::Temp(t) => LLVMBuildLoad(
+                self.builder,
+                self.name_table[&t.to_string()],
+                self.cstring(&t.to_string()),
+            ),
             // TODO: other types
             Address::Const(c) => LLVMConstInt(self.convert(c.ty), c.literal.parse().unwrap(), 1),
             Address::Global(g) => {
@@ -455,7 +459,8 @@ impl KantanLLVMContext {
             }
             Expression::StructInit(identifier, values) => {
                 let struct_ty = self.user_types[identifier.to_owned()];
-                let struct_alloca = LLVMBuildAlloca(self.builder, struct_ty, self.cstring("tmp"));
+                let struct_alloca =
+                    LLVMBuildAlloca(self.builder, struct_ty, self.cstring("structtmp"));
                 for (i, value) in values.iter().enumerate() {
                     let a = self.translate_mir_address(value);
                     let ptr = LLVMBuildStructGEP(
@@ -471,7 +476,7 @@ impl KantanLLVMContext {
             Expression::DeRef(a) => LLVMBuildLoad(
                 self.builder,
                 self.name_table[&a.to_string()],
-                self.cstring("tmp"),
+                self.cstring("dereftmp"),
             ),
             _ => unimplemented!(),
         }

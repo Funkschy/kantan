@@ -18,7 +18,9 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         .map(|file_name| {
             (
                 file_name,
-                fs::read_to_string(file_name).unwrap().replace("\t", "    "),
+                fs::read_to_string(file_name)
+                    .unwrap_or_else(|_| panic!("{} could not be found", file_name))
+                    .replace("\t", "    "),
             )
         })
         .map(|(file_name, code)| Source {
