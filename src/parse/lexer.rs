@@ -1,7 +1,7 @@
 use std::{iter::Peekable, str::CharIndices};
 
 use super::{error::*, token::*, *};
-use crate::types::Type;
+use crate::types::*;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct InputPos {
@@ -165,10 +165,10 @@ impl<'input> Lexer<'input> {
         Some(self.spanned(
             start,
             match slice {
-                "i32" => Token::TypeIdent(Type::I32),
-                "string" => Token::TypeIdent(Type::String),
-                "bool" => Token::TypeIdent(Type::Bool),
-                "void" => Token::TypeIdent(Type::Void),
+                "i32" => Token::TypeIdent(Type::Simple(Simple::I32)),
+                "string" => Token::TypeIdent(Type::Simple(Simple::String)),
+                "bool" => Token::TypeIdent(Type::Simple(Simple::Bool)),
+                "void" => Token::TypeIdent(Type::Simple(Simple::Void)),
                 "return" => Token::Return,
                 "let" => Token::Let,
                 "fn" => Token::Fn,
@@ -223,6 +223,13 @@ impl<'input> Lexer<'input> {
         let scanned: Scanned = match ch {
             '=' => consume_double!(self, start, Token::Equals, Token::EqualsEquals),
             '<' => consume_double!(self, start, '=', Token::Smaller, Token::SmallerEquals),
+            '&' => consume_double!(
+                self,
+                start,
+                '&',
+                Token::Ampersand,
+                Token::AmpersandAmpersand
+            ),
             '+' => consume_single!(self, start, Token::Plus),
             '-' => consume_single!(self, start, Token::Minus),
             '*' => consume_single!(self, start, Token::Star),
@@ -518,7 +525,7 @@ mod tests {
             Spanned::new(0, 2, Token::Let),
             Spanned::new(4, 7, Token::Ident("test")),
             Spanned::new(8, 8, Token::Colon),
-            Spanned::new(10, 12, Token::TypeIdent(Type::I32)),
+            Spanned::new(10, 12, Token::TypeIdent(Type::Simple(Simple::I32))),
             Spanned::new(14, 14, Token::Equals),
             Spanned::new(16, 16, Token::LParen),
             Spanned::new(17, 18, Token::DecLit("42")),

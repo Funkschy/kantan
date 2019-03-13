@@ -1,7 +1,7 @@
 use std::fmt;
 
 use super::{blockmap::BlockMap, tac::*};
-use crate::types::Type;
+use crate::types::*;
 
 #[derive(PartialEq, Debug)]
 pub struct Func<'input> {
@@ -26,7 +26,7 @@ impl<'input> Func<'input> {
 
         if is_varargs {
             if let Some((_, ty)) = params.last() {
-                if *ty == Type::Varargs {
+                if *ty == Type::Simple(Simple::Varargs) {
                     // If this is a variadic function, remove the last argument,
                     // because otherwise the codegenerator will try to allocate
                     // stack storage for the variadic argument

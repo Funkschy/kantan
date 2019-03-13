@@ -4,7 +4,7 @@ use llvm_sys::{analysis::*, core::*, prelude::*, LLVMIntPredicate, LLVMLinkage, 
 
 use crate::{
     mir::{address::*, tac::*},
-    types::Type,
+    types::*,
     Mir, UserTypeDefinition, UserTypeMap,
 };
 
@@ -158,17 +158,27 @@ impl KantanLLVMContext {
 
     unsafe fn convert(&self, ty: Type) -> LLVMTypeRef {
         match ty {
-            Type::I32 => LLVMInt32TypeInContext(self.context),
-            Type::Bool => LLVMInt1TypeInContext(self.context),
-            Type::Void => LLVMVoidTypeInContext(self.context),
-            Type::String => LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
-            Type::UserType(name) => self.user_types[name],
-            // varargs is just handled as a type for convenience
-            Type::Varargs => panic!("Varargs is not a real type"),
+            Type::Simple(ty) => match ty {
+                Simple::I32 => LLVMInt32TypeInContext(self.context),
+                Simple::Bool => LLVMInt1TypeInContext(self.context),
+                Simple::Void => LLVMVoidTypeInContext(self.context),
+                Simple::String => {
+                    LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
+                }
+                Simple::UserType(name) => self.user_types[name],
+                // varargs is just handled as a type for convenience
+                Simple::Varargs => panic!("Varargs is not a real type"),
+            },
+            Type::Pointer(ptr) => {
+                let mut ty = self.convert(Type::Simple(ptr.ty));
+                for _ in 0..ptr.number {
+                    ty = LLVMPointerType(ty, ADDRESS_SPACE);
+                }
+                ty
+            }
         }
     }
 }
-
 // TODO: run "memory to register promotion" pass
 impl KantanLLVMContext {
     unsafe fn cstring(&mut self, string: &str) -> *mut i8 {

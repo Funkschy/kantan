@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::types::Type;
+use crate::types::*;
 use crate::{Span, Spanned};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -96,14 +96,14 @@ mod tests {
         let mut sym_table = SymbolTable::new();
         assert_eq!(1, sym_table.scopes.len());
 
-        sym_table.bind("x", Span::new(1, 1), Type::I32, false);
+        sym_table.bind("x", Span::new(1, 1), Type::Simple(Simple::I32), false);
         sym_table.scope_enter();
 
         assert_eq!(
             Some(&Spanned::new(
                 1,
                 1,
-                Symbol::new("x", Type::I32, SymbolKind::Global),
+                Symbol::new("x", Type::Simple(Simple::I32), SymbolKind::Global),
             )),
             sym_table.lookup("x")
         );
@@ -114,7 +114,7 @@ mod tests {
             Some(&Spanned::new(
                 1,
                 1,
-                Symbol::new("x", Type::I32, SymbolKind::Global),
+                Symbol::new("x", Type::Simple(Simple::I32), SymbolKind::Global),
             )),
             sym_table.lookup("x")
         );
@@ -122,7 +122,7 @@ mod tests {
             Some(&Spanned::new(
                 1,
                 1,
-                Symbol::new("x", Type::I32, SymbolKind::Global),
+                Symbol::new("x", Type::Simple(Simple::I32), SymbolKind::Global),
             )),
             sym_table.lookup_current("x")
         );

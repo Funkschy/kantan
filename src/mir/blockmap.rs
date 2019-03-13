@@ -72,7 +72,7 @@ impl<'input> BlockMap<'input> {
 #[cfg(test)]
 mod tests {
     use super::{super::address::*, *};
-    use crate::types::Type;
+    use crate::types::*;
 
     #[test]
     fn test_from_instructions_only_basics_should_return_map_with_one_block() {
@@ -84,14 +84,17 @@ mod tests {
         let instructions = vec![
             Instruction::Assignment(
                 Address::Name("x".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "4"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "4",
+                ))),
             ),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
                     Address::Name("x".to_string()),
                     BinaryType::I32(IntBinaryType::Mul),
-                    Address::Const(Constant::new(Type::I32, "3")),
+                    Address::Const(Constant::new(Type::Simple(Simple::I32), "3")),
                 ),
             ),
             Instruction::Assignment(
@@ -99,12 +102,15 @@ mod tests {
                 Expression::Binary(
                     Address::Temp(TempVar::from(0)),
                     BinaryType::I32(IntBinaryType::Add),
-                    Address::Const(Constant::new(Type::I32, "3")),
+                    Address::Const(Constant::new(Type::Simple(Simple::I32), "3")),
                 ),
             ),
             Instruction::Assignment(
                 Address::Name("x".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "42"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "42",
+                ))),
             ),
             Instruction::Return(None),
         ];
@@ -121,14 +127,17 @@ mod tests {
                 Instruction::Label(Label::from(".entry0".to_string())),
                 Instruction::Assignment(
                     Address::Name("x".to_string()),
-                    Expression::Copy(Address::Const(Constant::new(Type::I32, "4"))),
+                    Expression::Copy(Address::Const(Constant::new(
+                        Type::Simple(Simple::I32),
+                        "4",
+                    ))),
                 ),
                 Instruction::Assignment(
                     Address::Temp(TempVar::from(0)),
                     Expression::Binary(
                         Address::Name("x".to_string()),
                         BinaryType::I32(IntBinaryType::Mul),
-                        Address::Const(Constant::new(Type::I32, "3")),
+                        Address::Const(Constant::new(Type::Simple(Simple::I32), "3")),
                     ),
                 ),
                 Instruction::Assignment(
@@ -136,12 +145,15 @@ mod tests {
                     Expression::Binary(
                         Address::Temp(TempVar::from(0)),
                         BinaryType::I32(IntBinaryType::Add),
-                        Address::Const(Constant::new(Type::I32, "3")),
+                        Address::Const(Constant::new(Type::Simple(Simple::I32), "3")),
                     ),
                 ),
                 Instruction::Assignment(
                     Address::Name("x".to_string()),
-                    Expression::Copy(Address::Const(Constant::new(Type::I32, "42"))),
+                    Expression::Copy(Address::Const(Constant::new(
+                        Type::Simple(Simple::I32),
+                        "42",
+                    ))),
                 ),
             ],
             terminator: Instruction::Return(None),
@@ -161,14 +173,17 @@ mod tests {
         let instructions = vec![
             Instruction::Assignment(
                 Address::Name("x".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "0",
+                ))),
             ),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
                     Address::Name("x".to_string()),
                     BinaryType::I32(IntBinaryType::Eq),
-                    Address::Const(Constant::new(Type::I32, "0")),
+                    Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 ),
             ),
             Instruction::JmpIf(
@@ -179,7 +194,10 @@ mod tests {
             Instruction::Label(Label::new(1)),
             Instruction::Assignment(
                 Address::Name("x".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "1"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "1",
+                ))),
             ),
             Instruction::Jmp(Label::new(0)),
             Instruction::Label(Label::new(0)),
@@ -201,14 +219,17 @@ mod tests {
                     Instruction::Label(Label::from(".entry0".to_string())),
                     Instruction::Assignment(
                         Address::Name("x".to_string()),
-                        Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                        Expression::Copy(Address::Const(Constant::new(
+                            Type::Simple(Simple::I32),
+                            "0",
+                        ))),
                     ),
                     Instruction::Assignment(
                         Address::Temp(TempVar::from(0)),
                         Expression::Binary(
                             Address::Name("x".to_string()),
                             BinaryType::I32(IntBinaryType::Eq),
-                            Address::Const(Constant::new(Type::I32, "0")),
+                            Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                         ),
                     ),
                 ],
@@ -223,7 +244,10 @@ mod tests {
                     Instruction::Label(Label::new(1)),
                     Instruction::Assignment(
                         Address::Name("x".to_string()),
-                        Expression::Copy(Address::Const(Constant::new(Type::I32, "1"))),
+                        Expression::Copy(Address::Const(Constant::new(
+                            Type::Simple(Simple::I32),
+                            "1",
+                        ))),
                     ),
                 ],
                 terminator: Instruction::Jmp(Label::new(0)),
@@ -250,14 +274,17 @@ mod tests {
         let instructions = vec![
             Instruction::Assignment(
                 Address::Name("x".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "0",
+                ))),
             ),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
                     Address::Name("x".to_string()),
                     BinaryType::I32(IntBinaryType::Eq),
-                    Address::Const(Constant::new(Type::I32, "0")),
+                    Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 ),
             ),
             Instruction::JmpIf(
@@ -268,13 +295,19 @@ mod tests {
             Instruction::Label(Label::new(1)),
             Instruction::Assignment(
                 Address::Name("x".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "1"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "1",
+                ))),
             ),
             Instruction::Jmp(Label::new(0)),
             Instruction::Label(Label::new(2)),
             Instruction::Assignment(
                 Address::Name("x".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "2",
+                ))),
             ),
             Instruction::Jmp(Label::new(0)),
             Instruction::Label(Label::new(0)),
@@ -297,14 +330,17 @@ mod tests {
                     Instruction::Label(Label::from(".entry0".to_string())),
                     Instruction::Assignment(
                         Address::Name("x".to_string()),
-                        Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                        Expression::Copy(Address::Const(Constant::new(
+                            Type::Simple(Simple::I32),
+                            "0",
+                        ))),
                     ),
                     Instruction::Assignment(
                         Address::Temp(TempVar::from(0)),
                         Expression::Binary(
                             Address::Name("x".to_string()),
                             BinaryType::I32(IntBinaryType::Eq),
-                            Address::Const(Constant::new(Type::I32, "0")),
+                            Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                         ),
                     ),
                 ],
@@ -319,7 +355,10 @@ mod tests {
                     Instruction::Label(Label::new(1)),
                     Instruction::Assignment(
                         Address::Name("x".to_string()),
-                        Expression::Copy(Address::Const(Constant::new(Type::I32, "1"))),
+                        Expression::Copy(Address::Const(Constant::new(
+                            Type::Simple(Simple::I32),
+                            "1",
+                        ))),
                     ),
                 ],
                 terminator: Instruction::Jmp(Label::new(0)),
@@ -329,7 +368,10 @@ mod tests {
                     Instruction::Label(Label::new(2)),
                     Instruction::Assignment(
                         Address::Name("x".to_string()),
-                        Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+                        Expression::Copy(Address::Const(Constant::new(
+                            Type::Simple(Simple::I32),
+                            "2",
+                        ))),
                     ),
                 ],
                 terminator: Instruction::Jmp(Label::new(0)),
