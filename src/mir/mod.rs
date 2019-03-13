@@ -145,17 +145,7 @@ impl<'input> Tac<'input> {
                         // If the return value is a struct initilizer, we need to first declare it
                         // as a variable, because the llvm codegenerator expects that the target of
                         // the struct memcpy was already alloca'd
-                        let address = if let ExprKind::StructInit { .. } = node.kind() {
-                            let address = self.temp();
-                            let ty = node.ty().unwrap();
-                            block.push(Instruction::Decl(address.clone(), ty));
-                            let expr = self.expr(node, &mut block);
-                            let address = self.assign(address, expr, &mut block);
-                            // Wrap in Name, so context will generate a load instruction
-                            Address::new_copy_name(address.to_string())
-                        } else {
-                            self.expr_instr(node, &mut block)
-                        };
+                        let address = self.expr_instr(node, &mut block);
                         Instruction::Return(Some(address))
                     } else {
                         Instruction::Return(None)
