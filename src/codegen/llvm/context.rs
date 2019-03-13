@@ -21,7 +21,7 @@ pub struct KantanLLVMContext {
     module: LLVMModuleRef,
     temp_var_counter: usize,
     name_table: HashMap<String, LLVMValueRef>,
-    functions: HashMap<String, (LLVMValueRef, LLVMTypeRef)>,
+    functions: HashMap<String, LLVMValueRef>,
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
     blocks: HashMap<Label, LLVMBasicBlockRef>,
@@ -323,7 +323,7 @@ impl KantanLLVMContext {
         let real_name = self.cstring(real_name);
 
         let f = LLVMAddFunction(self.module, real_name, func_type);
-        self.functions.insert(n.to_owned(), (f, func_type));
+        self.functions.insert(n.to_owned(), f);
         f
     }
 
@@ -351,6 +351,14 @@ impl KantanLLVMContext {
             Instruction::Assignment(a, e) => {
                 let n = a.to_string();
                 let expr = self.translate_mir_expr(e, &n);
+
+                if *a == Address::Empty {
+                    // Only void calls generate empty addresses. The Typechecker does not allow them to be
+                    // assigned or used in any way, but the mir generates assign instructions for every
+                    // expression, so we return here, to make sure that no actual assign is generated
+                    // for the result of a void function call
+                    return;
+                }
 
                 // translate_mir_expr allocas a new struct, which needs to be memcpyed
                 if let Expression::StructInit(identifier, _) = e {
@@ -395,6 +403,7 @@ impl KantanLLVMContext {
 
     unsafe fn translate_mir_address(&mut self, a: &Address) -> LLVMValueRef {
         match a {
+            Address::Empty => unreachable!(),
             Address::Name(n) => LLVMBuildLoad(self.builder, self.name_table[n], self.cstring(&n)),
             Address::Temp(t) => LLVMBuildLoad(
                 self.builder,
@@ -442,15 +451,15 @@ impl KantanLLVMContext {
                     UnaryType::BoolNegate => LLVMBuildNot(self.builder, a, n),
                 }
             }
-            Expression::Call(label, args) => {
+            Expression::Call(label, args, ty) => {
                 let n = self.cstring(name);
                 let num_args = args.len() as u32;
 
                 let mut args: Vec<LLVMValueRef> =
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
 
-                let (f, f_type) = self.functions[&label.to_string()];
-                let name = if LLVMGetReturnType(f_type) != LLVMVoidTypeInContext(self.context) {
+                let f = self.functions[&label.to_string()];
+                let name = if *ty != Type::Simple(Simple::Void) {
                     n
                 } else {
                     // void functions can't have a name

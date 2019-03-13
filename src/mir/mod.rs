@@ -286,8 +286,9 @@ impl<'input> Tac<'input> {
                     .collect();
 
                 let label = callee.node.to_string().into();
+                let ty = expr.ty().unwrap();
 
-                Expression::Call(label, args)
+                Expression::Call(label, args, ty)
             }
             ExprKind::Assign { left, value, .. } => {
                 let expr = if let Some(rval) = self.address_expr(&value.node) {
@@ -358,8 +359,14 @@ impl<'input> Tac<'input> {
         }
 
         let e = self.expr(expr, block);
+
         if let Expression::Copy(a) = e {
             return a;
+        }
+
+        // void functions should be assigned to an empty address
+        if let Expression::Call(_, _, Type::Simple(Simple::Void)) = e {
+            return self.assign(Address::Empty, e, block);
         }
 
         let temp = self.temp();
