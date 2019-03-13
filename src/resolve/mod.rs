@@ -359,13 +359,21 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             // currently only field access
             ExprKind::Access { left, identifier } => {
                 let left_ty = self.resolve_expr(left.span, &left.node)?;
-                if let Type::Simple(Simple::UserType(type_name)) = left_ty {
-                    let user_type = self.get_user_type(Spanned::from_span(span, type_name))?;
-                    let field_type = self.get_field(&user_type, identifier)?;
-                    Ok(field_type)
-                } else {
-                    // TODO: replace with custom error
-                    panic!("Cannot access field of primitive type: {}", left_ty);
+                match left_ty {
+                    // if the type is either a struct or a pointer to (pointer to ...) a struct
+                    Type::Simple(Simple::UserType(type_name))
+                    | Type::Pointer(Pointer {
+                        ty: Simple::UserType(type_name),
+                        ..
+                    }) => {
+                        let user_type = self.get_user_type(Spanned::from_span(span, type_name))?;
+                        let field_type = self.get_field(&user_type, identifier)?;
+                        Ok(field_type)
+                    }
+                    _ => {
+                        // TODO: replace with custom error
+                        panic!("Cannot access field of primitive type: {}", left_ty);
+                    }
                 }
             }
             ExprKind::StructInit { identifier, fields } => {
@@ -602,21 +610,21 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        first: Type<'input>,
-        second: Type<'input>,
+        expected: Type<'input>,
+        actual: Type<'input>,
         name: &'static str,
     ) -> Result<(), ResolveError<'input>> {
-        if first != second
+        if expected != actual
             // varargs disables type checking
-            && first != Type::Simple(Simple::Varargs)
-            && second != Type::Simple(Simple::Varargs)
+            && expected != Type::Simple(Simple::Varargs)
+            && actual != Type::Simple(Simple::Varargs)
         {
             return Err(self.error(
                 err_span,
                 expr_span,
                 ResolveErrorType::IllegalType(IllegalTypeError {
-                    expected_type: first,
-                    actual_type: second,
+                    expected_type: expected,
+                    actual_type: actual,
                     name,
                 }),
             ));

@@ -319,21 +319,34 @@ impl<'input> Tac<'input> {
                 Expression::Unary(u_type, address)
             }
             ExprKind::Access { left, identifier } => {
-                if let Some(Type::Simple(Simple::UserType(ty_name))) = left.node.ty() {
-                    let address = self.expr_instr(&left.node, block);
+                use super::types::Simple::UserType;
 
-                    // the index of the field inside the struct
-                    let ty = self.types[ty_name].fields[identifier.node];
-                    let idx = ty.0;
-                    let temp = self.temp();
-                    let address = self.assign(temp, Expression::StructGep(address, idx), block);
-                    // Deref by default. This copy has to be removed if the value
-                    // should be assigned
-                    Expression::Copy(address)
-                } else {
-                    // The resolver should insert the type information
-                    unreachable!("No type information for '{}' available", left.node);
-                }
+                let (ty_name, address) = match left.node.ty().unwrap() {
+                    Type::Simple(UserType(ty_name)) => {
+                        (ty_name, self.expr_instr(&left.node, block))
+                    }
+                    Type::Pointer(Pointer {
+                        number,
+                        ty: UserType(ty_name),
+                    }) => {
+                        let mut address = self.expr_instr(&left.node, block);
+                        for _ in 0..number {
+                            let temp = self.temp();
+                            address = self.assign(temp, Expression::Copy(address), block);
+                        }
+                        (ty_name, address)
+                    }
+                    _ => unreachable!("Invalid type: {}", left.node.ty().unwrap()),
+                };
+
+                // the index of the field inside the struct
+                let ty = self.types[ty_name].fields[identifier.node];
+                let idx = ty.0;
+                let temp = self.temp();
+                let address = self.assign(temp, Expression::StructGep(address, idx), block);
+                // Deref by default. This copy has to be removed if the value
+                // should be assigned
+                Expression::Copy(address)
             }
             ExprKind::StructInit { identifier, fields } => {
                 let values = fields

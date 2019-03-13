@@ -6,6 +6,15 @@ pub enum Type<'input> {
     Pointer(Pointer<'input>),
 }
 
+impl<'input> Type<'input> {
+    pub fn is_ptr(&self) -> bool {
+        match self {
+            Type::Pointer(_) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Simple<'input> {
     I32,
