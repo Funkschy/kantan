@@ -6,7 +6,7 @@ use std::{collections::HashMap, mem};
 use super::{
     parse::ast::*,
     resolve::{symbol::SymbolTable, ResolveResult},
-    types::Type,
+    types::*,
     Spanned, UserTypeMap,
 };
 use address::{Address, Constant};
@@ -73,7 +73,10 @@ impl<'input> Tac<'input> {
 
             if add_ret {
                 let ret = if main_func {
-                    Some(Address::Const(Constant::new(Type::I32, "0")))
+                    Some(Address::Const(Constant::new(
+                        Type::Simple(Simple::I32),
+                        "0",
+                    )))
                 } else {
                     None
                 };
@@ -82,7 +85,11 @@ impl<'input> Tac<'input> {
             }
 
             // the main function has to return an int
-            let ret_type = if main_func { Type::I32 } else { ret_type };
+            let ret_type = if main_func {
+                Type::Simple(Simple::I32)
+            } else {
+                ret_type
+            };
 
             // move params out of current_params and replace with None
             let mut moved_params = None;
@@ -279,8 +286,9 @@ impl<'input> Tac<'input> {
                     .collect();
 
                 let label = callee.node.to_string().into();
+                let ty = expr.ty().unwrap();
 
-                Expression::Call(label, args)
+                Expression::Call(label, args, ty)
             }
             ExprKind::Assign { left, value, .. } => {
                 let expr = if let Some(rval) = self.address_expr(&value.node) {
@@ -311,7 +319,7 @@ impl<'input> Tac<'input> {
                 Expression::Unary(u_type, address)
             }
             ExprKind::Access { left, identifier } => {
-                if let Some(Type::UserType(ty_name)) = left.node.ty() {
+                if let Some(Type::Simple(Simple::UserType(ty_name))) = left.node.ty() {
                     let address = self.expr_instr(&left.node, block);
 
                     // the index of the field inside the struct
@@ -351,8 +359,14 @@ impl<'input> Tac<'input> {
         }
 
         let e = self.expr(expr, block);
+
         if let Expression::Copy(a) = e {
             return a;
+        }
+
+        // void functions should be assigned to an empty address
+        if let Expression::Call(_, _, Type::Simple(Simple::Void)) = e {
+            return self.assign(Address::Empty, e, block);
         }
 
         let temp = self.temp();
@@ -374,7 +388,7 @@ impl<'input> Tac<'input> {
 
     fn address_expr(&mut self, expr: &Expr<'input>) -> Option<Address<'input>> {
         Some(match expr.kind() {
-            ExprKind::DecLit(lit) => Address::new_const(Type::I32, lit),
+            ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
             ExprKind::Ident(ident) => {
                 if let Some(arg) = self.find_param(ident) {
@@ -451,17 +465,23 @@ mod tests {
         let mut bb = BasicBlock::default();
         bb.instructions = vec![
             Label::from(".entry0".to_string()).into(),
-            Instruction::Decl(Address::Name("x0".to_string()), Type::I32),
+            Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "0",
+                ))),
             ),
-            Instruction::Decl(Address::Name("y0".to_string()), Type::I32),
+            Instruction::Decl(Address::Name("y0".to_string()), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Name("y0".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "2",
+                ))),
             ),
-            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::I32),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
@@ -470,13 +490,13 @@ mod tests {
                     Address::Name("y0".to_string()),
                 ),
             ),
-            Instruction::Decl(Address::Name("z0".to_string()), Type::I32),
+            Instruction::Decl(Address::Name("z0".to_string()), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Name("z0".to_string()),
                 Expression::Binary(
                     Address::Temp(TempVar::from(0)),
                     BinaryType::I32(IntBinaryType::Add),
-                    Address::Const(Constant::new(Type::I32, "2")),
+                    Address::Const(Constant::new(Type::Simple(Simple::I32), "2")),
                 ),
             ),
             Instruction::Assignment(
@@ -485,13 +505,16 @@ mod tests {
             ),
         ];
 
-        bb.terminator = Instruction::Return(Some(Address::Const(Constant::new(Type::I32, "0"))));
+        bb.terminator = Instruction::Return(Some(Address::Const(Constant::new(
+            Type::Simple(Simple::I32),
+            "0",
+        ))));
         bm.blocks = vec![bb];
 
         let expected = vec![Func::new(
             Label::from("main"),
             vec![],
-            Type::I32,
+            Type::Simple(Simple::I32),
             bm,
             false,
             false,
@@ -526,18 +549,21 @@ mod tests {
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
             Label::from(".entry0".to_string()).into(),
-            Instruction::Decl(Address::Name("x0".to_string()), Type::I32),
+            Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "0",
+                ))),
             ),
-            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Bool),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
                     Address::Name("x0".to_string()),
                     BinaryType::I32(IntBinaryType::Eq),
-                    Address::Const(Constant::new(Type::I32, "0")),
+                    Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 ),
             ),
         ];
@@ -552,7 +578,10 @@ mod tests {
             Instruction::Label(Label::new(1)),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "2",
+                ))),
             ),
         ];
         bb2.terminator = Instruction::Jmp(Label::new(0));
@@ -566,7 +595,7 @@ mod tests {
         let expected = vec![Func::new(
             Label::from("main".to_string()),
             vec![],
-            Type::I32,
+            Type::Simple(Simple::I32),
             bm,
             false,
             false,
@@ -604,18 +633,21 @@ mod tests {
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
             Label::from(".entry0".to_string()).into(),
-            Instruction::Decl(Address::Name("x0".to_string()), Type::I32),
+            Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "0",
+                ))),
             ),
-            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Bool),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
                     Address::Name("x0".to_string()),
                     BinaryType::I32(IntBinaryType::Eq),
-                    Address::Const(Constant::new(Type::I32, "0")),
+                    Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 ),
             ),
         ];
@@ -630,7 +662,10 @@ mod tests {
             Instruction::Label(Label::new(1)),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "2"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "2",
+                ))),
             ),
         ];
         bb2.terminator = Instruction::Jmp(Label::new(0));
@@ -640,7 +675,10 @@ mod tests {
             Instruction::Label(Label::new(2)),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "3"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "3",
+                ))),
             ),
         ];
         bb3.terminator = Instruction::Jmp(Label::new(0));
@@ -654,7 +692,7 @@ mod tests {
         let expected = vec![Func::new(
             Label::from("main".to_string()),
             vec![],
-            Type::I32,
+            Type::Simple(Simple::I32),
             bm,
             false,
             false,
@@ -690,10 +728,13 @@ mod tests {
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
             Label::from(".entry0".to_string()).into(),
-            Instruction::Decl(Address::Name("x0".to_string()), Type::I32),
+            Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
-                Expression::Copy(Address::Const(Constant::new(Type::I32, "0"))),
+                Expression::Copy(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "0",
+                ))),
             ),
         ];
         bb1.terminator = Instruction::Jmp(Label::new(1));
@@ -701,13 +742,13 @@ mod tests {
         let mut bb2 = BasicBlock::default();
         bb2.instructions = vec![
             Instruction::Label(Label::new(1)),
-            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Bool),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Expression::Binary(
                     Address::Name("x0".to_string()),
                     BinaryType::I32(IntBinaryType::Smaller),
-                    Address::Const(Constant::new(Type::I32, "10")),
+                    Address::Const(Constant::new(Type::Simple(Simple::I32), "10")),
                 ),
             ),
         ];
@@ -725,7 +766,7 @@ mod tests {
                 Expression::Binary(
                     Address::Name("x0".to_string()),
                     BinaryType::I32(IntBinaryType::Add),
-                    Address::Const(Constant::new(Type::I32, "1")),
+                    Address::Const(Constant::new(Type::Simple(Simple::I32), "1")),
                 ),
             ),
         ];
@@ -733,14 +774,17 @@ mod tests {
 
         let mut bb4 = BasicBlock::default();
         bb4.instructions = vec![Instruction::Label(Label::new(0))];
-        bb4.terminator = Instruction::Return(Some(Address::Const(Constant::new(Type::I32, "0"))));
+        bb4.terminator = Instruction::Return(Some(Address::Const(Constant::new(
+            Type::Simple(Simple::I32),
+            "0",
+        ))));
 
         bm.blocks = vec![bb1, bb2, bb3, bb4];
 
         let expected = vec![Func::new(
             Label::from("main".to_string()),
             vec![],
-            Type::I32,
+            Type::Simple(Simple::I32),
             bm,
             false,
             false,
@@ -778,8 +822,10 @@ mod tests {
 
         let mut main_bb = BasicBlock::default();
         main_bb.instructions = vec![Label::from(".entry0".to_string()).into()];
-        main_bb.terminator =
-            Instruction::Return(Some(Address::Const(Constant::new(Type::I32, "0"))));
+        main_bb.terminator = Instruction::Return(Some(Address::Const(Constant::new(
+            Type::Simple(Simple::I32),
+            "0",
+        ))));
 
         let mut test_bb = BasicBlock::default();
         test_bb.instructions = vec![Label::from(".entry0".to_string()).into()];
@@ -792,7 +838,7 @@ mod tests {
             Func::new(
                 Label::from("test"),
                 vec![],
-                Type::Void,
+                Type::Simple(Simple::Void),
                 test_bm,
                 false,
                 false,
@@ -800,7 +846,7 @@ mod tests {
             Func::new(
                 Label::from("main"),
                 vec![],
-                Type::I32,
+                Type::Simple(Simple::I32),
                 main_bm,
                 false,
                 false,

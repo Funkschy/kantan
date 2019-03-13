@@ -1,0 +1,7 @@
+fn test(ptr: **i32): void {
+
+}
+
+fn main(): void {
+
+}

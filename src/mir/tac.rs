@@ -125,7 +125,7 @@ pub enum Expression<'input> {
     /// x = y
     Copy(Address<'input>),
     /// x = call f (y, z)
-    Call(Label, Vec<Address<'input>>),
+    Call(Label, Vec<Address<'input>>, Type<'input>),
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset
     StructGep(Address<'input>, u32),
@@ -151,7 +151,7 @@ impl<'input> fmt::Display for Expression<'input> {
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
-            Call(f, args) => {
+            Call(f, args, _) => {
                 let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
                 let args = args.join(", ");
                 format!("call {}({})", f, args)

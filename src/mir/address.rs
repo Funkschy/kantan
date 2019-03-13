@@ -5,6 +5,7 @@ use crate::types::Type;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Address<'input> {
+    Empty,
     Name(String),
     Const(Constant<'input>),
     Temp(TempVar),
@@ -16,6 +17,7 @@ impl<'input> fmt::Display for Address<'input> {
         use Address::*;
 
         let s = match self {
+            Empty => "empty".to_owned(),
             Name(n) => n.to_string(),
             Const(c) => c.to_string(),
             Temp(t) => t.to_string(),

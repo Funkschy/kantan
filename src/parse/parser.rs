@@ -1,7 +1,7 @@
 use std::{cell::Cell, iter::Peekable};
 
 use super::{ast::*, error::LexError, token::*, *};
-use crate::types::Type;
+use crate::types::*;
 
 type ExprResult<'input> = Result<Spanned<Expr<'input>>, Spanned<ParseError<'input>>>;
 type StmtResult<'input> = Result<Stmt<'input>, Spanned<ParseError<'input>>>;
@@ -159,7 +159,7 @@ where
                 let triple_dot = self.consume(Token::TripleDot)?;
                 varargs = true;
                 let spanned = Spanned::from_span(triple_dot.span, "...");
-                params.push(Param::new(spanned, Type::Varargs));
+                params.push(Param::new(spanned, Type::Simple(Simple::Varargs)));
                 // ... has to be the last param
                 // TODO: replace consume error with special error
                 break;
@@ -395,7 +395,36 @@ where
                         span,
                     } => {
                         self.advance()?;
-                        Ok(Spanned::from_span(span, Type::UserType(ident)))
+                        Ok(Spanned::from_span(
+                            span,
+                            Type::Simple(Simple::UserType(ident)),
+                        ))
+                    }
+                    Spanned {
+                        node: Token::Star, ..
+                    } => {
+                        let mut counter = 1;
+                        let start = self.advance()?.span.start;
+                        // count *
+                        while self.match_tok(Token::Star)? {
+                            counter += 1;
+                        }
+
+                        let (inner, end) = if let Spanned {
+                            node: Type::Simple(s),
+                            span,
+                        } = self.consume_type()?
+                        {
+                            (s, span.end)
+                        } else {
+                            unreachable!()
+                        };
+
+                        Ok(Spanned::new(
+                            start,
+                            end,
+                            Type::Pointer(Pointer::new(counter, inner)),
+                        ))
                     }
                     _ => {
                         let tok = Spanned::clone(&peek);
@@ -652,6 +681,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_consume_type_pointer_to_pointer() {
+        let source = "**Person";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let ty = parser.consume_type().unwrap();
+        assert_eq!(
+            Spanned::new(
+                0,
+                7,
+                Type::Pointer(Pointer::new(2, Simple::UserType("Person")))
+            ),
+            ty
+        );
+    }
+
+    #[test]
+    fn test_consume_type_pointer() {
+        let source = "*i32";
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let ty = parser.consume_type().unwrap();
+        assert_eq!(
+            Spanned::new(0, 3, Type::Pointer(Pointer::new(1, Simple::I32))),
+            ty
+        );
+    }
+
+    #[test]
     fn test_parse_assignment_chain() {
         let source = "x = y = 0";
         let lexer = Lexer::new(&source);
@@ -674,18 +733,18 @@ mod tests {
                     fields: vec![
                         (
                             Spanned::new(18, 21, "test"),
-                            Spanned::new(24, 26, Type::I32)
+                            Spanned::new(24, 26, Type::Simple(Simple::I32))
                         ),
                         (
                             Spanned::new(29, 34, "second"),
-                            Spanned::new(37, 40, Type::Bool)
+                            Spanned::new(37, 40, Type::Simple(Simple::Bool))
                         ),
                     ]
                 }),
                 TopLvl::FnDecl {
                     name: Spanned::new(46, 49, "main"),
                     params: ParamList::default(),
-                    ret_type: Spanned::new(54, 57, Type::UserType("Test")),
+                    ret_type: Spanned::new(54, 57, Type::Simple(Simple::UserType("Test"))),
                     is_extern: false,
                     body: Block(vec![])
                 }
@@ -708,18 +767,18 @@ mod tests {
                     fields: vec![
                         (
                             Spanned::new(18, 21, "test"),
-                            Spanned::new(24, 26, Type::I32)
+                            Spanned::new(24, 26, Type::Simple(Simple::I32))
                         ),
                         (
                             Spanned::new(29, 34, "second"),
-                            Spanned::new(37, 40, Type::Bool)
+                            Spanned::new(37, 40, Type::Simple(Simple::Bool))
                         ),
                     ]
                 }),
                 TopLvl::FnDecl {
                     name: Spanned::new(46, 49, "main"),
                     params: ParamList::default(),
-                    ret_type: Spanned::new(54, 57, Type::Void),
+                    ret_type: Spanned::new(54, 57, Type::Simple(Simple::Void)),
                     is_extern: false,
                     body: Block(vec![])
                 }
@@ -744,7 +803,7 @@ mod tests {
                 TopLvl::FnDecl {
                     name: Spanned::new(23, 26, "main"),
                     params: ParamList::default(),
-                    ret_type: Spanned::new(31, 34, Type::Void),
+                    ret_type: Spanned::new(31, 34, Type::Simple(Simple::Void)),
                     is_extern: false,
                     body: Block(vec![])
                 }
@@ -764,7 +823,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList::default(),
-                ret_type: Spanned::new(11, 14, Type::Void),
+                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 is_extern: false,
                 body: Block(vec![Stmt::While {
                     condition: Spanned::new(
@@ -805,7 +864,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 params: ParamList::default(),
-                ret_type: Spanned::new(11, 14, Type::Void),
+                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
                     18,
@@ -846,7 +905,7 @@ mod tests {
                 TopLvl::FnDecl {
                     name: Spanned::new(15, 18, "main"),
                     is_extern: false,
-                    ret_type: Spanned::new(23, 26, Type::Void),
+                    ret_type: Spanned::new(23, 26, Type::Simple(Simple::Void)),
                     params: ParamList::default(),
                     body: Block(vec![])
                 }
@@ -865,7 +924,7 @@ mod tests {
         assert_eq!(
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
-                ret_type: Spanned::new(11, 14, Type::Void),
+                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -902,7 +961,7 @@ mod tests {
         assert_eq!(
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
-                ret_type: Spanned::new(11, 14, Type::Void),
+                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -928,7 +987,7 @@ mod tests {
         assert_eq!(
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 5, "err"),
-                ret_type: Spanned::new(10, 13, Type::Void),
+                ret_type: Spanned::new(10, 13, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
                 body: Block(vec![
@@ -962,7 +1021,7 @@ mod tests {
         assert_eq!(
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
-                ret_type: Spanned::new(11, 14, Type::Void),
+                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
                 body: Block(vec![Stmt::VarDecl {
@@ -989,7 +1048,7 @@ mod tests {
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
                 is_extern: false,
-                ret_type: Spanned::new(11, 14, Type::Void),
+                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
                 body: Block(vec![])
             }]),
@@ -1007,7 +1066,7 @@ mod tests {
         assert_eq!(
             Program(vec![TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
-                ret_type: Spanned::new(11, 14, Type::Void),
+                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(

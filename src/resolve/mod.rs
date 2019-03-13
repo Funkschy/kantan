@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     parse::{ast::*, Span, Spanned},
-    types::Type,
+    types::*,
     Source, UserTypeDefinition, UserTypeMap,
 };
 
@@ -46,7 +46,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             sym_table: SymbolTable::new(),
             functions: HashMap::new(),
             user_types: HashMap::new(),
-            current_func_ret_type: Spanned::new(0, 0, Type::Void),
+            current_func_ret_type: Spanned::new(0, 0, Type::Simple(Simple::Void)),
         }
     }
 
@@ -239,17 +239,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             } => {
                 match self.resolve_expr(condition.span, &condition.node) {
                     Err(msg) => errors.push(msg),
-                    Ok(ty) => {
-                        if ty != Type::Bool {
-                            errors.push(self.type_error(
-                                condition.span,
-                                condition.span,
-                                "if condition",
-                                Type::Bool,
-                                ty,
-                            ))
-                        }
-                    }
+                    Ok(ty) => self.expect_bool(ty, "if condition", condition.span, errors),
                 }
 
                 // TODO: refactor to method
@@ -281,17 +271,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             Stmt::While { condition, body } => {
                 match self.resolve_expr(condition.span, &condition.node) {
                     Err(msg) => errors.push(msg),
-                    Ok(ty) => {
-                        if ty != Type::Bool {
-                            errors.push(self.type_error(
-                                condition.span,
-                                condition.span,
-                                "while condition",
-                                Type::Bool,
-                                ty,
-                            ))
-                        }
-                    }
+                    Ok(ty) => self.expect_bool(ty, "while condition", condition.span, errors),
                 }
 
                 // TODO: refactor to method
@@ -303,7 +283,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             }
             Stmt::Return(expr) => {
                 if let Some(expr) = expr {
-                    if self.current_func_ret_type.node == Type::Void {
+                    if self.current_func_ret_type.node == Type::Simple(Simple::Void) {
+                        // TODO Error for return in void
                         unimplemented!("Error for return in void");
                     }
 
@@ -322,7 +303,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                             errors.push(err);
                         }
                     }
-                } else if self.current_func_ret_type.node != Type::Void {
+                } else if self.current_func_ret_type.node != Type::Simple(Simple::Void) {
+                    // TODO Error for no return in non void
                     unimplemented!("Error for no return in non void")
                 }
             }
@@ -356,12 +338,12 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
             ExprKind::Error(_) => {
                 unreachable!("If errors occur during parsing, the program should not be resolved")
             }
-            ExprKind::DecLit(_) => Ok(Type::I32),
-            ExprKind::StringLit(_) => Ok(Type::String),
+            ExprKind::DecLit(_) => Ok(Type::Simple(Simple::I32)),
+            ExprKind::StringLit(_) => Ok(Type::Simple(Simple::String)),
             ExprKind::Negate(op, expr) => {
                 let ty = self.resolve_expr(expr.span, &expr.node)?;
                 // TODO: unary operation error
-                self.compare_binary_types(op.span, span, ty, Type::I32)
+                self.compare_binary_types(op.span, span, ty, Type::Simple(Simple::I32))
             }
             ExprKind::Binary(l, op, r) => {
                 let left = self.resolve_expr(l.span, &l.node)?;
@@ -372,12 +354,12 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                 let left = self.resolve_expr(l.span, &l.node)?;
                 let right = self.resolve_expr(r.span, &r.node)?;
                 self.compare_binary_types(op.span, span, left, right)?;
-                Ok(Type::Bool)
+                Ok(Type::Simple(Simple::Bool))
             }
             // currently only field access
             ExprKind::Access { left, identifier } => {
                 let left_ty = self.resolve_expr(left.span, &left.node)?;
-                if let Type::UserType(type_name) = left_ty {
+                if let Type::Simple(Simple::UserType(type_name)) = left_ty {
                     let user_type = self.get_user_type(Spanned::from_span(span, type_name))?;
                     let field_type = self.get_field(&user_type, identifier)?;
                     Ok(field_type)
@@ -393,7 +375,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                     let value_type = self.resolve_expr(value.span, &value.node)?;
                     self.compare_types(value.span, span, field_type, value_type, "struct literal")?
                 }
-                Ok(Type::UserType(identifier.node))
+                Ok(Type::Simple(Simple::UserType(identifier.node)))
             }
             ExprKind::Assign { left, eq, value } => {
                 if let ExprKind::Ident(name) = left.node.kind() {
@@ -497,6 +479,18 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
     fn current_source(&self) -> &'input Source {
         let (src, _) = self.programs[self.current_name];
         src
+    }
+
+    fn expect_bool(
+        &self,
+        ty: Type<'input>,
+        name: &'static str,
+        span: Span,
+        errors: &mut Vec<ResolveError<'input>>,
+    ) {
+        if ty != Type::Simple(Simple::Bool) {
+            errors.push(self.type_error(span, span, name, Type::Simple(Simple::Bool), ty))
+        }
     }
 
     fn get_user_type(
@@ -612,8 +606,11 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         second: Type<'input>,
         name: &'static str,
     ) -> Result<(), ResolveError<'input>> {
-        // varargs disables type checking
-        if first != second && first != Type::Varargs && second != Type::Varargs {
+        if first != second
+            // varargs disables type checking
+            && first != Type::Simple(Simple::Varargs)
+            && second != Type::Simple(Simple::Varargs)
+        {
             return Err(self.error(
                 err_span,
                 expr_span,
@@ -667,7 +664,7 @@ mod tests {
             },
             TopLvl::FnDecl {
                 name: Spanned::new(16, 19, "main"),
-                ret_type: Spanned::new(24, 27, Type::Void),
+                ret_type: Spanned::new(24, 27, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -694,7 +691,7 @@ mod tests {
 
         let test_ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "func"),
-            ret_type: Spanned::new(11, 14, Type::Void),
+            ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
             is_extern: false,
             params: ParamList::default(),
             body: Block(vec![]),
@@ -718,7 +715,7 @@ mod tests {
         let ast = Program(vec![
             TopLvl::FnDecl {
                 name: Spanned::new(3, 6, "main"),
-                ret_type: Spanned::new(11, 14, Type::Void),
+                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
@@ -732,7 +729,7 @@ mod tests {
             },
             TopLvl::FnDecl {
                 name: Spanned::new(25, 28, "test"),
-                ret_type: Spanned::new(39, 42, Type::Void),
+                ret_type: Spanned::new(39, 42, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
                 is_extern: false,
                 body: Block(vec![]),
@@ -755,7 +752,7 @@ mod tests {
 
         let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
-            ret_type: Spanned::new(11, 14, Type::Void),
+            ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
             params: ParamList::default(),
             is_extern: false,
             body: Block(vec![Stmt::VarDecl {
@@ -777,7 +774,7 @@ mod tests {
 
         if let TopLvl::FnDecl { body, .. } = &(&map["test"].1).0[0] {
             if let Stmt::VarDecl { value, .. } = &body.0[0] {
-                assert_eq!(value.node.ty(), Some(Type::I32));
+                assert_eq!(value.node.ty(), Some(Type::Simple(Simple::I32)));
                 return;
             }
         }
@@ -791,7 +788,7 @@ mod tests {
 
         let ast = Program(vec![TopLvl::FnDecl {
             name: Spanned::new(3, 6, "main"),
-            ret_type: Spanned::new(11, 14, Type::Void),
+            ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
             params: ParamList::default(),
             is_extern: false,
             body: Block(vec![
