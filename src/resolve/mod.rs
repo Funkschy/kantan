@@ -60,10 +60,11 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
 impl<'input, 'ast> Resolver<'input, 'ast> {
     pub fn resolve(&mut self) -> Vec<ResolveError<'input>> {
-        self.resolve_prg(self.current_name, None)
+        self.resolve_prg(None)
     }
 
-    fn resolve_prg(&mut self, name: &str, prefix: Option<&str>) -> Vec<ResolveError<'input>> {
+    fn resolve_prg(&mut self, prefix: Option<&str>) -> Vec<ResolveError<'input>> {
+        let name = &self.current_name;
         let (_, prg) = self.programs.get(name).unwrap();
         let mut errors = vec![];
 
@@ -126,11 +127,11 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
                         let current_name = self.current_name;
                         self.current_name = name.node;
                         self.resolved.insert(name.node);
-                        self.resolve_prg(name.node, Some(name.node));
+                        self.resolve_prg(Some(name.node));
                         self.current_name = current_name;
+                    } else {
+                        errors.push(self.not_defined_error(name.span, name.span, name.node));
                     }
-                } else {
-                    errors.push(self.not_defined_error(name.span, name.span, name.node));
                 }
             }
             TopLvl::TypeDef(TypeDef::StructDef { name, fields }) => {

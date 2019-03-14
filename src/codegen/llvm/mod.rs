@@ -8,7 +8,7 @@ mod target;
 use context::*;
 use target::*;
 
-pub fn emit_to_file<W: Write>(mir: &Mir, filename: &str, err_writer: &mut W) {
+pub fn emit_to_file<W: Write>(mir: &Mir, filename: &str, err_writer: &mut W, asm: bool) {
     let mut ctx = KantanLLVMContext::new("main", &mir.types);
     ctx.generate(&mir);
 
@@ -32,7 +32,7 @@ pub fn emit_to_file<W: Write>(mir: &Mir, filename: &str, err_writer: &mut W) {
     let target = Target::new(TargetTriple::new(arch, vendor, os)).unwrap();
     let tm = TargetMachine::new(target, CpuType::Generic, CodeGenOptLevel::OptNone);
 
-    tm.emit_to_file(ctx.module(), filename, true).unwrap();
+    tm.emit_to_file(ctx.module(), filename, asm).unwrap();
 }
 
 #[cfg(test)]
@@ -59,7 +59,7 @@ mod tests {
 
         println!("----------");
 
-        emit_to_file(&mir, "target/test.s", &mut cursor);
+        emit_to_file(&mir, "target/test.s", &mut cursor, true);
         let inner = cursor.into_inner();
         let len = inner.len();
 
