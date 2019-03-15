@@ -1,8 +1,10 @@
 use std::{fs, process::Command, str::from_utf8};
 
+const NAME: &str = "test.s";
+
 fn compile(name: &str) {
     Command::new("target/debug/kantan")
-        .args(&[name])
+        .args(&[name, "--emit", "asm", "-o", NAME])
         .output()
         .expect("Failed to execute kantan");
 }
@@ -13,6 +15,11 @@ fn link(name: &str) {
         .output()
         .expect("Failed to execute gcc")
         .stderr;
+
+    if stderr.len() > 0 {
+        let s = from_utf8(&stderr).unwrap().to_owned();
+        eprintln!("{}", s);
+    }
 
     assert_eq!(0, stderr.len());
 }
@@ -33,7 +40,7 @@ fn get_expected(name: &str) -> String {
 
 fn clean_up() {
     Command::new("rm")
-        .args(&["test.s", "test.exe"])
+        .args(&[NAME, "test.exe"])
         .output()
         .expect("Failed to execute rm");
 }
@@ -50,7 +57,7 @@ fn test_all_files() {
         }
 
         compile(&name);
-        link("test.s");
+        link(NAME);
         let output = execute();
         let expected = get_expected(&name);
         clean_up();

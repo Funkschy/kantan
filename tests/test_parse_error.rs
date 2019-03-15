@@ -44,9 +44,7 @@ fn test_hiragana_identifier() {
 
     let source = Source::new(
         "test-kana",
-        r#"fn main(): void {
-    let こんにちは = "hello"; 
-}"#,
+        "fn main(): void {\n\tlet こんにちは = \"hello\";\n}",
     );
 
     kantan::compile(&vec![source], &mut cursor).unwrap_err();
@@ -54,9 +52,9 @@ fn test_hiragana_identifier() {
 
     assert_eq!(
         "error: Failed to lex token, because: Non ascii identifiers are currently not supported
---> test-kana:2:9
+--> test-kana:2:6
   |
-2 |    let こんにちは = \"hello\"; 
+2 |    let こんにちは = \"hello\";
   |\u{1b}[31m        ^^^^^^^^^\u{1b}[0m
 ",
         output
