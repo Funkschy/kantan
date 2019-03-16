@@ -35,7 +35,13 @@ fn execute() -> String {
 
 fn valgrind() -> bool {
     Command::new("valgrind")
-        .args(&["--leak-check=full", "--error-exitcode=1", "./test.exe"])
+        .args(&[
+            "--leak-check=full",
+            "--error-exitcode=1",
+            "--xml=yes",
+            "--xml-file=valgrind.xml",
+            "./test.exe",
+        ])
         .status()
         .map(|exit| exit.success())
         .unwrap_or(false)
@@ -48,7 +54,7 @@ fn get_expected(name: &str) -> String {
 
 fn clean_up() {
     Command::new("rm")
-        .args(&[NAME, "test.exe"])
+        .args(&[NAME, "test.exe", "valgrind.xml"])
         .output()
         .expect("Failed to execute rm");
 }
