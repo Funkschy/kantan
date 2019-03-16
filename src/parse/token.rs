@@ -59,7 +59,8 @@ pub enum Precedence {
     Comparison = 4,
     Sum = 5,
     Product = 6,
-    Call = 7,
+    Unary = 7,
+    Call = 8,
 }
 
 impl<'src> Token<'src> {

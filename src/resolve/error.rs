@@ -71,6 +71,9 @@ impl<'src> fmt::Display for ResolveError<'src> {
                 struct_name, field_name
             )),
             ResolveErrorType::Inference(_) => self.fmt_err("type cannot be inferred"),
+            ResolveErrorType::Deref(DerefError(ty)) => {
+                self.fmt_err(&format!("{} cannot be dereferenced", ty))
+            }
         };
 
         write!(f, "{}", s)
@@ -86,6 +89,7 @@ pub enum ResolveErrorType<'src> {
     NoSuchField(StructFieldError<'src>),
     SelfImport(SelfImportError),
     Inference(TypeInferenceError),
+    Deref(DerefError<'src>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -93,6 +97,9 @@ pub struct TypeInferenceError;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SelfImportError;
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct DerefError<'src>(pub Type<'src>);
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IllegalTypeError<'src> {

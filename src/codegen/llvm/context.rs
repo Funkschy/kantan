@@ -450,6 +450,7 @@ impl KantanLLVMContext {
                 match uop {
                     UnaryType::I32Negate => LLVMBuildNeg(self.builder, a, n),
                     UnaryType::BoolNegate => LLVMBuildNot(self.builder, a, n),
+                    UnaryType::Deref => a,
                 }
             }
             Expression::Call(label, args, ty) => {

@@ -314,6 +314,12 @@ impl<'src> Tac<'src> {
 
                 Expression::Unary(u_type, address)
             }
+            ExprKind::Deref(op, expr) => {
+                let u_type = Option::from(&op.node).unwrap();
+                let address = self.expr_instr(&expr.node, block);
+
+                Expression::Unary(u_type, address)
+            }
             ExprKind::Access { left, identifier } => {
                 use super::types::Simple::UserType;
 

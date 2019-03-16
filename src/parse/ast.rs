@@ -152,6 +152,7 @@ pub enum ExprKind<'src> {
     NullLit,
     DecLit(&'src str),
     StringLit(&'src str),
+    Deref(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Negate(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Binary(
         Box<Spanned<Expr<'src>>>,
@@ -193,6 +194,7 @@ impl<'src> fmt::Display for Expr<'src> {
             DecLit(lit) => write!(f, "{}", lit),
             StringLit(lit) => write!(f, "{}", lit),
             Negate(_, expr) => write!(f, "-{}", expr.node),
+            Deref(_, expr) => write!(f, "*{}", expr.node),
             Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
             BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
             Ident(name) => write!(f, "{}", name),

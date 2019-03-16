@@ -3,7 +3,7 @@ use std::io::Cursor;
 use kantan::*;
 
 #[test]
-fn test_multiple_plus_and_star_operator() {
+fn test_multiple_plus_and_slash_operator() {
     let mut cursor = Cursor::new(Vec::new());
 
     let source = Source::new(
@@ -14,7 +14,7 @@ fn test_multiple_plus_and_star_operator() {
     mystr = 1;
     let x = 1;
     x + + 2;
-    x * * 2;
+    x / / 2;
     y = 1;
 }"#,
     );
@@ -28,10 +28,10 @@ fn test_multiple_plus_and_star_operator() {
   |
 6 |    x + + 2;
   |\u{1b}[31m        ^\u{1b}[0m
-error: Invalid token in prefix rule: \'*\'
+error: Invalid token in prefix rule: \'/\'
 --> test:7:9
   |
-7 |    x * * 2;
+7 |    x / / 2;
   |\u{1b}[31m        ^\u{1b}[0m
 ",
         output

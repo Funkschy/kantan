@@ -358,6 +358,20 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 Some(self.compare_binary_types(op.span, span, ty, Type::Simple(Simple::I32)))
                     .transpose()
             }
+            ExprKind::Deref(op, expr) => {
+                dbg!(expr);
+                let ty = dbg!(self.resolve_expr(expr.span, &expr.node, None)?);
+                if let Type::Pointer(mut ptr) = ty {
+                    return Ok(Some(if ptr.number > 1 {
+                        ptr.number -= 1;
+                        Type::Pointer(ptr)
+                    } else {
+                        Type::Simple(ptr.ty)
+                    }));
+                }
+
+                Err(self.error(op.span, span, ResolveErrorType::Deref(DerefError(ty))))
+            }
             ExprKind::Binary(l, op, r) => {
                 let left = self.resolve_expr(l.span, &l.node, None)?;
                 let right = self.resolve_expr(r.span, &r.node, None)?;

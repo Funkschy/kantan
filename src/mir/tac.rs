@@ -166,6 +166,7 @@ impl<'src> fmt::Display for Expression<'src> {
 pub enum UnaryType {
     BoolNegate,
     I32Negate,
+    Deref,
 }
 
 impl fmt::Display for UnaryType {
@@ -175,6 +176,7 @@ impl fmt::Display for UnaryType {
         let s = match self {
             I32Negate => "-",
             BoolNegate => "!",
+            Deref => "*",
         };
 
         write!(f, "{}", s)
@@ -185,6 +187,7 @@ impl<'a> From<&Token<'a>> for Option<UnaryType> {
     fn from(value: &Token) -> Self {
         match value {
             Token::Minus => Some(UnaryType::I32Negate),
+            Token::Star => Some(UnaryType::Deref),
             _ => None,
         }
     }

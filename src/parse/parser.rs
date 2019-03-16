@@ -561,6 +561,16 @@ where
                     Expr::new(ExprKind::Negate(*token, Box::new(next))),
                 ))
             }
+            Token::Star => {
+                // TODO: change false Precedence
+                let next = self.parse_expression(Precedence::Sum)?;
+
+                Ok(Spanned::new(
+                    token.span.start,
+                    next.span.end,
+                    Expr::new(ExprKind::Deref(*token, Box::new(next))),
+                ))
+            }
             Token::Ident(ref name) => {
                 if self.match_tok(Token::LBrace)? {
                     let init_list = self.init_list()?;

@@ -10,8 +10,7 @@ type Node struct {
 
 fn make_node(data: i32, next: *Node): *Node {
     let n = malloc(16);
-    n.data = data;
-    n.next = next;
+    *n = Node { data: data, next: next };
     return n;
 }
 
@@ -28,9 +27,13 @@ fn traverse(node: *Node): void {
 }
 
 fn main(): void {
-    let third = make_node(3, null);
-    let second = make_node(2, third);
+    let third = make_node(42, null);
+    let second = make_node(0, third);
     let first = make_node(1, second);
+
+    // overwrite 42 with 3
+    *second.next = Node { data: 3, next: null };
+    *second = Node { data: 2, next: second.next };
 
     traverse(first);
 
