@@ -33,6 +33,14 @@ fn execute() -> String {
     from_utf8(&stdout).unwrap().to_owned()
 }
 
+fn valgrind() -> bool {
+    Command::new("valgrind")
+        .args(&["--leak-check=full", "--error-exitcode=1", "./test.exe"])
+        .status()
+        .map(|exit| exit.success())
+        .unwrap_or(false)
+}
+
 fn get_expected(name: &str) -> String {
     let name = format!("{}.expected", name.split(".").next().unwrap());
     fs::read_to_string(name).unwrap()
@@ -60,7 +68,9 @@ fn test_all_files() {
         link(NAME);
         let output = execute();
         let expected = get_expected(&name);
+        let leak_free = valgrind();
         clean_up();
-        assert_eq!(expected, output);
+        assert_eq!(expected, output, "output != expected in {}", name);
+        assert!(leak_free, "memory leaks in {}", name);
     }
 }
