@@ -1,0 +1,40 @@
+import io
+
+extern fn malloc(size: i32): *Node;
+extern fn free(node: *Node): void;
+
+type Node struct {
+    data: i32,
+    next: *Node
+}
+
+fn make_node(data: i32, next: *Node): *Node {
+    let n = malloc(16);
+    n.data = data;
+    n.next = next;
+    return n;
+}
+
+fn traverse(node: *Node): void {
+    let n = node;
+    while 1 == 1 {
+        io.printf("%d\n", n.data);
+        n = n.next;
+
+        if n == null {
+            return;
+        }
+    }
+}
+
+fn main(): void {
+    let third = make_node(3, null);
+    let second = make_node(2, third);
+    let first = make_node(1, second);
+
+    traverse(first);
+
+    free(third);
+    free(second);
+    free(first);
+}
