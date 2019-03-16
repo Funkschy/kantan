@@ -159,6 +159,11 @@ impl<'src> Tac<'src> {
                     };
                     block.push(ret);
                 }
+                Stmt::Delete(expr) => {
+                    let address = self.expr_instr(&expr.node, &mut block);
+                    let address = self.temp_assign(Expression::Copy(address), &mut block);
+                    block.push(Instruction::Delete(address));
+                }
                 Stmt::While { condition, body } => {
                     let end_label = self.label();
                     self.while_loop(&condition.node, body, &mut block, end_label.clone());
@@ -301,8 +306,7 @@ impl<'src> Tac<'src> {
                     if let Expression::Copy(a) = &e {
                         a.clone()
                     } else {
-                        let temp = self.temp();
-                        self.assign(temp, e, block)
+                        self.temp_assign(e, block)
                     }
                 };
                 Expression::Copy(self.assign(address, expr.clone(), block))
@@ -333,8 +337,7 @@ impl<'src> Tac<'src> {
                     }) => {
                         let mut address = self.expr_instr(&left.node, block);
                         for _ in 0..number {
-                            let temp = self.temp();
-                            address = self.assign(temp, Expression::Copy(address), block);
+                            address = self.temp_assign(Expression::Copy(address), block);
                         }
                         (ty_name, address)
                     }
@@ -344,8 +347,7 @@ impl<'src> Tac<'src> {
                 // the index of the field inside the struct
                 let ty = self.types[ty_name].fields[identifier.node];
                 let idx = ty.0;
-                let temp = self.temp();
-                let address = self.assign(temp, Expression::StructGep(address, idx), block);
+                let address = self.temp_assign(Expression::StructGep(address, idx), block);
                 // Deref by default. This copy has to be removed if the value
                 // should be assigned
                 Expression::Copy(address)
@@ -358,7 +360,29 @@ impl<'src> Tac<'src> {
                     .collect();
                 Expression::StructInit(identifier.node, values)
             }
-            _ => unimplemented!(),
+            ExprKind::New(expr) => {
+                let ty = expr.node.ty().unwrap();
+
+                let address = if let ExprKind::Ident(name) = expr.node.kind() {
+                    self.names.lookup(name).into()
+                } else if let Some(a) = self.address_expr(&expr.node) {
+                    let temp = self.temp();
+                    block.push(Instruction::Decl(temp.clone(), ty));
+                    self.assign(temp, Expression::Copy(a), block)
+                } else {
+                    let temp = self.temp();
+                    block.push(Instruction::Decl(temp.clone(), ty));
+
+                    let e = self.expr(&expr.node, block);
+                    if let Expression::Copy(a) = &e {
+                        a.clone()
+                    } else {
+                        self.assign(temp, e, block)
+                    }
+                };
+                Expression::New(address, ty)
+            }
+            _ => unimplemented!("{:?}", expr),
         }
     }
 
@@ -434,6 +458,15 @@ impl<'src> Tac<'src> {
         self.label_count += 1;
         self.literals.insert(label.clone(), lit);
         label
+    }
+
+    fn temp_assign(
+        &mut self,
+        expression: Expression<'src>,
+        block: &mut InstructionBlock<'src>,
+    ) -> Address<'src> {
+        let temp = self.temp();
+        self.assign(temp, expression, block)
     }
 
     fn temp(&mut self) -> Address<'src> {

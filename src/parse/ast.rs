@@ -50,6 +50,7 @@ pub enum Stmt<'src> {
         body: Block<'src>,
     },
     Return(Option<Spanned<Expr<'src>>>),
+    Delete(Box<Spanned<Expr<'src>>>),
     Expr(Spanned<Expr<'src>>),
 }
 
@@ -165,6 +166,7 @@ pub enum ExprKind<'src> {
         Box<Spanned<Expr<'src>>>,
     ),
     Ident(&'src str),
+    New(Box<Spanned<Expr<'src>>>),
     Assign {
         left: Box<Spanned<Expr<'src>>>,
         eq: Spanned<Token<'src>>,
@@ -193,6 +195,7 @@ impl<'src> fmt::Display for Expr<'src> {
             NullLit => write!(f, "null"),
             DecLit(lit) => write!(f, "{}", lit),
             StringLit(lit) => write!(f, "{}", lit),
+            New(expr) => write!(f, "new {}", expr.node),
             Negate(_, expr) => write!(f, "-{}", expr.node),
             Deref(_, expr) => write!(f, "*{}", expr.node),
             Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),

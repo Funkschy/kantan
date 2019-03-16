@@ -21,6 +21,8 @@ pub enum Token<'src> {
     While,
     Type,
     Struct,
+    New,
+    Delete,
 
     // Operators
     Equals, // =
@@ -98,6 +100,8 @@ impl<'src> fmt::Display for Token<'src> {
             Token::Return => write!(f, "return"),
             Token::Extern => write!(f, "extern"),
             Token::While => write!(f, "while"),
+            Token::New => write!(f, "new"),
+            Token::Delete => write!(f, "delete"),
 
             // Operators
             Token::Equals => write!(f, "="),

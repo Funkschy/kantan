@@ -1,6 +1,5 @@
 import io
 
-extern fn malloc(size: i32): *Node;
 extern fn free(node: *Node): void;
 
 type Node struct {
@@ -9,9 +8,7 @@ type Node struct {
 }
 
 fn make_node(data: i32, next: *Node): *Node {
-    let n = malloc(16);
-    *n = Node { data: data, next: next };
-    return n;
+    return new Node { data: data, next: next };
 }
 
 fn traverse(node: *Node): void {
@@ -37,7 +34,7 @@ fn main(): void {
 
     traverse(first);
 
-    free(third);
-    free(second);
-    free(first);
+    delete third;
+    delete second;
+    delete first;
 }

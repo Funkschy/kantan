@@ -214,6 +214,7 @@ where
                 Token::If => return Ok(self.if_stmt()?),
                 Token::Return => return Ok(self.return_stmt()?),
                 Token::While => return Ok(self.while_stmt()?),
+                Token::Delete => return Ok(self.delete_stmt()?),
                 _ => {}
             }
         }
@@ -222,6 +223,14 @@ where
         let expr = self.expression()?;
         self.consume(Token::Semi)?;
         Ok(Stmt::Expr(expr))
+    }
+
+    fn delete_stmt(&mut self) -> StmtResult<'src> {
+        self.consume(Token::Delete)?;
+        let expr = self.expression()?;
+        self.consume(Token::Semi)?;
+
+        Ok(Stmt::Delete(Box::new(expr)))
     }
 
     fn while_stmt(&mut self) -> StmtResult<'src> {
@@ -545,6 +554,11 @@ where
             Token::NullLit => ok_spanned(ExprKind::NullLit),
             Token::DecLit(lit) => ok_spanned(ExprKind::DecLit(lit)),
             Token::StringLit(lit) => ok_spanned(ExprKind::StringLit(lit)),
+            Token::New => {
+                let expr = self.expression()?;
+                let new = ExprKind::New(Box::new(Spanned::from_span(expr.span, expr.node)));
+                Ok(Spanned::from_span(expr.span, Expr::new(new)))
+            }
             Token::LParen => {
                 let mut expr = self.expression()?;
                 self.consume(Token::RParen)?;

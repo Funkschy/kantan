@@ -33,6 +33,11 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     errors.push((*span, expr.to_string()));
                 }
             }
+            Stmt::Delete(expr) => {
+                if expr.node.is_err() {
+                    errors.push((expr.span, expr.node.to_string()));
+                }
+            }
             Stmt::Return(val) => {
                 if let Some(Spanned { node: expr, span }) = val {
                     if expr.is_err() {

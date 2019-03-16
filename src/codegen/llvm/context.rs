@@ -340,6 +340,10 @@ impl KantanLLVMContext {
             Instruction::Return(None) => {
                 LLVMBuildRetVoid(self.builder);
             }
+            Instruction::Delete(a) => {
+                let value = self.name_table[&a.to_string()];
+                LLVMBuildFree(self.builder, value);
+            }
             Instruction::Decl(a, ty) => {
                 let ty = self.convert(*ty);
                 let n = a.to_string();
@@ -362,24 +366,9 @@ impl KantanLLVMContext {
 
                 // translate_mir_expr allocas a new struct, which needs to be memcpyed
                 if let Expression::StructInit(identifier, _) = e {
-                    let a = self.name_table[&n];
-                    let ptr_ty =
-                        LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE);
-
-                    let dest = LLVMBuildBitCast(self.builder, a, ptr_ty, self.cstring("dest"));
-                    let src = LLVMBuildBitCast(self.builder, expr, ptr_ty, self.cstring("src"));
-                    let size = LLVMSizeOf(self.user_types[identifier.to_owned()]);
-
-                    let memcpy = self.get_intrinsic(Intrinsic::MemCpy);
-                    let mut memcpy_args = vec![dest, src, size, self.llvm_bool(false)];
-
-                    LLVMBuildCall(
-                        self.builder,
-                        memcpy,
-                        memcpy_args.as_mut_ptr(),
-                        memcpy_args.len() as u32,
-                        self.cstring(""),
-                    );
+                    let dest = self.name_table[&n];
+                    let ty = self.user_types[identifier.to_owned()];
+                    self.build_memcpy(dest, expr, ty);
                 } else if let Some(ptr) = self.name_table.get(&n) {
                     LLVMBuildStore(self.builder, expr, *ptr);
                 } else {
@@ -431,8 +420,34 @@ impl KantanLLVMContext {
         }
     }
 
+    unsafe fn build_memcpy(&mut self, dest: LLVMValueRef, src: LLVMValueRef, ty: LLVMTypeRef) {
+        let byte_ty = LLVMInt8TypeInContext(self.context);
+        let ptr_ty = LLVMPointerType(byte_ty, ADDRESS_SPACE);
+        let dest = LLVMBuildBitCast(self.builder, dest, ptr_ty, self.cstring("dest"));
+        let src = LLVMBuildBitCast(self.builder, src, ptr_ty, self.cstring("src"));
+        let size = LLVMSizeOf(ty);
+
+        let memcpy = self.get_intrinsic(Intrinsic::MemCpy);
+        let mut memcpy_args = vec![dest, src, size, self.llvm_bool(false)];
+
+        LLVMBuildCall(
+            self.builder,
+            memcpy,
+            memcpy_args.as_mut_ptr(),
+            memcpy_args.len() as u32,
+            self.cstring(""),
+        );
+    }
+
     unsafe fn translate_mir_expr(&mut self, e: &Expression, name: &str) -> LLVMValueRef {
         match e {
+            Expression::New(a, ty) => {
+                let ty = self.convert(*ty);
+                let value = self.name_table[&a.to_string()];
+                let malloc = LLVMBuildMalloc(self.builder, ty, self.cstring(name));
+                self.build_memcpy(malloc, value, ty);
+                malloc
+            }
             Expression::Copy(a) => self.translate_mir_address(a),
             Expression::Binary(l, ty, r) => {
                 let left = self.translate_mir_address(l);

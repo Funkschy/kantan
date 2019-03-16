@@ -91,6 +91,8 @@ pub enum Instruction<'src> {
     Return(Option<Address<'src>>),
     /// .L0:
     Label(Label),
+    /// frees heap memory
+    Delete(Address<'src>),
     /// No operation
     Nop,
 }
@@ -107,6 +109,7 @@ impl<'src> fmt::Display for Instruction<'src> {
             Return(Some(a)) => format!("return {};", a),
             Return(None) => "return;".to_string(),
             Label(l) => format!("{}:", l),
+            Delete(a) => format!("delete({})", a),
             Nop => "nop".to_owned(),
         };
 
@@ -131,6 +134,9 @@ pub enum Expression<'src> {
     StructGep(Address<'src>, u32),
     /// x = test { 41, "test" }
     StructInit(&'src str, Vec<Address<'src>>),
+    /// allocates the value of its address on the heap
+    /// x = new 5
+    New(Address<'src>, Type<'src>),
 }
 
 impl<'src> fmt::Display for Expression<'src> {
@@ -141,6 +147,7 @@ impl<'src> fmt::Display for Expression<'src> {
             Binary(l, op, r) => format!("{} {} {}", l, op, r),
             Unary(op, a) => format!("{} {}", op, a),
             Copy(a) => format!("{}", a),
+            New(a, ty) => format!("new(sizeof({}), {})", ty, a),
             StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
             StructInit(ident, values) => format!(
                 "{} {{ {} }}",

@@ -176,6 +176,8 @@ impl<'src> Lexer<'src> {
                 "type" => Token::Type,
                 "struct" => Token::Struct,
                 "null" => Token::NullLit,
+                "new" => Token::New,
+                "delete" => Token::Delete,
                 _ => return None,
             },
         ))

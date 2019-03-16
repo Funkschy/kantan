@@ -318,6 +318,24 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     unimplemented!("Error for no return in non void")
                 }
             }
+            Stmt::Delete(expr) => {
+                let ty = self.resolve_expr(expr.span, &expr.node, None);
+                if let Err(msg) = ty {
+                    errors.push(msg);
+                } else if let Ok(ty) = ty {
+                    match ty {
+                        Type::Pointer(_) => {}
+                        _ => {
+                            let err = self.error(
+                                expr.span,
+                                expr.span,
+                                ResolveErrorType::Delete(NonPtrError(ty)),
+                            );
+                            errors.push(err);
+                        }
+                    }
+                }
+            }
             Stmt::Expr(ref expr) => {
                 if let Err(msg) = self.resolve_expr(expr.span, &expr.node, None) {
                     errors.push(msg);
@@ -350,6 +368,16 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 unreachable!("If errors occur during parsing, the program should not be resolved")
             }
             ExprKind::NullLit => Ok(None),
+            ExprKind::New(expr) => {
+                let ty = self.resolve_expr(expr.span, &expr.node, None)?;
+
+                if let Type::Simple(ty) = ty {
+                    Ok(Some(Type::Pointer(Pointer::new(1, ty))))
+                } else {
+                    // TODO: Implement proper error handling
+                    panic!("Implement proper error handling");
+                }
+            }
             ExprKind::DecLit(_) => Ok(Some(Type::Simple(Simple::I32))),
             ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
             ExprKind::Negate(op, expr) => {
@@ -359,8 +387,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .transpose()
             }
             ExprKind::Deref(op, expr) => {
-                dbg!(expr);
-                let ty = dbg!(self.resolve_expr(expr.span, &expr.node, None)?);
+                let ty = self.resolve_expr(expr.span, &expr.node, None)?;
                 if let Type::Pointer(mut ptr) = ty {
                     return Ok(Some(if ptr.number > 1 {
                         ptr.number -= 1;
@@ -370,7 +397,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     }));
                 }
 
-                Err(self.error(op.span, span, ResolveErrorType::Deref(DerefError(ty))))
+                Err(self.error(op.span, span, ResolveErrorType::Deref(NonPtrError(ty))))
             }
             ExprKind::Binary(l, op, r) => {
                 let left = self.resolve_expr(l.span, &l.node, None)?;

@@ -71,8 +71,11 @@ impl<'src> fmt::Display for ResolveError<'src> {
                 struct_name, field_name
             )),
             ResolveErrorType::Inference(_) => self.fmt_err("type cannot be inferred"),
-            ResolveErrorType::Deref(DerefError(ty)) => {
+            ResolveErrorType::Deref(NonPtrError(ty)) => {
                 self.fmt_err(&format!("{} cannot be dereferenced", ty))
+            }
+            ResolveErrorType::Delete(NonPtrError(ty)) => {
+                self.fmt_err(&format!("{} cannot be deleted. Only Pointers can", ty))
             }
         };
 
@@ -89,7 +92,8 @@ pub enum ResolveErrorType<'src> {
     NoSuchField(StructFieldError<'src>),
     SelfImport(SelfImportError),
     Inference(TypeInferenceError),
-    Deref(DerefError<'src>),
+    Deref(NonPtrError<'src>),
+    Delete(NonPtrError<'src>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -99,7 +103,7 @@ pub struct TypeInferenceError;
 pub struct SelfImportError;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct DerefError<'src>(pub Type<'src>);
+pub struct NonPtrError<'src>(pub Type<'src>);
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IllegalTypeError<'src> {

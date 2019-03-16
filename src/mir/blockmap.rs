@@ -20,7 +20,10 @@ impl<'src> BlockMap<'src> {
 
         for instr in block.0 {
             match instr {
-                Instruction::Assignment(..) | Instruction::Decl(..) | Instruction::Nop => {
+                Instruction::Assignment(..)
+                | Instruction::Decl(..)
+                | Instruction::Delete(..)
+                | Instruction::Nop => {
                     bb.instructions.push(instr);
                 }
                 Instruction::Label(ref l) => {
