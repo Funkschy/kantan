@@ -9,7 +9,7 @@ pub(crate) mod token;
 use self::error::{LexError, ParseError};
 use self::token::Token;
 
-type Scanned<'input> = Result<Spanned<Token<'input>>, Spanned<ParseError<'input>>>;
+type Scanned<'src> = Result<Spanned<Token<'src>>, Spanned<ParseError<'src>>>;
 type CharPos = usize;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -78,8 +78,8 @@ impl<T: PartialEq> PartialEq for Spanned<T> {
 
 impl<T: PartialEq> Eq for Spanned<T> {}
 
-pub trait Scanner<'input>: Iterator<Item = Scanned<'input>> {
-    fn source(&self) -> &'input str;
+pub trait Scanner<'src>: Iterator<Item = Scanned<'src>> {
+    fn source(&self) -> &'src str;
 }
 
 #[cfg(test)]

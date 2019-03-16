@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use super::tac::*;
 
 #[derive(Default, Debug, PartialEq)]
-pub struct BlockMap<'input> {
+pub struct BlockMap<'src> {
     pub mappings: HashMap<Label, usize>,
-    pub blocks: Vec<BasicBlock<'input>>,
+    pub blocks: Vec<BasicBlock<'src>>,
 }
 
-impl<'input> BlockMap<'input> {
-    pub fn from_instructions(block: InstructionBlock<'input>) -> Self {
+impl<'src> BlockMap<'src> {
+    pub fn from_instructions(block: InstructionBlock<'src>) -> Self {
         let mut mappings = HashMap::new();
         let mut blocks = vec![];
         let mut bb = BasicBlock::default();

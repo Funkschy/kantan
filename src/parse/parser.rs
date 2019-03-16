@@ -3,11 +3,11 @@ use std::{cell::Cell, iter::Peekable};
 use super::{ast::*, error::LexError, token::*, *};
 use crate::types::*;
 
-type ExprResult<'input> = Result<Spanned<Expr<'input>>, Spanned<ParseError<'input>>>;
-type StmtResult<'input> = Result<Stmt<'input>, Spanned<ParseError<'input>>>;
-type TopLvlResult<'input> = Result<TopLvl<'input>, Spanned<ParseError<'input>>>;
+type ExprResult<'src> = Result<Spanned<Expr<'src>>, Spanned<ParseError<'src>>>;
+type StmtResult<'src> = Result<Stmt<'src>, Spanned<ParseError<'src>>>;
+type TopLvlResult<'src> = Result<TopLvl<'src>, Spanned<ParseError<'src>>>;
 
-fn as_err_stmt<'input>(err: Spanned<ParseError<'input>>) -> Stmt<'input> {
+fn as_err_stmt<'src>(err: Spanned<ParseError<'src>>) -> Stmt<'src> {
     Stmt::Expr(Spanned::new(
         err.span.start,
         err.span.end,
@@ -15,18 +15,18 @@ fn as_err_stmt<'input>(err: Spanned<ParseError<'input>>) -> Stmt<'input> {
     ))
 }
 
-pub struct Parser<'input, I>
+pub struct Parser<'src, I>
 where
-    I: Scanner<'input>,
+    I: Scanner<'src>,
 {
-    pub(crate) source: &'input str,
+    pub(crate) source: &'src str,
     pub(crate) err_count: usize,
     scanner: Peekable<I>,
 }
 
-impl<'input, I> Parser<'input, I>
+impl<'src, I> Parser<'src, I>
 where
-    I: Scanner<'input>,
+    I: Scanner<'src>,
 {
     pub fn new(scanner: I) -> Self {
         let source = scanner.source();
@@ -40,11 +40,11 @@ where
     }
 }
 
-impl<'input, I> Parser<'input, I>
+impl<'src, I> Parser<'src, I>
 where
-    I: Scanner<'input>,
+    I: Scanner<'src>,
 {
-    pub fn parse(&mut self) -> Program<'input> {
+    pub fn parse(&mut self) -> Program<'src> {
         let mut top_lvl_decls = vec![];
 
         while self.scanner.peek().is_some() {
@@ -63,7 +63,7 @@ where
         Program(top_lvl_decls)
     }
 
-    fn top_lvl_decl(&mut self) -> TopLvlResult<'input> {
+    fn top_lvl_decl(&mut self) -> TopLvlResult<'src> {
         if self.peek_eq(Token::Import) {
             return self.import();
         }
@@ -100,7 +100,7 @@ where
         })
     }
 
-    fn type_definition(&mut self) -> TopLvlResult<'input> {
+    fn type_definition(&mut self) -> TopLvlResult<'src> {
         self.consume(Token::Type)?;
         let name = self.consume_ident()?;
 
@@ -128,7 +128,7 @@ where
         Ok(TopLvl::TypeDef(TypeDef::StructDef { name, fields }))
     }
 
-    fn import(&mut self) -> TopLvlResult<'input> {
+    fn import(&mut self) -> TopLvlResult<'src> {
         self.consume(Token::Import)?;
         let name = self.consume_ident()?;
 
@@ -138,7 +138,7 @@ where
     fn param_list(
         &mut self,
         is_extern: bool,
-    ) -> Result<ParamList<'input>, Spanned<ParseError<'input>>> {
+    ) -> Result<ParamList<'src>, Spanned<ParseError<'src>>> {
         self.consume(Token::LParen)?;
         let mut varargs = false;
 
@@ -180,7 +180,7 @@ where
         Ok(ParamList { varargs, params })
     }
 
-    fn block(&mut self) -> Result<Block<'input>, Spanned<ParseError<'input>>> {
+    fn block(&mut self) -> Result<Block<'src>, Spanned<ParseError<'src>>> {
         self.consume(Token::LBrace)?;
         let mut stmts = vec![];
 
@@ -202,7 +202,7 @@ where
         Ok(Block(stmts))
     }
 
-    fn statement(&mut self) -> StmtResult<'input> {
+    fn statement(&mut self) -> StmtResult<'src> {
         if let Some(Ok(Spanned { node, .. })) = self.scanner.peek() {
             // Check different statement types
             match node {
@@ -224,7 +224,7 @@ where
         Ok(Stmt::Expr(expr))
     }
 
-    fn while_stmt(&mut self) -> StmtResult<'input> {
+    fn while_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::While)?;
         let condition = self.expression()?;
         let body = self.block()?;
@@ -232,7 +232,7 @@ where
         Ok(Stmt::While { condition, body })
     }
 
-    fn return_stmt(&mut self) -> StmtResult<'input> {
+    fn return_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::Return)?;
 
         let ret = Ok(Stmt::Return(if self.peek_eq(Token::Semi) {
@@ -245,7 +245,7 @@ where
         ret
     }
 
-    fn if_stmt(&mut self) -> StmtResult<'input> {
+    fn if_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::If)?;
 
         let condition = self.expression()?;
@@ -274,7 +274,7 @@ where
         })
     }
 
-    fn let_decl(&mut self) -> StmtResult<'input> {
+    fn let_decl(&mut self) -> StmtResult<'src> {
         self.consume(Token::Let)?;
 
         let name = self.consume_ident()?;
@@ -297,7 +297,7 @@ where
         })
     }
 
-    pub fn expression(&mut self) -> ExprResult<'input> {
+    pub fn expression(&mut self) -> ExprResult<'src> {
         let mut left = self.parse_expression(Precedence::Assign)?;
         while self.peek_eq(Token::Equals) {
             let eq = self.consume(Token::Equals)?;
@@ -316,7 +316,7 @@ where
         Ok(left)
     }
 
-    fn parse_expression(&mut self, precedence: Precedence) -> ExprResult<'input> {
+    fn parse_expression(&mut self, precedence: Precedence) -> ExprResult<'src> {
         let token = self.advance()?;
         let mut left = self.prefix(&token)?;
 
@@ -328,17 +328,17 @@ where
         Ok(left)
     }
 
-    fn eof(&mut self) -> Scanned<'input> {
+    fn eof(&mut self) -> Scanned<'src> {
         let len = self.source.len();
         let span = Span::new(len, len);
         self.make_lex_err(span, "Unexpected end of file")
     }
 
-    fn advance(&mut self) -> Scanned<'input> {
+    fn advance(&mut self) -> Scanned<'src> {
         self.scanner.next().unwrap_or_else(|| self.eof())
     }
 
-    fn match_tok(&mut self, expected: Token<'input>) -> Result<bool, Spanned<ParseError<'input>>> {
+    fn match_tok(&mut self, expected: Token<'src>) -> Result<bool, Spanned<ParseError<'src>>> {
         if self.peek_eq(expected) {
             self.consume(expected)?;
             return Ok(true);
@@ -347,14 +347,14 @@ where
         Ok(false)
     }
 
-    fn peek_eq(&mut self, expected: Token<'input>) -> bool {
+    fn peek_eq(&mut self, expected: Token<'src>) -> bool {
         self.scanner.peek().map_or(false, |peek| match peek {
             Ok(Spanned { node, .. }) => *node == expected,
             _ => false,
         })
     }
 
-    fn consume_ident(&mut self) -> Result<Spanned<&'input str>, Spanned<ParseError<'input>>> {
+    fn consume_ident(&mut self) -> Result<Spanned<&'src str>, Spanned<ParseError<'src>>> {
         if let Some(peek) = self.scanner.peek().cloned() {
             return match peek {
                 Ok(peek) => {
@@ -379,7 +379,7 @@ where
         Err(self.eof().unwrap_err())
     }
 
-    fn consume_type(&mut self) -> Result<Spanned<Type<'input>>, Spanned<ParseError<'input>>> {
+    fn consume_type(&mut self) -> Result<Spanned<Type<'src>>, Spanned<ParseError<'src>>> {
         if let Some(peek) = self.scanner.peek().cloned() {
             return match peek {
                 Ok(peek) => match peek {
@@ -438,7 +438,7 @@ where
         Err(self.eof().unwrap_err())
     }
 
-    fn consume(&mut self, expected: Token<'input>) -> Scanned<'input> {
+    fn consume(&mut self, expected: Token<'src>) -> Scanned<'src> {
         if let Some(peek) = self.scanner.peek() {
             if let Ok(peek) = peek {
                 if peek.node == expected {
@@ -468,9 +468,9 @@ where
 
     fn infix(
         &mut self,
-        token: &Spanned<Token<'input>>,
-        left: Spanned<Expr<'input>>,
-    ) -> ExprResult<'input> {
+        token: &Spanned<Token<'src>>,
+        left: Spanned<Expr<'src>>,
+    ) -> ExprResult<'src> {
         let tok = token.node;
         match tok {
             Token::EqualsEquals
@@ -538,7 +538,7 @@ where
         }
     }
 
-    fn prefix(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
+    fn prefix(&mut self, token: &Spanned<Token<'src>>) -> ExprResult<'src> {
         let ok_spanned = |kind| Ok(Spanned::from_span(token.span, Expr::new(kind)));
 
         match token.node {
@@ -580,7 +580,7 @@ where
         }
     }
 
-    fn init_list(&mut self) -> Result<InitList<'input>, Spanned<ParseError<'input>>> {
+    fn init_list(&mut self) -> Result<InitList<'src>, Spanned<ParseError<'src>>> {
         let mut inits = vec![];
 
         while !self.at_end() && !self.peek_eq(Token::RBrace) {
@@ -596,7 +596,7 @@ where
         Ok(InitList(inits))
     }
 
-    fn arg_list(&mut self) -> Result<ArgList<'input>, Spanned<ParseError<'input>>> {
+    fn arg_list(&mut self) -> Result<ArgList<'src>, Spanned<ParseError<'src>>> {
         let mut args = vec![];
 
         while !self.at_end() && !self.peek_eq(Token::RParen) {
@@ -609,7 +609,7 @@ where
         Ok(ArgList(args))
     }
 
-    fn make_lex_err(&mut self, span: Span, cause: &str) -> Scanned<'input> {
+    fn make_lex_err(&mut self, span: Span, cause: &str) -> Scanned<'src> {
         self.err_count += 1;
         Err(Spanned {
             span,
@@ -617,7 +617,7 @@ where
         })
     }
 
-    fn make_prefix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
+    fn make_prefix_err(&mut self, token: &Spanned<Token<'src>>) -> ExprResult<'src> {
         self.err_count += 1;
         let s = format!("Invalid token in prefix rule: '{}'", token.node);
         Err(Spanned {
@@ -626,7 +626,7 @@ where
         })
     }
 
-    fn make_infix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
+    fn make_infix_err(&mut self, token: &Spanned<Token<'src>>) -> ExprResult<'src> {
         self.err_count += 1;
         let s = format!("Invalid token in infix rule: '{}'", token.node);
         Err(Spanned {
@@ -637,9 +637,9 @@ where
 
     fn make_consume_err(
         &mut self,
-        actual: &Spanned<Token<'input>>,
+        actual: &Spanned<Token<'src>>,
         expected: String,
-    ) -> Scanned<'input> {
+    ) -> Scanned<'src> {
         self.err_count += 1;
         Err(Spanned {
             span: actual.span,

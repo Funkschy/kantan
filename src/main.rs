@@ -39,7 +39,7 @@ fn main() -> Result<(), CompilationError> {
 
     let emit_asm = args
         .value_of("emit")
-        .map(|ty| if ty.trim() == "asm" { true } else { false })
+        .map(|ty| ty.trim() == "asm")
         .unwrap_or(false);
 
     emit_to_file(&mir, output_file, &mut err_writer, emit_asm);

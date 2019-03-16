@@ -4,83 +4,83 @@ use super::{error::ParseError, token::Token, Spanned};
 use crate::types::Type;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Program<'input>(pub Vec<TopLvl<'input>>);
+pub struct Program<'src>(pub Vec<TopLvl<'src>>);
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum TopLvl<'input> {
+pub enum TopLvl<'src> {
     FnDecl {
-        name: Spanned<&'input str>,
-        params: ParamList<'input>,
-        body: Block<'input>,
-        ret_type: Spanned<Type<'input>>,
+        name: Spanned<&'src str>,
+        params: ParamList<'src>,
+        body: Block<'src>,
+        ret_type: Spanned<Type<'src>>,
         is_extern: bool,
     },
     Import {
-        name: Spanned<&'input str>,
+        name: Spanned<&'src str>,
     },
-    TypeDef(TypeDef<'input>),
-    Error(Spanned<ParseError<'input>>),
+    TypeDef(TypeDef<'src>),
+    Error(Spanned<ParseError<'src>>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum TypeDef<'input> {
+pub enum TypeDef<'src> {
     StructDef {
-        name: Spanned<&'input str>,
-        fields: Vec<(Spanned<&'input str>, Spanned<Type<'input>>)>,
+        name: Spanned<&'src str>,
+        fields: Vec<(Spanned<&'src str>, Spanned<Type<'src>>)>,
     },
 }
 
-// TODO: refactor Spanned<&'input str> to identifier
+// TODO: refactor Spanned<&'src str> to identifier
 #[derive(Debug, Eq, PartialEq)]
-pub enum Stmt<'input> {
+pub enum Stmt<'src> {
     VarDecl {
-        name: Spanned<&'input str>,
-        value: Spanned<Expr<'input>>,
-        eq: Spanned<Token<'input>>,
+        name: Spanned<&'src str>,
+        value: Spanned<Expr<'src>>,
+        eq: Spanned<Token<'src>>,
         // is filled in by resolver if necessary
-        ty: Cell<Option<Spanned<Type<'input>>>>,
+        ty: Cell<Option<Spanned<Type<'src>>>>,
     },
     If {
-        condition: Spanned<Expr<'input>>,
-        then_block: Block<'input>,
-        else_branch: Option<Box<Else<'input>>>,
+        condition: Spanned<Expr<'src>>,
+        then_block: Block<'src>,
+        else_branch: Option<Box<Else<'src>>>,
     },
     While {
-        condition: Spanned<Expr<'input>>,
-        body: Block<'input>,
+        condition: Spanned<Expr<'src>>,
+        body: Block<'src>,
     },
-    Return(Option<Spanned<Expr<'input>>>),
-    Expr(Spanned<Expr<'input>>),
+    Return(Option<Spanned<Expr<'src>>>),
+    Expr(Spanned<Expr<'src>>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Else<'input> {
-    IfStmt(Box<Stmt<'input>>),
-    Block(Block<'input>),
+pub enum Else<'src> {
+    IfStmt(Box<Stmt<'src>>),
+    Block(Block<'src>),
 }
 
 #[derive(Default, Debug, Eq, PartialEq)]
-pub struct Block<'input>(pub Vec<Stmt<'input>>);
+pub struct Block<'src>(pub Vec<Stmt<'src>>);
 
 #[derive(Debug, Eq, PartialEq, Default)]
-pub struct ParamList<'input> {
+pub struct ParamList<'src> {
     pub varargs: bool,
-    pub params: Vec<Param<'input>>,
+    pub params: Vec<Param<'src>>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Param<'input>(pub Spanned<&'input str>, pub Type<'input>);
+pub struct Param<'src>(pub Spanned<&'src str>, pub Type<'src>);
 
-impl<'input> Param<'input> {
-    pub fn new(ident: Spanned<&'input str>, ty: Type<'input>) -> Self {
+impl<'src> Param<'src> {
+    pub fn new(ident: Spanned<&'src str>, ty: Type<'src>) -> Self {
         Param(ident, ty)
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub struct ArgList<'input>(pub Vec<Spanned<Expr<'input>>>);
+pub struct ArgList<'src>(pub Vec<Spanned<Expr<'src>>>);
 
-impl<'input> fmt::Display for ArgList<'input> {
+impl<'src> fmt::Display for ArgList<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let strings: Vec<String> = self
             .0
@@ -93,14 +93,14 @@ impl<'input> fmt::Display for ArgList<'input> {
 }
 
 #[derive(Debug, Eq)]
-pub struct Expr<'input> {
+pub struct Expr<'src> {
     // is filled in by resolver if necessary
-    ty: Cell<Option<Type<'input>>>,
-    kind: ExprKind<'input>,
+    ty: Cell<Option<Type<'src>>>,
+    kind: ExprKind<'src>,
 }
 
-impl<'input> Expr<'input> {
-    pub fn new(kind: ExprKind<'input>) -> Self {
+impl<'src> Expr<'src> {
+    pub fn new(kind: ExprKind<'src>) -> Self {
         Expr {
             ty: Cell::new(None),
             kind,
@@ -115,74 +115,74 @@ impl<'input> Expr<'input> {
     }
 
     #[inline]
-    pub fn kind(&self) -> &ExprKind<'input> {
+    pub fn kind(&self) -> &ExprKind<'src> {
         &self.kind
     }
 
     #[inline]
-    pub fn ty(&self) -> Option<Type<'input>> {
+    pub fn ty(&self) -> Option<Type<'src>> {
         self.ty.get()
     }
 
     /// This method is used by the resolver to insert type information into
     /// the Expression
-    pub fn set_ty(&self, ty: Type<'input>) {
+    pub fn set_ty(&self, ty: Type<'src>) {
         self.ty.set(Some(ty))
     }
 }
 
-impl<'input> hash::Hash for Expr<'input> {
+impl<'src> hash::Hash for Expr<'src> {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.kind.hash(state);
     }
 }
 
-impl<'input> PartialEq for Expr<'input> {
+impl<'src> PartialEq for Expr<'src> {
     fn eq(&self, other: &Self) -> bool {
         self.kind().eq(other.kind())
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub struct InitList<'input>(pub Vec<(Spanned<&'input str>, Spanned<Expr<'input>>)>);
+pub struct InitList<'src>(pub Vec<(Spanned<&'src str>, Spanned<Expr<'src>>)>);
 
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub enum ExprKind<'input> {
-    Error(ParseError<'input>),
-    DecLit(&'input str),
-    StringLit(&'input str),
-    Negate(Spanned<Token<'input>>, Box<Spanned<Expr<'input>>>),
+pub enum ExprKind<'src> {
+    Error(ParseError<'src>),
+    DecLit(&'src str),
+    StringLit(&'src str),
+    Negate(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Binary(
-        Box<Spanned<Expr<'input>>>,
-        Spanned<Token<'input>>,
-        Box<Spanned<Expr<'input>>>,
+        Box<Spanned<Expr<'src>>>,
+        Spanned<Token<'src>>,
+        Box<Spanned<Expr<'src>>>,
     ),
     BoolBinary(
-        Box<Spanned<Expr<'input>>>,
-        Spanned<Token<'input>>,
-        Box<Spanned<Expr<'input>>>,
+        Box<Spanned<Expr<'src>>>,
+        Spanned<Token<'src>>,
+        Box<Spanned<Expr<'src>>>,
     ),
-    Ident(&'input str),
+    Ident(&'src str),
     Assign {
-        left: Box<Spanned<Expr<'input>>>,
-        eq: Spanned<Token<'input>>,
-        value: Box<Spanned<Expr<'input>>>,
+        left: Box<Spanned<Expr<'src>>>,
+        eq: Spanned<Token<'src>>,
+        value: Box<Spanned<Expr<'src>>>,
     },
     Call {
-        callee: Box<Spanned<Expr<'input>>>,
-        args: ArgList<'input>,
+        callee: Box<Spanned<Expr<'src>>>,
+        args: ArgList<'src>,
     },
     Access {
-        left: Box<Spanned<Expr<'input>>>,
-        identifier: Spanned<&'input str>,
+        left: Box<Spanned<Expr<'src>>>,
+        identifier: Spanned<&'src str>,
     },
     StructInit {
-        identifier: Spanned<&'input str>,
-        fields: InitList<'input>,
+        identifier: Spanned<&'src str>,
+        fields: InitList<'src>,
     },
 }
 
-impl<'input> fmt::Display for Expr<'input> {
+impl<'src> fmt::Display for Expr<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::ExprKind::*;
 

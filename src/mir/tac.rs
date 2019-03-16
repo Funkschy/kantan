@@ -5,12 +5,12 @@ use crate::{parse::token::Token, types::Type};
 use super::address::Address;
 
 #[derive(PartialEq, Debug)]
-pub struct BasicBlock<'input> {
-    pub instructions: Vec<Instruction<'input>>,
-    pub terminator: Instruction<'input>,
+pub struct BasicBlock<'src> {
+    pub instructions: Vec<Instruction<'src>>,
+    pub terminator: Instruction<'src>,
 }
 
-impl<'input> Default for BasicBlock<'input> {
+impl<'src> Default for BasicBlock<'src> {
     fn default() -> Self {
         BasicBlock {
             instructions: vec![],
@@ -20,10 +20,10 @@ impl<'input> Default for BasicBlock<'input> {
 }
 
 #[derive(Debug, Default)]
-pub struct InstructionBlock<'input>(pub Vec<Instruction<'input>>);
+pub struct InstructionBlock<'src>(pub Vec<Instruction<'src>>);
 
-impl<'input> InstructionBlock<'input> {
-    pub fn push(&mut self, instr: Instruction<'input>) {
+impl<'src> InstructionBlock<'src> {
+    pub fn push(&mut self, instr: Instruction<'src>) {
         self.0.push(instr);
     }
 
@@ -31,7 +31,7 @@ impl<'input> InstructionBlock<'input> {
         self.0.append(&mut other.0);
     }
 
-    pub fn last(&self) -> Option<&Instruction<'input>> {
+    pub fn last(&self) -> Option<&Instruction<'src>> {
         self.0.last()
     }
 }
@@ -39,7 +39,7 @@ impl<'input> InstructionBlock<'input> {
 #[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Clone)]
 pub struct Label(String);
 
-impl<'input> fmt::Display for Label {
+impl<'src> fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -71,31 +71,31 @@ impl Borrow<str> for Label {
     }
 }
 
-impl<'input> Into<Instruction<'input>> for Label {
-    fn into(self) -> Instruction<'input> {
+impl<'src> Into<Instruction<'src>> for Label {
+    fn into(self) -> Instruction<'src> {
         Instruction::Label(self)
     }
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Instruction<'input> {
+pub enum Instruction<'src> {
     /// let x: i32
-    Decl(Address<'input>, Type<'input>),
+    Decl(Address<'src>, Type<'src>),
     /// x = <expr>
-    Assignment(Address<'input>, Expression<'input>),
+    Assignment(Address<'src>, Expression<'src>),
     /// goto l
     Jmp(Label),
     /// if x goto l0 else goto l1
-    JmpIf(Address<'input>, Label, Label),
+    JmpIf(Address<'src>, Label, Label),
     /// return x
-    Return(Option<Address<'input>>),
+    Return(Option<Address<'src>>),
     /// .L0:
     Label(Label),
     /// No operation
     Nop,
 }
 
-impl<'input> fmt::Display for Instruction<'input> {
+impl<'src> fmt::Display for Instruction<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Instruction::*;
 
@@ -117,23 +117,23 @@ impl<'input> fmt::Display for Instruction<'input> {
 /// An expression is always on the right side of an assignment instruction
 /// In the comments, this assignment is denoted as 'x = '
 #[derive(PartialEq, Debug, Clone)]
-pub enum Expression<'input> {
+pub enum Expression<'src> {
     /// x = y op z
-    Binary(Address<'input>, BinaryType, Address<'input>),
+    Binary(Address<'src>, BinaryType, Address<'src>),
     /// x = op y
-    Unary(UnaryType, Address<'input>),
+    Unary(UnaryType, Address<'src>),
     /// x = y
-    Copy(Address<'input>),
+    Copy(Address<'src>),
     /// x = call f (y, z)
-    Call(Label, Vec<Address<'input>>, Type<'input>),
+    Call(Label, Vec<Address<'src>>, Type<'src>),
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset
-    StructGep(Address<'input>, u32),
+    StructGep(Address<'src>, u32),
     /// x = test { 41, "test" }
-    StructInit(&'input str, Vec<Address<'input>>),
+    StructInit(&'src str, Vec<Address<'src>>),
 }
 
-impl<'input> fmt::Display for Expression<'input> {
+impl<'src> fmt::Display for Expression<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Expression::*;
 

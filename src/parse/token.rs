@@ -3,11 +3,11 @@ use std::fmt;
 use crate::types::Type;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum Token<'input> {
-    Ident(&'input str),
-    DecLit(&'input str),
-    StringLit(&'input str),
-    TypeIdent(Type<'input>),
+pub enum Token<'src> {
+    Ident(&'src str),
+    DecLit(&'src str),
+    StringLit(&'src str),
+    TypeIdent(Type<'src>),
 
     // Keywords
     Let,
@@ -61,7 +61,7 @@ pub enum Precedence {
     Call = 7,
 }
 
-impl<'input> Token<'input> {
+impl<'src> Token<'src> {
     pub fn precedence(&self) -> Precedence {
         match self {
             Token::Equals => Precedence::Assign,
@@ -77,7 +77,7 @@ impl<'input> Token<'input> {
     }
 }
 
-impl<'input> fmt::Display for Token<'input> {
+impl<'src> fmt::Display for Token<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Token::Ident(ref name) => write!(f, "{}", name),

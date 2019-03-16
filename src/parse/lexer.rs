@@ -17,15 +17,15 @@ impl InputPos {
     }
 }
 
-pub struct Lexer<'input> {
-    src: &'input str,
-    chars: Peekable<CharIndices<'input>>,
+pub struct Lexer<'src> {
+    src: &'src str,
+    chars: Peekable<CharIndices<'src>>,
     current: Option<InputPos>,
     prev: Option<char>,
 }
 
-impl<'input> Lexer<'input> {
-    pub fn new(src: &'input str) -> Self {
+impl<'src> Lexer<'src> {
+    pub fn new(src: &'src str) -> Self {
         let mut chars = src.char_indices().peekable();
 
         Lexer {
@@ -37,7 +37,7 @@ impl<'input> Lexer<'input> {
     }
 }
 
-impl<'input> Lexer<'input> {
+impl<'src> Lexer<'src> {
     fn pos(&self) -> CharPos {
         if let Some(InputPos { pos, .. }) = self.current {
             return pos;
@@ -46,7 +46,7 @@ impl<'input> Lexer<'input> {
         self.src.len()
     }
 
-    fn slice(&self, start: CharPos, end: CharPos) -> &'input str {
+    fn slice(&self, start: CharPos, end: CharPos) -> &'src str {
         let end = if end > self.src.len() {
             self.src.len()
         } else {
@@ -61,8 +61,8 @@ impl<'input> Lexer<'input> {
     }
 }
 
-impl<'input> Scanner<'input> for Lexer<'input> {
-    fn source(&self) -> &'input str {
+impl<'src> Scanner<'src> for Lexer<'src> {
+    fn source(&self) -> &'src str {
         &self.src
     }
 }
@@ -104,7 +104,7 @@ macro_rules! consume_double {
     }};
 }
 
-impl<'input> Lexer<'input> {
+impl<'src> Lexer<'src> {
     fn advance(&mut self) -> Option<InputPos> {
         let curr = self.current?;
         if self.pos() > 0 {
@@ -117,7 +117,7 @@ impl<'input> Lexer<'input> {
         Some(curr)
     }
 
-    fn read_while<P>(&mut self, predicate: P) -> &'input str
+    fn read_while<P>(&mut self, predicate: P) -> &'src str
     where
         P: Fn(char) -> bool,
     {
@@ -138,7 +138,7 @@ impl<'input> Lexer<'input> {
         self.read_while(|c| c.is_whitespace());
     }
 
-    fn scan_ident(&mut self) -> Scanned<'input> {
+    fn scan_ident(&mut self) -> Scanned<'src> {
         let start = self.pos();
         let slice = self.read_while(|c| c.is_alphanumeric() || c == '_');
         if let Some(keyword) = self.check_keyword(start, slice) {
@@ -157,11 +157,7 @@ impl<'input> Lexer<'input> {
         }
     }
 
-    fn check_keyword(
-        &mut self,
-        start: CharPos,
-        slice: &'input str,
-    ) -> Option<Spanned<Token<'input>>> {
+    fn check_keyword(&mut self, start: CharPos, slice: &'src str) -> Option<Spanned<Token<'src>>> {
         Some(self.spanned(
             start,
             match slice {
@@ -184,14 +180,14 @@ impl<'input> Lexer<'input> {
         ))
     }
 
-    fn scan_dec_num(&mut self) -> Scanned<'input> {
+    fn scan_dec_num(&mut self) -> Scanned<'src> {
         let start = self.pos();
         let slice = self.read_while(|c| c.is_digit(10));
 
         Ok(self.spanned(start, Token::DecLit(slice)))
     }
 
-    fn scan_string(&mut self) -> Scanned<'input> {
+    fn scan_string(&mut self) -> Scanned<'src> {
         self.advance();
         let start = self.pos();
         let slice = self.read_while(|c| c != '"');
@@ -214,7 +210,7 @@ impl<'input> Lexer<'input> {
         Ok(spanned)
     }
 
-    fn scan_token(&mut self) -> Option<Scanned<'input>> {
+    fn scan_token(&mut self) -> Option<Scanned<'src>> {
         self.skip_whitespace();
         let start = self.pos();
 
@@ -281,8 +277,8 @@ impl<'input> Lexer<'input> {
     }
 }
 
-impl<'input> Iterator for Lexer<'input> {
-    type Item = Scanned<'input>;
+impl<'src> Iterator for Lexer<'src> {
+    type Item = Scanned<'src>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.scan_token()

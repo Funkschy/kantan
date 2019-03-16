@@ -22,19 +22,19 @@ mod names;
 pub(crate) mod tac;
 
 #[derive(Debug)]
-pub struct Tac<'input> {
-    pub(crate) functions: Vec<Func<'input>>,
-    pub(crate) literals: HashMap<Label, &'input str>,
-    pub(crate) types: UserTypeMap<'input>,
-    symbols: SymbolTable<'input>,
-    names: NameTable<'input>,
+pub struct Tac<'src> {
+    pub(crate) functions: Vec<Func<'src>>,
+    pub(crate) literals: HashMap<Label, &'src str>,
+    pub(crate) types: UserTypeMap<'src>,
+    symbols: SymbolTable<'src>,
+    names: NameTable<'src>,
     temp_count: usize,
     label_count: usize,
-    current_params: Option<Vec<(&'input str, Type<'input>)>>,
+    current_params: Option<Vec<(&'src str, Type<'src>)>>,
 }
 
-impl<'input> Tac<'input> {
-    pub fn new(resolve_result: ResolveResult<'input>) -> Self {
+impl<'src> Tac<'src> {
+    pub fn new(resolve_result: ResolveResult<'src>) -> Self {
         Tac {
             functions: vec![],
             literals: HashMap::new(),
@@ -48,13 +48,13 @@ impl<'input> Tac<'input> {
     }
 }
 
-impl<'input> Tac<'input> {
+impl<'src> Tac<'src> {
     pub fn add_function(
         &mut self,
         name: String,
-        params: Vec<(&'input str, Type<'input>)>,
-        body: &Block<'input>,
-        ret_type: Type<'input>,
+        params: Vec<(&'src str, Type<'src>)>,
+        body: &Block<'src>,
+        ret_type: Type<'src>,
         is_extern: bool,
         is_varargs: bool,
     ) {
@@ -121,7 +121,7 @@ impl<'input> Tac<'input> {
         self.functions.push(f);
     }
 
-    fn create_block(&mut self, statements: &[Stmt<'input>]) -> InstructionBlock<'input> {
+    fn create_block(&mut self, statements: &[Stmt<'src>]) -> InstructionBlock<'src> {
         let mut block = InstructionBlock::default();
         self.names.scope_enter();
 
@@ -189,9 +189,9 @@ impl<'input> Tac<'input> {
 
     fn while_loop(
         &mut self,
-        condition: &Expr<'input>,
-        body: &Block<'input>,
-        block: &mut InstructionBlock<'input>,
+        condition: &Expr<'src>,
+        body: &Block<'src>,
+        block: &mut InstructionBlock<'src>,
         end_label: Label,
     ) {
         let condition_label = self.label();
@@ -210,10 +210,10 @@ impl<'input> Tac<'input> {
 
     fn if_branch(
         &mut self,
-        condition: &Expr<'input>,
-        then_block: &Block<'input>,
-        else_branch: &Option<Box<Else<'input>>>,
-        block: &mut InstructionBlock<'input>,
+        condition: &Expr<'src>,
+        then_block: &Block<'src>,
+        else_branch: &Option<Box<Else<'src>>>,
+        block: &mut InstructionBlock<'src>,
         end_label: Label,
     ) {
         let condition = self.expr_instr(condition, block);
@@ -263,11 +263,7 @@ impl<'input> Tac<'input> {
         }
     }
 
-    fn expr(
-        &mut self,
-        expr: &Expr<'input>,
-        block: &mut InstructionBlock<'input>,
-    ) -> Expression<'input> {
+    fn expr(&mut self, expr: &Expr<'src>, block: &mut InstructionBlock<'src>) -> Expression<'src> {
         match expr.kind() {
             ExprKind::Binary(l, op, r) | ExprKind::BoolBinary(l, op, r) => {
                 // TODO: find correct dec size
@@ -363,9 +359,9 @@ impl<'input> Tac<'input> {
     /// Splits an expression and returns an address to the result
     fn expr_instr(
         &mut self,
-        expr: &Expr<'input>,
-        block: &mut InstructionBlock<'input>,
-    ) -> Address<'input> {
+        expr: &Expr<'src>,
+        block: &mut InstructionBlock<'src>,
+    ) -> Address<'src> {
         let rval = self.address_expr(&expr);
         if let Some(rval) = rval {
             return rval;
@@ -390,16 +386,16 @@ impl<'input> Tac<'input> {
 
     fn assign(
         &mut self,
-        address: Address<'input>,
-        expression: Expression<'input>,
-        block: &mut InstructionBlock<'input>,
-    ) -> Address<'input> {
+        address: Address<'src>,
+        expression: Expression<'src>,
+        block: &mut InstructionBlock<'src>,
+    ) -> Address<'src> {
         let assign = Instruction::Assignment(address.clone(), expression);
         block.push(assign);
         address
     }
 
-    fn address_expr(&mut self, expr: &Expr<'input>) -> Option<Address<'input>> {
+    fn address_expr(&mut self, expr: &Expr<'src>) -> Option<Address<'src>> {
         Some(match expr.kind() {
             ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
@@ -426,14 +422,14 @@ impl<'input> Tac<'input> {
         })
     }
 
-    fn string_lit(&mut self, lit: &'input str) -> Label {
+    fn string_lit(&mut self, lit: &'src str) -> Label {
         let label = Label::new(self.label_count);
         self.label_count += 1;
         self.literals.insert(label.clone(), lit);
         label
     }
 
-    fn temp(&mut self) -> Address<'input> {
+    fn temp(&mut self) -> Address<'src> {
         let temp = self.temp_count.into();
         self.temp_count += 1;
 

@@ -18,15 +18,15 @@ use self::{
 
 pub(crate) use self::cli::*;
 
-pub type PrgMap<'input> = HashMap<&'input str, (&'input Source, Program<'input>)>;
+pub type PrgMap<'src> = HashMap<&'src str, (&'src Source, Program<'src>)>;
 
 #[derive(Debug)]
-pub struct UserTypeDefinition<'input> {
-    pub name: &'input str,
-    pub fields: HashMap<&'input str, (u32, Spanned<Type<'input>>)>,
+pub struct UserTypeDefinition<'src> {
+    pub name: &'src str,
+    pub fields: HashMap<&'src str, (u32, Spanned<Type<'src>>)>,
 }
 
-impl<'input> fmt::Display for UserTypeDefinition<'input> {
+impl<'src> fmt::Display for UserTypeDefinition<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let fields = self
             .fields
@@ -39,7 +39,7 @@ impl<'input> fmt::Display for UserTypeDefinition<'input> {
     }
 }
 
-pub type UserTypeMap<'input> = HashMap<String, UserTypeDefinition<'input>>;
+pub type UserTypeMap<'src> = HashMap<String, UserTypeDefinition<'src>>;
 
 #[derive(Debug)]
 pub struct Source {
@@ -137,7 +137,7 @@ fn init_ansi() {
     }
 }
 
-fn parse<'input>(sources: &'input [Source]) -> (Vec<Program<'input>>, usize) {
+fn parse<'src>(sources: &'src [Source]) -> (Vec<Program<'src>>, usize) {
     sources
         .iter()
         .fold((vec![], 0), |(mut asts, err_count), source| {
@@ -161,7 +161,7 @@ fn ast_sources(sources: &[Source]) -> (PrgMap<'_>, usize) {
     )
 }
 
-fn find_main<'input>(ast_sources: &PrgMap<'input>) -> Option<&'input str> {
+fn find_main<'src>(ast_sources: &PrgMap<'src>) -> Option<&'src str> {
     ast_sources
         .iter()
         .find(|(_, (_, prg))| {
@@ -176,11 +176,11 @@ fn find_main<'input>(ast_sources: &PrgMap<'input>) -> Option<&'input str> {
         .map(|(src, _)| *src)
 }
 
-fn type_check<'input, W: Write>(
-    main: &'input str,
-    ast_sources: &mut PrgMap<'input>,
+fn type_check<'src, W: Write>(
+    main: &'src str,
+    ast_sources: &mut PrgMap<'src>,
     writer: &mut W,
-) -> Result<ResolveResult<'input>, CompilationError> {
+) -> Result<ResolveResult<'src>, CompilationError> {
     let mut resolver = Resolver::new(main, ast_sources);
     let errors: Vec<String> = resolver
         .resolve()
@@ -198,13 +198,13 @@ fn type_check<'input, W: Write>(
 
 // TODO: move to mir module
 #[derive(Debug)]
-pub struct Mir<'input> {
-    pub global_strings: HashMap<Label, &'input str>,
-    pub functions: Vec<Func<'input>>,
-    pub types: UserTypeMap<'input>,
+pub struct Mir<'src> {
+    pub global_strings: HashMap<Label, &'src str>,
+    pub functions: Vec<Func<'src>>,
+    pub types: UserTypeMap<'src>,
 }
 
-impl<'input> fmt::Display for Mir<'input> {
+impl<'src> fmt::Display for Mir<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let types = self
             .types
@@ -231,11 +231,11 @@ impl<'input> fmt::Display for Mir<'input> {
     }
 }
 
-fn construct_tac<'input>(
-    main: &'input str,
-    ast_sources: &PrgMap<'input>,
-    resolve_result: ResolveResult<'input>,
-) -> Mir<'input> {
+fn construct_tac<'src>(
+    main: &'src str,
+    ast_sources: &PrgMap<'src>,
+    resolve_result: ResolveResult<'src>,
+) -> Mir<'src> {
     let mut tac = Tac::new(resolve_result);
     for (src_name, (_, prg)) in ast_sources.iter() {
         for top_lvl in &prg.0 {
@@ -284,10 +284,10 @@ pub fn stdlib() -> Vec<Source> {
     vec![io]
 }
 
-pub fn compile<'input, W: Write>(
-    sources: &'input [Source],
+pub fn compile<'src, W: Write>(
+    sources: &'src [Source],
     writer: &mut W,
-) -> Result<Mir<'input>, CompilationError> {
+) -> Result<Mir<'src>, CompilationError> {
     init_ansi();
     let (mut ast_sources, err_count) = ast_sources(sources);
 

@@ -16,29 +16,29 @@ mod error;
 pub mod symbol;
 
 #[derive(Clone)]
-struct FunctionDefinition<'input> {
-    ret_type: Type<'input>,
-    params: Vec<Type<'input>>,
+struct FunctionDefinition<'src> {
+    ret_type: Type<'src>,
+    params: Vec<Type<'src>>,
     varargs: bool,
 }
 
-pub struct ResolveResult<'input> {
-    pub symbols: SymbolTable<'input>,
-    pub user_types: UserTypeMap<'input>,
+pub struct ResolveResult<'src> {
+    pub symbols: SymbolTable<'src>,
+    pub user_types: UserTypeMap<'src>,
 }
 
-pub(crate) struct Resolver<'input, 'ast> {
-    current_name: &'input str,
-    programs: &'ast PrgMap<'input>,
-    resolved: HashSet<&'input str>,
-    pub(crate) sym_table: SymbolTable<'input>,
-    functions: HashMap<String, FunctionDefinition<'input>>,
-    user_types: UserTypeMap<'input>,
-    current_func_ret_type: Spanned<Type<'input>>,
+pub(crate) struct Resolver<'src, 'ast> {
+    current_name: &'src str,
+    programs: &'ast PrgMap<'src>,
+    resolved: HashSet<&'src str>,
+    pub(crate) sym_table: SymbolTable<'src>,
+    functions: HashMap<String, FunctionDefinition<'src>>,
+    user_types: UserTypeMap<'src>,
+    current_func_ret_type: Spanned<Type<'src>>,
 }
 
-impl<'input, 'ast> Resolver<'input, 'ast> {
-    pub fn new(main_file: &'input str, programs: &'ast PrgMap<'input>) -> Self {
+impl<'src, 'ast> Resolver<'src, 'ast> {
+    pub fn new(main_file: &'src str, programs: &'ast PrgMap<'src>) -> Self {
         Resolver {
             current_name: main_file,
             programs,
@@ -50,7 +50,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         }
     }
 
-    pub fn get_result(self) -> ResolveResult<'input> {
+    pub fn get_result(self) -> ResolveResult<'src> {
         ResolveResult {
             symbols: self.sym_table,
             user_types: self.user_types,
@@ -58,12 +58,12 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
     }
 }
 
-impl<'input, 'ast> Resolver<'input, 'ast> {
-    pub fn resolve(&mut self) -> Vec<ResolveError<'input>> {
+impl<'src, 'ast> Resolver<'src, 'ast> {
+    pub fn resolve(&mut self) -> Vec<ResolveError<'src>> {
         self.resolve_prg(None)
     }
 
-    fn resolve_prg(&mut self, prefix: Option<&str>) -> Vec<ResolveError<'input>> {
+    fn resolve_prg(&mut self, prefix: Option<&str>) -> Vec<ResolveError<'src>> {
         let name = &self.current_name;
         let (_, prg) = self.programs.get(name).unwrap();
         let mut errors = vec![];
@@ -83,8 +83,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
     fn declare_top_lvl(
         &mut self,
-        top_lvl: &TopLvl<'input>,
-        errors: &mut Vec<ResolveError<'input>>,
+        top_lvl: &TopLvl<'src>,
+        errors: &mut Vec<ResolveError<'src>>,
         prefix: Option<&str>,
     ) {
         match top_lvl {
@@ -158,11 +158,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         }
     }
 
-    fn resolve_top_lvl(
-        &mut self,
-        top_lvl: &TopLvl<'input>,
-        errors: &mut Vec<ResolveError<'input>>,
-    ) {
+    fn resolve_top_lvl(&mut self, top_lvl: &TopLvl<'src>, errors: &mut Vec<ResolveError<'src>>) {
         if let TopLvl::FnDecl {
             params,
             ref body,
@@ -188,7 +184,7 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         }
     }
 
-    fn resolve_stmt(&mut self, stmt: &Stmt<'input>, errors: &mut Vec<ResolveError<'input>>) {
+    fn resolve_stmt(&mut self, stmt: &Stmt<'src>, errors: &mut Vec<ResolveError<'src>>) {
         match stmt {
             Stmt::VarDecl {
                 name,
@@ -320,8 +316,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
     fn resolve_expr(
         &mut self,
         span: Span,
-        expr: &Expr<'input>,
-    ) -> Result<Type<'input>, ResolveError<'input>> {
+        expr: &Expr<'src>,
+    ) -> Result<Type<'src>, ResolveError<'src>> {
         let ty = self.check_expr(span, expr);
         if let Ok(ty) = ty {
             // Insert type information
@@ -333,8 +329,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
     fn check_expr(
         &mut self,
         span: Span,
-        expr: &Expr<'input>,
-    ) -> Result<Type<'input>, ResolveError<'input>> {
+        expr: &Expr<'src>,
+    ) -> Result<Type<'src>, ResolveError<'src>> {
         match expr.kind() {
             ExprKind::Error(_) => {
                 unreachable!("If errors occur during parsing, the program should not be resolved")
@@ -484,18 +480,18 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
     }
 }
 
-impl<'input, 'ast> Resolver<'input, 'ast> {
-    fn current_source(&self) -> &'input Source {
+impl<'src, 'ast> Resolver<'src, 'ast> {
+    fn current_source(&self) -> &'src Source {
         let (src, _) = self.programs[self.current_name];
         src
     }
 
     fn expect_bool(
         &self,
-        ty: Type<'input>,
+        ty: Type<'src>,
         name: &'static str,
         span: Span,
-        errors: &mut Vec<ResolveError<'input>>,
+        errors: &mut Vec<ResolveError<'src>>,
     ) {
         if ty != Type::Simple(Simple::Bool) {
             errors.push(self.type_error(span, span, name, Type::Simple(Simple::Bool), ty))
@@ -504,8 +500,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
     fn get_user_type(
         &self,
-        name: Spanned<&'input str>,
-    ) -> Result<&UserTypeDefinition<'input>, ResolveError<'input>> {
+        name: Spanned<&'src str>,
+    ) -> Result<&UserTypeDefinition<'src>, ResolveError<'src>> {
         self.user_types
             .get(name.node)
             .ok_or_else(|| self.not_defined_error(name.span, name.span, name.node))
@@ -513,9 +509,9 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
     fn get_field(
         &self,
-        user_type: &UserTypeDefinition<'input>,
-        name: &Spanned<&'input str>,
-    ) -> Result<Type<'input>, ResolveError<'input>> {
+        user_type: &UserTypeDefinition<'src>,
+        name: &Spanned<&'src str>,
+    ) -> Result<Type<'src>, ResolveError<'src>> {
         user_type
             .fields
             .get(name.node)
@@ -527,8 +523,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        err: ResolveErrorType<'input>,
-    ) -> ResolveError<'input> {
+        err: ResolveErrorType<'src>,
+    ) -> ResolveError<'src> {
         ResolveError {
             source: self.current_source(),
             error: err,
@@ -539,9 +535,9 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
 
     fn no_such_field_error(
         &self,
-        user_type: &UserTypeDefinition<'input>,
-        name: &Spanned<&'input str>,
-    ) -> ResolveError<'input> {
+        user_type: &UserTypeDefinition<'src>,
+        name: &Spanned<&'src str>,
+    ) -> ResolveError<'src> {
         self.error(
             name.span,
             name.span,
@@ -556,10 +552,10 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        name: &'input str,
-        error: ResolveErrorType<'input>,
+        name: &'src str,
+        error: ResolveErrorType<'src>,
         def_span: Span,
-    ) -> ResolveError<'input> {
+    ) -> ResolveError<'src> {
         if let ResolveErrorType::IllegalOperation(err) = error {
             self.error(
                 err_span,
@@ -580,9 +576,9 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         err_span: Span,
         expr_span: Span,
         name: &'static str,
-        expected_type: Type<'input>,
-        actual_type: Type<'input>,
-    ) -> ResolveError<'input> {
+        expected_type: Type<'src>,
+        actual_type: Type<'src>,
+    ) -> ResolveError<'src> {
         self.error(
             err_span,
             expr_span,
@@ -598,8 +594,8 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        name: &'input str,
-    ) -> ResolveError<'input> {
+        name: &'src str,
+    ) -> ResolveError<'src> {
         self.error(
             err_span,
             expr_span,
@@ -611,10 +607,10 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        expected: Type<'input>,
-        actual: Type<'input>,
+        expected: Type<'src>,
+        actual: Type<'src>,
         name: &'static str,
-    ) -> Result<(), ResolveError<'input>> {
+    ) -> Result<(), ResolveError<'src>> {
         if expected != actual
             // varargs disables type checking
             && expected != Type::Simple(Simple::Varargs)
@@ -638,9 +634,9 @@ impl<'input, 'ast> Resolver<'input, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        first: Type<'input>,
-        second: Type<'input>,
-    ) -> Result<Type<'input>, ResolveError<'input>> {
+        first: Type<'src>,
+        second: Type<'src>,
+    ) -> Result<Type<'src>, ResolveError<'src>> {
         if first != second {
             Err(self.error(
                 err_span,

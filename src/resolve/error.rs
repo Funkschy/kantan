@@ -4,20 +4,20 @@ use super::types::Type;
 use crate::{err_to_string, find_line_index, format_error, Source, Span};
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct ResolveError<'input> {
-    pub source: &'input Source,
-    pub error: ResolveErrorType<'input>,
+pub struct ResolveError<'src> {
+    pub source: &'src Source,
+    pub error: ResolveErrorType<'src>,
     pub err_span: Span,
     pub expr_span: Span,
 }
 
-impl<'input> ResolveError<'input> {
-    fn err_token(&self) -> &'input str {
+impl<'src> ResolveError<'src> {
+    fn err_token(&self) -> &'src str {
         &self.source.code[self.err_span.start..=self.err_span.end]
     }
 }
 
-impl<'input> fmt::Display for ResolveError<'input> {
+impl<'src> fmt::Display for ResolveError<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let binoperr_to_string = |err: &BinaryOperationError| {
             format!(
@@ -93,12 +93,12 @@ impl<'input> fmt::Display for ResolveError<'input> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum ResolveErrorType<'input> {
-    IllegalAssignment(AssignmentError<'input>),
-    NotDefined(DefinitionError<'input>),
-    IllegalOperation(BinaryOperationError<'input>),
-    IllegalType(IllegalTypeError<'input>),
-    NoSuchField(StructFieldError<'input>),
+pub enum ResolveErrorType<'src> {
+    IllegalAssignment(AssignmentError<'src>),
+    NotDefined(DefinitionError<'src>),
+    IllegalOperation(BinaryOperationError<'src>),
+    IllegalType(IllegalTypeError<'src>),
+    NoSuchField(StructFieldError<'src>),
     SelfImport(SelfImportError),
 }
 
@@ -106,33 +106,33 @@ pub enum ResolveErrorType<'input> {
 pub struct SelfImportError;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct IllegalTypeError<'input> {
-    pub expected_type: Type<'input>,
-    pub actual_type: Type<'input>,
+pub struct IllegalTypeError<'src> {
+    pub expected_type: Type<'src>,
+    pub actual_type: Type<'src>,
     // e.g. "If condition" or "while condition"
     pub name: &'static str,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct AssignmentError<'input> {
-    pub name: &'input str,
+pub struct AssignmentError<'src> {
+    pub name: &'src str,
     pub definition_span: Span,
-    pub bin_op_err: BinaryOperationError<'input>,
+    pub bin_op_err: BinaryOperationError<'src>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct BinaryOperationError<'input> {
-    pub left_type: Type<'input>,
-    pub right_type: Type<'input>,
+pub struct BinaryOperationError<'src> {
+    pub left_type: Type<'src>,
+    pub right_type: Type<'src>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct DefinitionError<'input> {
-    pub name: &'input str,
+pub struct DefinitionError<'src> {
+    pub name: &'src str,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct StructFieldError<'input> {
-    pub struct_name: &'input str,
-    pub field_name: &'input str,
+pub struct StructFieldError<'src> {
+    pub struct_name: &'src str,
+    pub field_name: &'src str,
 }

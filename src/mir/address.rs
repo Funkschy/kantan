@@ -4,15 +4,15 @@ use super::tac::{Expression, Label};
 use crate::types::Type;
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Address<'input> {
+pub enum Address<'src> {
     Empty,
     Name(String),
-    Const(Constant<'input>),
+    Const(Constant<'src>),
     Temp(TempVar),
     Global(Label),
 }
 
-impl<'input> fmt::Display for Address<'input> {
+impl<'src> fmt::Display for Address<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Address::*;
 
@@ -28,20 +28,20 @@ impl<'input> fmt::Display for Address<'input> {
     }
 }
 
-impl<'input> Into<Expression<'input>> for Address<'input> {
-    fn into(self) -> Expression<'input> {
+impl<'src> Into<Expression<'src>> for Address<'src> {
+    fn into(self) -> Expression<'src> {
         Expression::Copy(self)
     }
 }
 
-impl<'input> From<&String> for Address<'input> {
+impl<'src> From<&String> for Address<'src> {
     fn from(value: &String) -> Self {
         Address::Name(value.clone())
     }
 }
 
-impl<'input> Address<'input> {
-    pub fn new_const(ty: Type<'input>, literal: &'input str) -> Self {
+impl<'src> Address<'src> {
+    pub fn new_const(ty: Type<'src>, literal: &'src str) -> Self {
         Address::Const(Constant::new(ty, literal))
     }
 
@@ -70,19 +70,19 @@ impl fmt::Display for TempVar {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Constant<'input> {
-    pub ty: Type<'input>,
-    pub literal: &'input str,
+pub struct Constant<'src> {
+    pub ty: Type<'src>,
+    pub literal: &'src str,
 }
 
-impl<'input> fmt::Display for Constant<'input> {
+impl<'src> fmt::Display for Constant<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.literal)
     }
 }
 
-impl<'input> Constant<'input> {
-    pub fn new(ty: Type<'input>, literal: &'input str) -> Self {
+impl<'src> Constant<'src> {
+    pub fn new(ty: Type<'src>, literal: &'src str) -> Self {
         Constant { ty, literal }
     }
 }
