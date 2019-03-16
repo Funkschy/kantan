@@ -175,6 +175,7 @@ impl<'src> Lexer<'src> {
                 "while" => Token::While,
                 "type" => Token::Type,
                 "struct" => Token::Struct,
+                "null" => Token::NullLit,
                 _ => return None,
             },
         ))

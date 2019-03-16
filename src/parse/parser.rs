@@ -542,6 +542,7 @@ where
         let ok_spanned = |kind| Ok(Spanned::from_span(token.span, Expr::new(kind)));
 
         match token.node {
+            Token::NullLit => ok_spanned(ExprKind::NullLit),
             Token::DecLit(lit) => ok_spanned(ExprKind::DecLit(lit)),
             Token::StringLit(lit) => ok_spanned(ExprKind::StringLit(lit)),
             Token::LParen => {

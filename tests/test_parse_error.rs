@@ -116,29 +116,3 @@ fn test_valid_equality_operation_should_print_nothing() {
 
     assert_eq!("", output);
 }
-
-#[test]
-fn test_invalid_equality_operation_should_return_error_message() {
-    let mut cursor = Cursor::new(Vec::new());
-
-    let source = Source::new(
-        "test-equals",
-        r#"fn main(): void {
- let s = "hello";
- let s2 = 2;
- let res = s == s2;
- }"#,
-    );
-
-    kantan::compile(&vec![source], &mut cursor).unwrap_err();
-    let output = String::from_utf8(cursor.into_inner()).unwrap();
-
-    let expected = "error: binary operation '==' cannot be applied to 'string' and 'i32'
---> test-equals:4:14
-  |
-4 | let res = s == s2;
-  |\u{1b}[31m             ^^\u{1b}[0m - not allowed
-";
-
-    assert_eq!(expected, output);
-}

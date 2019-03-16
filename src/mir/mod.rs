@@ -397,6 +397,7 @@ impl<'src> Tac<'src> {
 
     fn address_expr(&mut self, expr: &Expr<'src>) -> Option<Address<'src>> {
         Some(match expr.kind() {
+            ExprKind::NullLit => Address::Null(expr.ty().unwrap()),
             ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
             ExprKind::Ident(ident) => {

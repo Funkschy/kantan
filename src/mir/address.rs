@@ -6,6 +6,7 @@ use crate::types::Type;
 #[derive(PartialEq, Debug, Clone)]
 pub enum Address<'src> {
     Empty,
+    Null(Type<'src>),
     Name(String),
     Const(Constant<'src>),
     Temp(TempVar),
@@ -16,15 +17,14 @@ impl<'src> fmt::Display for Address<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Address::*;
 
-        let s = match self {
-            Empty => "empty".to_owned(),
-            Name(n) => n.to_string(),
-            Const(c) => c.to_string(),
-            Temp(t) => t.to_string(),
-            Global(l) => l.to_string(),
-        };
-
-        write!(f, "{}", s)
+        match self {
+            Empty => write!(f, "empty"),
+            Null(_) => write!(f, "null"),
+            Name(n) => write!(f, "{}", n),
+            Const(c) => write!(f, "{}", c),
+            Temp(t) => write!(f, "{}", t),
+            Global(l) => write!(f, "{}", l),
+        }
     }
 }
 

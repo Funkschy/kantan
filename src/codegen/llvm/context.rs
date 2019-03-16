@@ -404,6 +404,7 @@ impl KantanLLVMContext {
     unsafe fn translate_mir_address(&mut self, a: &Address) -> LLVMValueRef {
         match a {
             Address::Empty => unreachable!(),
+            Address::Null(ty) => LLVMConstNull(self.convert(*ty)),
             Address::Name(n) => LLVMBuildLoad(self.builder, self.name_table[n], self.cstring(&n)),
             Address::Temp(t) => LLVMBuildLoad(
                 self.builder,

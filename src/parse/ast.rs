@@ -149,6 +149,7 @@ pub struct InitList<'src>(pub Vec<(Spanned<&'src str>, Spanned<Expr<'src>>)>);
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum ExprKind<'src> {
     Error(ParseError<'src>),
+    NullLit,
     DecLit(&'src str),
     StringLit(&'src str),
     Negate(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
@@ -188,6 +189,7 @@ impl<'src> fmt::Display for Expr<'src> {
 
         match self.kind() {
             Error(err) => write!(f, "{}", err),
+            NullLit => write!(f, "null"),
             DecLit(lit) => write!(f, "{}", lit),
             StringLit(lit) => write!(f, "{}", lit),
             Negate(_, expr) => write!(f, "-{}", expr.node),

@@ -15,6 +15,10 @@ impl<'src> ResolveError<'src> {
     fn err_token(&self) -> &'src str {
         &self.source.code[self.err_span.start..=self.err_span.end]
     }
+
+    fn fmt_err(&self, msg: &str) -> String {
+        format_error(self.source, self.expr_span, self.err_span, msg)
+    }
 }
 
 impl<'src> fmt::Display for ResolveError<'src> {
@@ -22,17 +26,12 @@ impl<'src> fmt::Display for ResolveError<'src> {
         let binoperr_to_string = |err: &BinaryOperationError| {
             format!(
                 "{} - not allowed",
-                format_error(
-                    self.source,
-                    self.expr_span,
-                    self.err_span,
-                    &format!(
-                        "binary operation '{}' cannot be applied to '{}' and '{}'",
-                        self.err_token(),
-                        err.left_type,
-                        err.right_type
-                    )
-                )
+                self.fmt_err(&format!(
+                    "binary operation '{}' cannot be applied to '{}' and '{}'",
+                    self.err_token(),
+                    err.left_type,
+                    err.right_type
+                ))
             )
         };
 
@@ -51,41 +50,27 @@ impl<'src> fmt::Display for ResolveError<'src> {
                 );
                 format!("{}\n\nreason:\n{}", binoperr_to_string(bin_op_err), reason)
             }
-            ResolveErrorType::NotDefined(DefinitionError { name }) => format_error(
-                self.source,
-                self.expr_span,
-                self.err_span,
-                &format!("'{}' not in scope", name),
-            ),
+            ResolveErrorType::NotDefined(DefinitionError { name }) => {
+                self.fmt_err(&format!("'{}' not in scope", name))
+            }
             ResolveErrorType::IllegalOperation(ref err) => binoperr_to_string(err),
             ResolveErrorType::IllegalType(IllegalTypeError {
                 expected_type,
                 actual_type,
                 name,
-            }) => format_error(
-                self.source,
-                self.expr_span,
-                self.err_span,
-                &format!(
-                    "{} must be of type '{}', but the supplied type was '{}'",
-                    name, expected_type, actual_type
-                ),
-            ),
-            ResolveErrorType::SelfImport(_) => format_error(
-                self.source,
-                self.expr_span,
-                self.err_span,
-                "cannot import self",
-            ),
+            }) => self.fmt_err(&format!(
+                "{} must be of type '{}', but the supplied type was '{}'",
+                name, expected_type, actual_type
+            )),
+            ResolveErrorType::SelfImport(_) => self.fmt_err("cannot import self"),
             ResolveErrorType::NoSuchField(StructFieldError {
                 struct_name,
                 field_name,
-            }) => format_error(
-                self.source,
-                self.expr_span,
-                self.err_span,
-                &format!("'{}' has no field named '{}'", struct_name, field_name),
-            ),
+            }) => self.fmt_err(&format!(
+                "'{}' has no field named '{}'",
+                struct_name, field_name
+            )),
+            ResolveErrorType::Inference(_) => self.fmt_err("type cannot be inferred"),
         };
 
         write!(f, "{}", s)
@@ -100,7 +85,11 @@ pub enum ResolveErrorType<'src> {
     IllegalType(IllegalTypeError<'src>),
     NoSuchField(StructFieldError<'src>),
     SelfImport(SelfImportError),
+    Inference(TypeInferenceError),
 }
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct TypeInferenceError;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SelfImportError;

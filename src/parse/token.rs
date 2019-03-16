@@ -4,6 +4,7 @@ use crate::types::Type;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Token<'src> {
+    NullLit,
     Ident(&'src str),
     DecLit(&'src str),
     StringLit(&'src str),
@@ -80,6 +81,7 @@ impl<'src> Token<'src> {
 impl<'src> fmt::Display for Token<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Token::NullLit => write!(f, "null"),
             Token::Ident(ref name) => write!(f, "{}", name),
             Token::StringLit(ref lit) => write!(f, "{}", lit),
             Token::DecLit(lit) => write!(f, "{}", lit.to_string()),
