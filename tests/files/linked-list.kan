@@ -1,7 +1,5 @@
 import io
 
-extern fn free(node: *Node): void;
-
 type Node struct {
     data: i32,
     next: *Node
@@ -34,7 +32,7 @@ fn main(): void {
 
     traverse(first);
 
-    delete third;
+    delete first.next.next;
     delete second;
     delete first;
 }
