@@ -258,7 +258,7 @@ fn construct_tac<'src>(
                 let params = params
                     .params
                     .iter()
-                    .map(|Param(n, ty)| (n.node, *ty))
+                    .map(|Param(n, ty)| (n.node, ty.node))
                     .collect();
                 let ret_type = ret_type.node;
 
@@ -289,6 +289,7 @@ pub fn compile<'src, W: Write>(
     writer: &mut W,
 ) -> Result<Mir<'src>, CompilationError> {
     init_ansi();
+    println!("Parsing...");
     let (mut ast_sources, err_count) = ast_sources(sources);
 
     if err_count != 0 {
@@ -307,8 +308,10 @@ pub fn compile<'src, W: Write>(
     }
 
     let main = main.unwrap();
+    println!("Type checking...");
     let symbols = type_check(main, &mut ast_sources, writer)?;
 
+    println!("Constructing mir...");
     let mir = construct_tac(main, &ast_sources, symbols);
 
     Ok(mir)

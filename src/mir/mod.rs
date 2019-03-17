@@ -130,9 +130,11 @@ impl<'src> Tac<'src> {
                 Stmt::Expr(e) => {
                     self.expr_instr(&e.node, &mut block);
                 }
-                Stmt::VarDecl {
-                    name, value, ty, ..
-                } => {
+                Stmt::VarDecl(decl) => {
+                    let VarDecl {
+                        name, value, ty, ..
+                    } = decl.as_ref();
+
                     let expr = if let Some(rval) = self.address_expr(&value.node) {
                         rval.into()
                     } else {

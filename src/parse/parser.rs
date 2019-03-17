@@ -159,7 +159,10 @@ where
                 let triple_dot = self.consume(Token::TripleDot)?;
                 varargs = true;
                 let spanned = Spanned::from_span(triple_dot.span, "...");
-                params.push(Param::new(spanned, Type::Simple(Simple::Varargs)));
+                params.push(Param::new(
+                    spanned,
+                    Spanned::from_span(triple_dot.span, Type::Simple(Simple::Varargs)),
+                ));
                 // ... has to be the last param
                 // TODO: replace consume error with special error
                 break;
@@ -169,7 +172,7 @@ where
             self.consume(Token::Colon)?;
             // TODO: user defined types
             let ty = self.consume_type()?;
-            params.push(Param::new(ident, ty.node));
+            params.push(Param::new(ident, ty));
 
             if !self.peek_eq(Token::RParen) {
                 self.consume(Token::Comma)?;
@@ -298,12 +301,12 @@ where
         let eq = self.consume(Token::Equals)?;
 
         let value = self.expression()?;
-        Ok(Stmt::VarDecl {
+        Ok(Stmt::VarDecl(Box::new(VarDecl {
             name,
             value,
             eq,
             ty,
-        })
+        })))
     }
 
     pub fn expression(&mut self) -> ExprResult<'src> {
@@ -1049,12 +1052,12 @@ mod tests {
                 ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
-                body: Block(vec![Stmt::VarDecl {
+                body: Block(vec![Stmt::VarDecl(Box::new(VarDecl {
                     name: Spanned::new(22, 24, "var"),
                     value: Spanned::new(28, 28, Expr::new(ExprKind::DecLit("5"))),
                     eq: Spanned::new(26, 26, Token::Equals),
                     ty: Cell::new(None)
-                }])
+                }))])
             }]),
             prg
         );

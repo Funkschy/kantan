@@ -17,8 +17,8 @@ pub mod symbol;
 
 #[derive(Clone)]
 struct FunctionDefinition<'src> {
-    ret_type: Type<'src>,
-    params: Vec<Type<'src>>,
+    ret_type: Spanned<Type<'src>>,
+    params: Vec<Spanned<Type<'src>>>,
     varargs: bool,
 }
 
@@ -74,11 +74,38 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
         // TODO: check for recursive type defs
 
+        // Check if every field of a user defined type in every struct is defined
+        for (_, type_def) in self.user_types.iter() {
+            for (_, (_, ty)) in type_def.fields.iter() {
+                self.check_user_type_defined(ty, &mut errors);
+            }
+        }
+
+        for (_, func_def) in self.functions.iter() {
+            self.check_user_type_defined(&func_def.ret_type, &mut errors);
+            for p_ty in func_def.params.iter() {
+                self.check_user_type_defined(p_ty, &mut errors);
+            }
+        }
+
         for top_lvl in &prg.0 {
             self.resolve_top_lvl(&top_lvl, &mut errors);
         }
 
         errors
+    }
+
+    fn check_user_type_defined(
+        &self,
+        ty: &Spanned<Type<'src>>,
+        errors: &mut Vec<ResolveError<'src>>,
+    ) {
+        if let Simple::UserType(type_name) = ty.node.simple() {
+            if !self.user_types.contains_key(type_name.to_owned()) {
+                let err = self.not_defined_error(ty.span, ty.span, type_name);
+                errors.push(err);
+            }
+        }
     }
 
     fn declare_top_lvl(
@@ -107,7 +134,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
                 let func_params = params.params.iter().map(|Param(_, ty)| *ty).collect();
                 let func_def = FunctionDefinition {
-                    ret_type: ret_type.node,
+                    ret_type: *ret_type,
                     params: func_params,
                     varargs,
                 };
@@ -171,7 +198,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             self.sym_table.scope_enter();
 
             for p in &params.params {
-                self.sym_table.bind(p.0.node, p.0.span, p.1, true);
+                self.sym_table.bind(p.0.node, p.0.span, p.1.node, true);
             }
 
             if !*is_extern {
@@ -186,12 +213,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
     fn resolve_stmt(&mut self, stmt: &Stmt<'src>, errors: &mut Vec<ResolveError<'src>>) {
         match stmt {
-            Stmt::VarDecl {
-                name,
-                ref value,
-                eq,
-                ty: ref var_type,
-            } => {
+            Stmt::VarDecl(decl) => {
+                let VarDecl {
+                    name,
+                    ref value,
+                    eq,
+                    ty: ref var_type,
+                } = decl.as_ref();
+
                 let expected = if let Some(ty) = var_type.get() {
                     Some(ty.node)
                 } else {
@@ -389,15 +418,15 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ExprKind::Deref(op, expr) => {
                 let ty = self.resolve_expr(expr.span, &expr.node, None)?;
                 if let Type::Pointer(mut ptr) = ty {
-                    return Ok(Some(if ptr.number > 1 {
+                    Ok(Some(if ptr.number > 1 {
                         ptr.number -= 1;
                         Type::Pointer(ptr)
                     } else {
                         Type::Simple(ptr.ty)
-                    }));
+                    }))
+                } else {
+                    Err(self.error(op.span, span, ResolveErrorType::Deref(NonPtrError(ty))))
                 }
-
-                Err(self.error(op.span, span, ResolveErrorType::Deref(NonPtrError(ty))))
             }
             ExprKind::Binary(l, op, r) => {
                 let left = self.resolve_expr(l.span, &l.node, None)?;
@@ -554,18 +583,23 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     params = Vec::with_capacity(args.0.len());
                     let diff = args.0.len() - type_params.len();
 
+                    let varargs_span = func_type.params.last().unwrap().span;
+
                     params.append(&mut type_params);
                     for _ in 0..diff {
                         // fill difference with void pointers
-                        params.push(Type::Pointer(Pointer::new(1, Simple::Void)));
+                        params.push(Spanned::from_span(
+                            varargs_span,
+                            Type::Pointer(Pointer::new(1, Simple::Void)),
+                        ));
                     }
 
                     args.0.iter().zip(params.iter())
                 };
 
-                for (Spanned { node: expr, span }, param_type) in iter {
-                    let ty = self.resolve_expr(*span, &expr, Some(*param_type))?;
-                    arg_types.push((*span, ty));
+                for (arg_type, param_type) in iter {
+                    let ty = self.resolve_expr(arg_type.span, &expr, Some(param_type.node))?;
+                    arg_types.push((arg_type.span, ty));
                 }
 
                 let arg_error = func_type
@@ -574,7 +608,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .zip(arg_types.iter())
                     .filter_map(|(p, (arg_span, a))| {
                         // compare arguments to expected parameters
-                        if let Err(err) = self.compare_types(*arg_span, span, *p, *a, "argument") {
+                        if let Err(err) =
+                            self.compare_types(*arg_span, span, p.node, *a, "argument")
+                        {
                             return Some(err);
                         }
                         None
@@ -584,10 +620,10 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .next();
 
                 if let Some(err) = arg_error {
-                    return Err(err);
+                    Err(err)
+                } else {
+                    Ok(Some(func_type.ret_type.node))
                 }
-
-                Ok(Some(func_type.ret_type))
             }
         }
     }
@@ -894,12 +930,12 @@ mod tests {
             ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
             params: ParamList::default(),
             is_extern: false,
-            body: Block(vec![Stmt::VarDecl {
+            body: Block(vec![Stmt::VarDecl(Box::new(VarDecl {
                 name: Spanned::new(22, 22, "x"),
                 value: Spanned::new(26, 28, Expr::new(ExprKind::DecLit("10"))),
                 eq: Spanned::new(24, 24, Token::Equals),
                 ty: Cell::new(None),
-            }]),
+            }))]),
         }]);
 
         let mut map = HashMap::new();
@@ -912,8 +948,8 @@ mod tests {
         assert_eq!(expected, errors);
 
         if let TopLvl::FnDecl { body, .. } = &(&map["test"].1).0[0] {
-            if let Stmt::VarDecl { value, .. } = &body.0[0] {
-                assert_eq!(value.node.ty(), Some(Type::Simple(Simple::I32)));
+            if let Stmt::VarDecl(decl) = &body.0[0] {
+                assert_eq!(decl.value.node.ty(), Some(Type::Simple(Simple::I32)));
                 return;
             }
         }
@@ -931,12 +967,12 @@ mod tests {
             params: ParamList::default(),
             is_extern: false,
             body: Block(vec![
-                Stmt::VarDecl {
+                Stmt::VarDecl(Box::new(VarDecl {
                     name: Spanned::new(22, 22, "x"),
                     value: Spanned::new(26, 28, Expr::new(ExprKind::DecLit("10"))),
                     eq: Spanned::new(24, 24, Token::Equals),
                     ty: Cell::new(None),
-                },
+                })),
                 Stmt::Expr(Spanned::new(
                     30,
                     35,

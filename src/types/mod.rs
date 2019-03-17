@@ -13,6 +13,13 @@ impl<'src> Type<'src> {
             _ => false,
         }
     }
+
+    pub fn simple(&self) -> &Simple<'src> {
+        match self {
+            Type::Simple(s) => &s,
+            Type::Pointer(p) => &p.ty,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]

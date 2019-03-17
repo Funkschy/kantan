@@ -33,13 +33,7 @@ pub enum TypeDef<'src> {
 // TODO: refactor Spanned<&'src str> to identifier
 #[derive(Debug, Eq, PartialEq)]
 pub enum Stmt<'src> {
-    VarDecl {
-        name: Spanned<&'src str>,
-        value: Spanned<Expr<'src>>,
-        eq: Spanned<Token<'src>>,
-        // is filled in by resolver if necessary
-        ty: Cell<Option<Spanned<Type<'src>>>>,
-    },
+    VarDecl(Box<VarDecl<'src>>),
     If {
         condition: Spanned<Expr<'src>>,
         then_block: Block<'src>,
@@ -52,6 +46,14 @@ pub enum Stmt<'src> {
     Return(Option<Spanned<Expr<'src>>>),
     Delete(Box<Spanned<Expr<'src>>>),
     Expr(Spanned<Expr<'src>>),
+}
+#[derive(Debug, Eq, PartialEq)]
+pub struct VarDecl<'src> {
+    pub name: Spanned<&'src str>,
+    pub value: Spanned<Expr<'src>>,
+    pub eq: Spanned<Token<'src>>,
+    // is filled in by resolver if necessary
+    pub ty: Cell<Option<Spanned<Type<'src>>>>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -70,10 +72,10 @@ pub struct ParamList<'src> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Param<'src>(pub Spanned<&'src str>, pub Type<'src>);
+pub struct Param<'src>(pub Spanned<&'src str>, pub Spanned<Type<'src>>);
 
 impl<'src> Param<'src> {
-    pub fn new(ident: Spanned<&'src str>, ty: Type<'src>) -> Self {
+    pub fn new(ident: Spanned<&'src str>, ty: Spanned<Type<'src>>) -> Self {
         Param(ident, ty)
     }
 }

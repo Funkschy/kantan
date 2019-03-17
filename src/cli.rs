@@ -23,9 +23,9 @@ pub fn report_errors<W: Write>(source: &Source, prg: &Program, writer: &mut W) -
 fn find_errors(prg: &Program) -> Vec<(Span, String)> {
     fn find_errors_rec(stmt: &Stmt, errors: &mut Vec<(Span, String)>) {
         match stmt {
-            Stmt::VarDecl { value, .. } => {
-                if value.node.is_err() {
-                    errors.push((value.span, value.node.to_string()))
+            Stmt::VarDecl(decl) => {
+                if decl.value.node.is_err() {
+                    errors.push((decl.value.span, decl.value.node.to_string()))
                 }
             }
             Stmt::Expr(Spanned { node: expr, span }) => {
