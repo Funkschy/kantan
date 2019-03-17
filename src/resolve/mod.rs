@@ -568,8 +568,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
             ExprKind::Call { callee, args } => {
                 // TODO: replace with proper resolution to enable UFCS
-                let callee_name = dbg!(self.current_source().slice(callee.span));
-                dbg!(&self.functions);
+                let callee_name = self.current_source().slice(callee.span);
+                &self.functions;
 
                 let func_type = self
                     .functions
@@ -602,6 +602,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // Thats why the difference between params and args is filled with void
                     // pointers
                     let mut type_params = func_type.params.clone();
+                    // TODO: fix underflow
                     params = Vec::with_capacity(args.0.len());
                     let diff = args.0.len() - type_params.len();
 
