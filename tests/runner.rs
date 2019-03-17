@@ -9,7 +9,7 @@ fn compile(name: &str) {
         .expect("Failed to execute kantan");
 }
 
-fn link(name: &str) {
+fn link(name: &str, program_name: &str) {
     let stderr = Command::new("gcc")
         .args(&[name, "-o", "test.exe"])
         .output()
@@ -21,7 +21,7 @@ fn link(name: &str) {
         eprintln!("{}", s);
     }
 
-    assert_eq!(0, stderr.len());
+    assert_eq!(0, stderr.len(), "Linking failed for {}", program_name);
 }
 
 fn execute() -> String {
@@ -71,7 +71,7 @@ fn test_all_files() {
         }
 
         compile(&name);
-        link(NAME);
+        link(NAME, &name);
         let output = execute();
         let expected = get_expected(&name);
         let leak_free = valgrind();

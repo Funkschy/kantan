@@ -15,7 +15,7 @@ mod error;
 #[allow(dead_code)]
 pub mod symbol;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct FunctionDefinition<'src> {
     ret_type: Spanned<Type<'src>>,
     params: Vec<Spanned<Type<'src>>>,
@@ -379,11 +379,32 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         expr: &Expr<'src>,
         expected: Option<Type<'src>>,
     ) -> Result<Type<'src>, ResolveError<'src>> {
+        let mut queue = expr.sub_exprs();
+        let mut exprs = Vec::with_capacity(queue.len());
+
+        // fill with all sub-sub... expressions
+        // basically a BFS
+        while !queue.is_empty() {
+            let e = queue.pop().unwrap();
+            let mut subs = e.sub_exprs();
+            exprs.push(e);
+            queue.append(&mut subs);
+        }
+
+        // check child expressions
+        for expr in exprs.iter().rev() {
+            let opt_ty = self.check_expr(span, expr)?;
+            // if the type is there already, fill it in
+            if let Some(ty) = opt_ty {
+                expr.set_ty(ty);
+            }
+        }
+
+        // check actual expression
         let opt_ty = self.check_expr(span, expr)?;
         let ty = self.ty_unwrap(span, opt_ty, expected)?;
         // Insert type information
         expr.set_ty(ty);
-
         Ok(ty)
     }
 
@@ -398,7 +419,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             }
             ExprKind::NullLit => Ok(None),
             ExprKind::New(expr) => {
-                let ty = self.resolve_expr(expr.span, &expr.node, None)?;
+                let ty = self.resolve_type(expr, None)?;
 
                 if let Type::Simple(ty) = ty {
                     Ok(Some(Type::Pointer(Pointer::new(1, ty))))
@@ -410,13 +431,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ExprKind::DecLit(_) => Ok(Some(Type::Simple(Simple::I32))),
             ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
             ExprKind::Negate(op, expr) => {
-                let ty = self.resolve_expr(expr.span, &expr.node, None)?;
+                let ty = self.resolve_type(expr, None)?;
                 // TODO: unary operation error
                 Some(self.compare_binary_types(op.span, span, ty, Type::Simple(Simple::I32)))
                     .transpose()
             }
             ExprKind::Deref(op, expr) => {
-                let ty = self.resolve_expr(expr.span, &expr.node, None)?;
+                let ty = self.resolve_type(expr, None)?;
                 if let Type::Pointer(mut ptr) = ty {
                     Ok(Some(if ptr.number > 1 {
                         ptr.number -= 1;
@@ -429,14 +450,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             ExprKind::Binary(l, op, r) => {
-                let left = self.resolve_expr(l.span, &l.node, None)?;
-                let right = self.resolve_expr(r.span, &r.node, None)?;
+                let left = self.resolve_type(l, None)?;
+                let right = self.resolve_type(r, None)?;
 
                 Some(self.compare_binary_types(op.span, span, left, right)).transpose()
             }
             ExprKind::BoolBinary(l, op, r) => {
-                let left = self.resolve_expr(l.span, &l.node, None);
-                let right = self.resolve_expr(r.span, &r.node, None);
+                let left = self.resolve_type(l, None);
+                let right = self.resolve_type(r, None);
 
                 let (left, right) = if let Err(ResolveError {
                     error: ResolveErrorType::Inference(TypeInferenceError),
@@ -446,7 +467,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // if left could not be resolved, but right could, try to resolve left again,
                     // but with the expected type of right
                     let right = right?;
-                    let left = self.resolve_expr(l.span, &l.node, Some(right))?;
+                    let left = self.resolve_type(l, Some(right))?;
                     (left, right)
                 } else if let Err(ResolveError {
                     error: ResolveErrorType::Inference(TypeInferenceError),
@@ -455,7 +476,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 {
                     // the same as above, but inverted
                     let left = left?;
-                    let right = self.resolve_expr(r.span, &r.node, Some(left))?;
+                    let right = self.resolve_type(r, Some(left))?;
                     (left, right)
                 } else {
                     (left?, right?)
@@ -466,7 +487,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             }
             // currently only field access
             ExprKind::Access { left, identifier } => {
-                let left_ty = self.resolve_expr(left.span, &left.node, None)?;
+                let left_ty = self.resolve_type(left, None)?;
                 match left_ty {
                     // if the type is either a struct or a pointer to (pointer to ...) a struct
                     Type::Simple(Simple::UserType(type_name))
@@ -489,7 +510,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     let user_type = self.get_user_type(*identifier)?;
                     let field_type = self.get_field(&user_type, name)?;
 
-                    let val_type = self.resolve_expr(value.span, &value.node, Some(field_type))?;
+                    let val_type = self.resolve_type(value, Some(field_type))?;
                     self.compare_types(value.span, span, field_type, val_type, "struct literal")?
                 }
                 Ok(Some(Type::Simple(Simple::UserType(identifier.node))))
@@ -509,7 +530,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     };
 
                     // get type of right expression
-                    let val_type = self.resolve_expr(value.span, &value.node, Some(ty))?;
+                    let val_type = self.resolve_type(value, Some(ty))?;
                     // check if type of right expression is the same as that of
                     // the declared variable
                     Some(
@@ -530,11 +551,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     )
                     .transpose()
                 } else {
-                    let ty = self.resolve_expr(left.span, &left.node, None)?;
+                    let ty = self.resolve_type(left, None)?;
 
                     // get type of right expression
                     // the type of left is the expected type for the right expr
-                    let val_type = self.resolve_expr(value.span, &value.node, Some(ty))?;
+                    let val_type = self.resolve_type(value, Some(ty))?;
 
                     Some(self.compare_binary_types(eq.span, span, ty, val_type)).transpose()
                 }
@@ -547,7 +568,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
             ExprKind::Call { callee, args } => {
                 // TODO: replace with proper resolution to enable UFCS
-                let callee_name = self.current_source().slice(callee.span);
+                let callee_name = dbg!(self.current_source().slice(callee.span));
+                dbg!(&self.functions);
 
                 let func_type = self
                     .functions
@@ -597,9 +619,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     args.0.iter().zip(params.iter())
                 };
 
-                for (arg_type, param_type) in iter {
-                    let ty = self.resolve_expr(arg_type.span, &expr, Some(param_type.node))?;
-                    arg_types.push((arg_type.span, ty));
+                for (arg, param_type) in iter {
+                    let ty = self.resolve_type(arg, Some(param_type.node))?;
+                    arg_types.push((arg.span, ty));
                 }
 
                 let arg_error = func_type
@@ -650,6 +672,18 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             }
         }
         Err(self.type_inference_error(span))
+    }
+
+    fn resolve_type(
+        &self,
+        expr: &Spanned<Expr<'src>>,
+        expected: Option<Type<'src>>,
+    ) -> Result<Type<'src>, ResolveError<'src>> {
+        let ty = self.ty_unwrap(expr.span, expr.node.ty(), expected);
+        if let Ok(ty) = ty {
+            expr.node.set_ty(ty);
+        }
+        ty
     }
 
     fn type_inference_error(&self, span: Span) -> ResolveError<'src> {
