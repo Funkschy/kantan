@@ -569,7 +569,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ExprKind::Call { callee, args } => {
                 // TODO: replace with proper resolution to enable UFCS
                 let callee_name = self.current_source().slice(callee.span);
-                &self.functions;
 
                 let func_type = self
                     .functions
@@ -578,6 +577,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .clone();
 
                 let varargs = func_type.varargs;
+                let no_vararg_passed = func_type.params.len() == args.0.len() + 1;
 
                 // don't check number of arguments for variadic functions
                 if !varargs && func_type.params.len() != args.0.len() {
@@ -591,18 +591,27 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
                 // resolve arguments
                 let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
-
-                let mut params;
+                let mut params: Vec<Spanned<Type<'src>>>;
 
                 let iter = if !varargs {
                     args.0.iter().zip(func_type.params.iter())
+                } else if no_vararg_passed {
+                    // the function is varargs, but no value was passed for the variadic parameter,
+                    // therefore skip last param
+                    params = func_type
+                        .params
+                        .iter()
+                        .take(func_type.params.len() - 1)
+                        .cloned()
+                        .collect();
+
+                    args.0.iter().zip(params.iter())
                 } else {
                     // if the function is varargs, the number of arguments does not correspond to
                     // the number of params, so simply zipping them would cut of some args.
                     // Thats why the difference between params and args is filled with void
                     // pointers
                     let mut type_params = func_type.params.clone();
-                    // TODO: fix underflow
                     params = Vec::with_capacity(args.0.len());
                     let diff = args.0.len() - type_params.len();
 
