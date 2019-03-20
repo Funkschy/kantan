@@ -223,14 +223,14 @@ where
         }
 
         // If no statement rule applies, assume an expression
-        let expr = self.expression()?;
+        let expr = self.expression(false)?;
         self.consume(Token::Semi)?;
         Ok(Stmt::Expr(expr))
     }
 
     fn delete_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::Delete)?;
-        let expr = self.expression()?;
+        let expr = self.expression(false)?;
         self.consume(Token::Semi)?;
 
         Ok(Stmt::Delete(Box::new(expr)))
@@ -238,7 +238,7 @@ where
 
     fn while_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::While)?;
-        let condition = self.expression()?;
+        let condition = self.expression(true)?;
         let body = self.block()?;
 
         Ok(Stmt::While { condition, body })
@@ -250,7 +250,7 @@ where
         let ret = Ok(Stmt::Return(if self.peek_eq(Token::Semi) {
             None
         } else {
-            Some(self.expression()?)
+            Some(self.expression(false)?)
         }));
 
         self.consume(Token::Semi)?;
@@ -260,7 +260,7 @@ where
     fn if_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::If)?;
 
-        let condition = self.expression()?;
+        let condition = self.expression(true)?;
         let then_block = self.block()?;
 
         let else_branch = if self.peek_eq(Token::Else) {
@@ -300,7 +300,7 @@ where
 
         let eq = self.consume(Token::Equals)?;
 
-        let value = self.expression()?;
+        let value = self.expression(false)?;
         Ok(Stmt::VarDecl(Box::new(VarDecl {
             name,
             value,
@@ -309,11 +309,11 @@ where
         })))
     }
 
-    pub fn expression(&mut self) -> ExprResult<'src> {
-        let mut left = self.parse_expression(Precedence::Assign)?;
+    pub fn expression(&mut self, no_struct: bool) -> ExprResult<'src> {
+        let mut left = self.parse_expression(Precedence::Assign, no_struct)?;
         while self.peek_eq(Token::Equals) {
             let eq = self.consume(Token::Equals)?;
-            let value = Box::new(self.parse_expression(Precedence::Assign)?);
+            let value = Box::new(self.parse_expression(Precedence::Assign, no_struct)?);
             left = Spanned::new(
                 left.span.start,
                 value.span.end,
@@ -328,13 +328,13 @@ where
         Ok(left)
     }
 
-    fn parse_expression(&mut self, precedence: Precedence) -> ExprResult<'src> {
+    fn parse_expression(&mut self, precedence: Precedence, no_struct: bool) -> ExprResult<'src> {
         let token = self.advance()?;
-        let mut left = self.prefix(&token)?;
+        let mut left = self.prefix(&token, no_struct)?;
 
-        while self.next_higher_precedence(precedence) {
+        while self.next_higher_precedence(precedence, no_struct) {
             let token = self.advance()?;
-            left = self.infix(&token, left)?;
+            left = self.infix(&token, left, no_struct)?;
         }
 
         Ok(left)
@@ -468,9 +468,12 @@ where
         self.eof()
     }
 
-    fn next_higher_precedence(&mut self, precedence: Precedence) -> bool {
+    fn next_higher_precedence(&mut self, precedence: Precedence, no_struct: bool) -> bool {
         self.scanner.peek().map_or(false, |scanned| {
             if let Ok(spanned) = scanned {
+                if let Token::LBrace = spanned.node {
+                    return !no_struct && spanned.node.precedence() > precedence;
+                }
                 spanned.node.precedence() > precedence
             } else {
                 false
@@ -482,6 +485,7 @@ where
         &mut self,
         token: &Spanned<Token<'src>>,
         left: Spanned<Expr<'src>>,
+        no_struct: bool,
     ) -> ExprResult<'src> {
         let tok = token.node;
         match tok {
@@ -492,7 +496,7 @@ where
             | Token::Minus
             | Token::Star
             | Token::Slash => {
-                let right = self.parse_expression(tok.precedence())?;
+                let right = self.parse_expression(tok.precedence(), no_struct)?;
                 let right_span = right.span;
                 let left_span = left.span;
 
@@ -523,6 +527,20 @@ where
                     }),
                 ))
             }
+            Token::LBrace => {
+                let init_list = self.init_list()?;
+                let brace = self.consume(Token::RBrace)?;
+                // TODO: refactor StructInit to take an expr as its ident
+                let ident = &self.source[left.span.start..=left.span.end];
+                let span = Span::new(token.span.start, brace.span.end);
+                Ok(Spanned::from_span(
+                    span,
+                    Expr::new(ExprKind::StructInit {
+                        identifier: Spanned::from_span(left.span, ident),
+                        fields: init_list,
+                    }),
+                ))
+            }
             Token::LParen => {
                 let valid = match left.node.kind() {
                     ExprKind::Ident(_) | ExprKind::Access { .. } => true,
@@ -550,7 +568,7 @@ where
         }
     }
 
-    fn prefix(&mut self, token: &Spanned<Token<'src>>) -> ExprResult<'src> {
+    fn prefix(&mut self, token: &Spanned<Token<'src>>, no_struct: bool) -> ExprResult<'src> {
         let ok_spanned = |kind| Ok(Spanned::from_span(token.span, Expr::new(kind)));
 
         match token.node {
@@ -558,19 +576,20 @@ where
             Token::DecLit(lit) => ok_spanned(ExprKind::DecLit(lit)),
             Token::StringLit(lit) => ok_spanned(ExprKind::StringLit(lit)),
             Token::New => {
-                let expr = self.expression()?;
+                let expr = self.expression(no_struct)?;
                 let new = ExprKind::New(Box::new(Spanned::from_span(expr.span, expr.node)));
                 Ok(Spanned::from_span(expr.span, Expr::new(new)))
             }
             Token::LParen => {
-                let mut expr = self.expression()?;
+                // ignore no_struct, because it's in parentheses
+                let mut expr = self.expression(false)?;
                 self.consume(Token::RParen)?;
                 expr.span.start -= 1;
                 expr.span.end += 1;
                 Ok(expr)
             }
             Token::Minus => {
-                let next = self.expression()?;
+                let next = self.expression(no_struct)?;
 
                 Ok(Spanned::new(
                     token.span.start,
@@ -580,7 +599,7 @@ where
             }
             Token::Star => {
                 // TODO: change false Precedence
-                let next = self.parse_expression(Precedence::Sum)?;
+                let next = self.parse_expression(Precedence::Sum, no_struct)?;
 
                 Ok(Spanned::new(
                     token.span.start,
@@ -614,7 +633,7 @@ where
         while !self.at_end() && !self.peek_eq(Token::RBrace) {
             let ident = self.consume_ident()?;
             self.consume(Token::Colon)?;
-            let expr = self.expression()?;
+            let expr = self.expression(false)?;
             inits.push((ident, expr));
             if !self.peek_eq(Token::RBrace) {
                 self.consume(Token::Comma)?;
@@ -628,7 +647,7 @@ where
         let mut args = vec![];
 
         while !self.at_end() && !self.peek_eq(Token::RParen) {
-            args.push(self.expression()?);
+            args.push(self.expression(false)?);
             if !self.peek_eq(Token::RParen) {
                 self.consume(Token::Comma)?;
             }
@@ -744,7 +763,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        parser.expression().unwrap();
+        parser.expression(false).unwrap();
     }
 
     #[test]
@@ -1119,7 +1138,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap().node;
+        let expr = parser.expression(false).unwrap().node;
         assert_eq!(Expr::new(ExprKind::DecLit("42")), expr);
     }
 
@@ -1129,7 +1148,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression(false).unwrap();
         assert_eq!(
             Spanned {
                 node: Expr::new(ExprKind::Binary(
@@ -1154,7 +1173,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression(false).unwrap();
         assert_eq!(
             Spanned {
                 node: Expr::new(ExprKind::Binary(
@@ -1179,7 +1198,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression(false).unwrap();
         assert_eq!(
             Spanned {
                 node: Expr::new(ExprKind::Binary(
@@ -1204,7 +1223,7 @@ mod tests {
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression(false).unwrap();
         assert_eq!(
             Spanned {
                 node: Expr::new(ExprKind::Binary(

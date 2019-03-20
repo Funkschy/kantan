@@ -75,7 +75,7 @@ impl<'src> Token<'src> {
             Token::Smaller | Token::SmallerEquals => Precedence::Comparison,
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
-            Token::LParen | Token::Dot => Precedence::Call,
+            Token::LParen | Token::Dot | Token::LBrace => Precedence::Call,
             _ => Precedence::None,
         }
     }
