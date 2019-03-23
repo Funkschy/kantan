@@ -4,8 +4,9 @@ use llvm_sys::{analysis::*, core::*, prelude::*, LLVMIntPredicate, LLVMLinkage, 
 
 use crate::{
     mir::{address::*, tac::*},
+    resolve::ModTypeMap,
     types::*,
-    Mir, UserTypeDefinition, UserTypeMap,
+    Mir, UserTypeDefinition,
 };
 
 const ADDRESS_SPACE: u32 = 0;
@@ -25,14 +26,14 @@ pub struct KantanLLVMContext {
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
     blocks: HashMap<Label, LLVMBasicBlockRef>,
-    user_types: HashMap<String, LLVMTypeRef>,
+    user_types: HashMap<String, HashMap<String, LLVMTypeRef>>,
     // TODO: make hashmap to save memory
     strings: Vec<CString>,
     intrinsics: Vec<LLVMValueRef>,
 }
 
 impl KantanLLVMContext {
-    pub fn new(name: &str, types: &UserTypeMap) -> Self {
+    pub fn new(name: &str, types: &ModTypeMap) -> Self {
         unsafe {
             let name = CString::new(name).unwrap().into_raw();
 
@@ -64,14 +65,20 @@ impl KantanLLVMContext {
 
             ctx.add_intrinsics();
 
-            for (n, _ty) in types.iter() {
-                // forward declaration of types
-                let s = LLVMStructCreateNamed(ctx.context, ctx.cstring(n));
-                ctx.user_types.insert(n.to_owned(), s);
+            for (m, typemap) in types.iter() {
+                let mut structs = HashMap::new();
+                for (n, _ty) in typemap.iter() {
+                    // forward declaration of types
+                    let s = LLVMStructCreateNamed(ctx.context, ctx.cstring(n));
+                    structs.insert(n.to_string(), s);
+                }
+                ctx.user_types.insert(m.to_string(), structs);
             }
 
-            for (n, ty) in types.iter() {
-                ctx.add_llvm_struct(n, ty);
+            for (m, typemap) in types.iter() {
+                for (n, ty) in typemap.iter() {
+                    ctx.add_llvm_struct(m, n, ty);
+                }
             }
 
             ctx
@@ -102,14 +109,14 @@ impl KantanLLVMContext {
         self.intrinsics.push(memcpy_func);
     }
 
-    unsafe fn add_llvm_struct(&mut self, name: &str, def: &UserTypeDefinition) {
+    unsafe fn add_llvm_struct(&mut self, module: &str, name: &str, def: &UserTypeDefinition) {
         let mut fields = vec![ptr::null_mut(); def.fields.len()];
 
         for (_, (i, ty)) in def.fields.iter() {
             fields[*i as usize] = self.convert(ty.node);
         }
 
-        let s = self.user_types[name];
+        let s = self.user_types[module][name];
         LLVMStructSetBody(s, fields.as_mut_ptr(), fields.len() as u32, false as i32);
     }
 }
@@ -156,6 +163,10 @@ impl KantanLLVMContext {
         )
     }
 
+    fn get_user_type(&self, user_ty: &StructIdent) -> LLVMTypeRef {
+        self.user_types[user_ty.module()][user_ty.name()]
+    }
+
     unsafe fn convert(&self, ty: Type) -> LLVMTypeRef {
         match ty {
             Type::Simple(ty) => match ty {
@@ -165,7 +176,7 @@ impl KantanLLVMContext {
                 Simple::String => {
                     LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
                 }
-                Simple::UserType(name) => self.user_types[name],
+                Simple::UserType(user_ty) => self.get_user_type(&user_ty),
                 // varargs is just handled as a type for convenience
                 Simple::Varargs => panic!("Varargs is not a real type"),
             },
@@ -365,9 +376,9 @@ impl KantanLLVMContext {
                 }
 
                 // translate_mir_expr allocas a new struct, which needs to be memcpyed
-                if let Expression::StructInit(identifier, _) = e {
+                if let Expression::StructInit(identifier, _) = e.as_ref() {
                     let dest = self.name_table[&n];
-                    let ty = self.user_types[identifier.to_owned()];
+                    let ty = self.get_user_type(identifier);
                     self.build_memcpy(dest, expr, ty);
                 } else if let Some(ptr) = self.name_table.get(&n) {
                     LLVMBuildStore(self.builder, expr, *ptr);
@@ -494,7 +505,7 @@ impl KantanLLVMContext {
                 LLVMBuildStructGEP(self.builder, address, *idx, self.cstring("ptr"))
             }
             Expression::StructInit(identifier, values) => {
-                let struct_ty = self.user_types[identifier.to_owned()];
+                let struct_ty = self.get_user_type(identifier);
                 let struct_alloca =
                     LLVMBuildAlloca(self.builder, struct_ty, self.cstring("structtmp"));
                 for (i, value) in values.iter().enumerate() {

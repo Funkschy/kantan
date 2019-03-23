@@ -12,7 +12,7 @@ mod types;
 use self::{
     mir::{func::Func, tac::Label, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
-    resolve::{ResolveResult, Resolver},
+    resolve::{ModTypeMap, ResolveResult, Resolver},
     types::Type,
 };
 
@@ -39,7 +39,7 @@ impl<'src> fmt::Display for UserTypeDefinition<'src> {
     }
 }
 
-pub type UserTypeMap<'src> = HashMap<String, UserTypeDefinition<'src>>;
+pub type UserTypeMap<'src> = HashMap<&'src str, UserTypeDefinition<'src>>;
 
 #[derive(Debug)]
 pub struct Source {
@@ -141,7 +141,7 @@ fn parse<'src>(sources: &'src [Source]) -> (Vec<Program<'src>>, usize) {
     sources
         .iter()
         .fold((vec![], 0), |(mut asts, err_count), source| {
-            let lexer = Lexer::new(&source.code);
+            let lexer = Lexer::new(&source);
             let mut parser = Parser::new(lexer);
             let prg = parser.parse();
             asts.push(prg);
@@ -201,7 +201,7 @@ fn type_check<'src, W: Write>(
 pub struct Mir<'src> {
     pub global_strings: HashMap<Label, &'src str>,
     pub functions: Vec<Func<'src>>,
-    pub types: UserTypeMap<'src>,
+    pub types: ModTypeMap<'src>,
 }
 
 impl<'src> fmt::Display for Mir<'src> {
@@ -209,7 +209,12 @@ impl<'src> fmt::Display for Mir<'src> {
         let types = self
             .types
             .iter()
-            .map(|(_, v)| v.to_string())
+            .flat_map(|(m, types)| {
+                types
+                    .iter()
+                    .map(|(_, v)| format!("{}.{}", m, v))
+                    .collect::<Vec<String>>()
+            })
             .collect::<Vec<String>>()
             .join("\n");
 

@@ -1,7 +1,7 @@
 use std::{cell::Cell, iter::Peekable};
 
 use super::{ast::*, error::LexError, token::*, *};
-use crate::types::*;
+use crate::{types::*, Source};
 
 type ExprResult<'src> = Result<Spanned<Expr<'src>>, Spanned<ParseError<'src>>>;
 type StmtResult<'src> = Result<Stmt<'src>, Spanned<ParseError<'src>>>;
@@ -19,7 +19,7 @@ pub struct Parser<'src, I>
 where
     I: Scanner<'src>,
 {
-    pub(crate) source: &'src str,
+    pub(crate) source: &'src Source,
     pub(crate) err_count: usize,
     scanner: Peekable<I>,
 }
@@ -341,7 +341,7 @@ where
     }
 
     fn eof(&mut self) -> Scanned<'src> {
-        let len = self.source.len();
+        let len = self.source.code.len();
         let span = Span::new(len, len);
         self.make_lex_err(span, "Unexpected end of file")
     }
@@ -409,7 +409,10 @@ where
                         self.advance()?;
                         Ok(Spanned::from_span(
                             span,
-                            Type::Simple(Simple::UserType(ident)),
+                            Type::Simple(Simple::UserType(StructIdent::new(
+                                &self.source.name,
+                                ident,
+                            ))),
                         ))
                     }
                     Spanned {
@@ -530,9 +533,22 @@ where
             Token::LBrace => {
                 let init_list = self.init_list()?;
                 let brace = self.consume(Token::RBrace)?;
-                // TODO: refactor StructInit to take an expr as its ident
-                let ident = &self.source[left.span.start..=left.span.end];
+
                 let span = Span::new(token.span.start, brace.span.end);
+                let ident = match left.node.kind() {
+                    ExprKind::Ident(n) => StructIdent::new(&self.source.name, n),
+                    ExprKind::Access { left, identifier } => {
+                        if let ExprKind::Ident(left) = left.node.kind() {
+                            StructIdent::new(left, identifier.node)
+                        } else {
+                            // TODO: implement
+                            unimplemented!()
+                        }
+                    }
+                    // TODO: implement
+                    _ => unimplemented!(),
+                };
+
                 Ok(Spanned::from_span(
                     span,
                     Expr::new(ExprKind::StructInit {
@@ -615,7 +631,10 @@ where
                         token.span.start,
                         brace.span.end,
                         Expr::new(ExprKind::StructInit {
-                            identifier: Spanned::from_span(token.span, *name),
+                            identifier: Spanned::from_span(
+                                token.span,
+                                StructIdent::new(&self.source.name, name),
+                            ),
                             fields: init_list,
                         }),
                     ))
@@ -729,7 +748,7 @@ mod tests {
 
     #[test]
     fn test_consume_type_pointer_to_pointer() {
-        let source = "**Person";
+        let source = Source::new("main", "**Person");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -738,7 +757,10 @@ mod tests {
             Spanned::new(
                 0,
                 7,
-                Type::Pointer(Pointer::new(2, Simple::UserType("Person")))
+                Type::Pointer(Pointer::new(
+                    2,
+                    Simple::UserType(StructIdent::new("main", "Person"))
+                ))
             ),
             ty
         );
@@ -746,7 +768,7 @@ mod tests {
 
     #[test]
     fn test_consume_type_pointer() {
-        let source = "*i32";
+        let source = Source::new("main", "*i32");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -759,7 +781,7 @@ mod tests {
 
     #[test]
     fn test_parse_assignment_chain() {
-        let source = "x = y = 0";
+        let source = Source::new("main", "x = y = 0");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -768,7 +790,10 @@ mod tests {
 
     #[test]
     fn test_parse_return_struct() {
-        let source = "type Test struct {test: i32, second: bool} fn main(): Test { }";
+        let source = Source::new(
+            "main",
+            "type Test struct {test: i32, second: bool} fn main(): Test { }",
+        );
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -791,7 +816,11 @@ mod tests {
                 TopLvl::FnDecl {
                     name: Spanned::new(46, 49, "main"),
                     params: ParamList::default(),
-                    ret_type: Spanned::new(54, 57, Type::Simple(Simple::UserType("Test"))),
+                    ret_type: Spanned::new(
+                        54,
+                        57,
+                        Type::Simple(Simple::UserType(StructIdent::new("main", "Test")))
+                    ),
                     is_extern: false,
                     body: Block(vec![])
                 }
@@ -802,7 +831,10 @@ mod tests {
 
     #[test]
     fn test_parse_struct_definition() {
-        let source = "type Test struct {test: i32, second: bool} fn main(): void { }";
+        let source = Source::new(
+            "main",
+            "type Test struct {test: i32, second: bool} fn main(): void { }",
+        );
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -836,7 +868,7 @@ mod tests {
 
     #[test]
     fn test_parse_empty_struct_definition() {
-        let source = "type Test struct {} fn main(): void { }";
+        let source = Source::new("main", "type Test struct {} fn main(): void { }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -861,7 +893,7 @@ mod tests {
 
     #[test]
     fn test_parse_while_statement() {
-        let source = "fn main(): void { while 1 == 1 { test(); } }";
+        let source = Source::new("main", "fn main(): void { while 1 == 1 { test(); } }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -902,7 +934,7 @@ mod tests {
 
     #[test]
     fn test_parse_import_access() {
-        let source = "fn main(): void { test.func(); }";
+        let source = Source::new("main", "fn main(): void { test.func(); }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -939,7 +971,7 @@ mod tests {
 
     #[test]
     fn test_parse_import() {
-        let source = "import test\nfn main(): void {}";
+        let source = Source::new("main", "import test\nfn main(): void {}");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -963,7 +995,7 @@ mod tests {
 
     #[test]
     fn test_parse_access_through_identifier() {
-        let source = "fn main(): void { test.fun(); }";
+        let source = Source::new("main", "fn main(): void { test.fun(); }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1000,7 +1032,7 @@ mod tests {
 
     #[test]
     fn test_parse_call_without_args_should_return_call_expr_with_empty_args() {
-        let source = "fn main(): void { test(); }";
+        let source = Source::new("main", "fn main(): void { test(); }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1026,7 +1058,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_one_error_should_have_err_count_of_one() {
-        let source = "fn err(): void { 1 ++ 2; 3 + 4; }";
+        let source = Source::new("main", "fn err(): void { 1 ++ 2; 3 + 4; }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1060,7 +1092,7 @@ mod tests {
 
     #[test]
     fn test_parse_let_with_value_should_return_var_decl_stmt() {
-        let source = "fn main(): void { let var = 5; }";
+        let source = Source::new("main", "fn main(): void { let var = 5; }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1086,7 +1118,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_empty_main_returns_empty_fn_decl() {
-        let source = "fn main(): void {}";
+        let source = Source::new("main", "fn main(): void {}");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1105,7 +1137,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_one_stmt_in_main() {
-        let source = "fn main(): void {1 + 1;}";
+        let source = Source::new("main", "fn main(): void {1 + 1;}");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1134,7 +1166,7 @@ mod tests {
 
     #[test]
     fn test_parsing_number_in_parentheses_should_just_return_number() {
-        let source = "((((42))))";
+        let source = Source::new("main", "((((42))))");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1144,7 +1176,7 @@ mod tests {
 
     #[test]
     fn test_parsing_binary_operations_should_have_correct_precedence() {
-        let source = "1 + 2 * 3";
+        let source = Source::new("main", "1 + 2 * 3");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1169,7 +1201,7 @@ mod tests {
             expr
         );
 
-        let source = "2 * 3 + 1";
+        let source = Source::new("main", "2 * 3 + 1");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1194,7 +1226,7 @@ mod tests {
             expr
         );
 
-        let source = "(2 + 3) * 1";
+        let source = Source::new("main", "(2 + 3) * 1");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1219,7 +1251,7 @@ mod tests {
             expr
         );
 
-        let source = "1 + (2 * 3)";
+        let source = Source::new("main", "1 + (2 * 3)");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 

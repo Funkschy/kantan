@@ -22,9 +22,12 @@ struct FunctionDefinition<'src> {
     varargs: bool,
 }
 
+/// modname -> typename -> typedef
+pub type ModTypeMap<'src> = HashMap<&'src str, UserTypeMap<'src>>;
+
 pub struct ResolveResult<'src> {
     pub symbols: SymbolTable<'src>,
-    pub user_types: UserTypeMap<'src>,
+    pub mod_user_types: ModTypeMap<'src>,
 }
 
 pub(crate) struct Resolver<'src, 'ast> {
@@ -33,7 +36,7 @@ pub(crate) struct Resolver<'src, 'ast> {
     resolved: HashSet<&'src str>,
     pub(crate) sym_table: SymbolTable<'src>,
     functions: HashMap<String, FunctionDefinition<'src>>,
-    user_types: UserTypeMap<'src>,
+    mod_user_types: ModTypeMap<'src>,
     current_func_ret_type: Spanned<Type<'src>>,
 }
 
@@ -45,7 +48,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             resolved: HashSet::new(),
             sym_table: SymbolTable::new(),
             functions: HashMap::new(),
-            user_types: HashMap::new(),
+            mod_user_types: HashMap::new(),
             current_func_ret_type: Spanned::new(0, 0, Type::Simple(Simple::Void)),
         }
     }
@@ -53,46 +56,48 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     pub fn get_result(self) -> ResolveResult<'src> {
         ResolveResult {
             symbols: self.sym_table,
-            user_types: self.user_types,
+            mod_user_types: self.mod_user_types,
         }
     }
 }
 
 impl<'src, 'ast> Resolver<'src, 'ast> {
     pub fn resolve(&mut self) -> Vec<ResolveError<'src>> {
-        self.resolve_prg(None)
+        let mut errors = vec![];
+        self.resolve_prg(None, &mut errors);
+        errors
     }
 
-    fn resolve_prg(&mut self, prefix: Option<&str>) -> Vec<ResolveError<'src>> {
+    fn resolve_prg(&mut self, prefix: Option<&'src str>, errors: &mut Vec<ResolveError<'src>>) {
         let name = &self.current_name;
+        self.mod_user_types.insert(name, HashMap::new());
         let (_, prg) = self.programs.get(name).unwrap();
-        let mut errors = vec![];
 
         for top_lvl in &prg.0 {
-            self.declare_top_lvl(&top_lvl, &mut errors, prefix);
+            self.declare_top_lvl(&top_lvl, errors, prefix);
         }
 
         // TODO: check for recursive type defs
 
         // Check if every field of a user defined type in every struct is defined
-        for (_, type_def) in self.user_types.iter() {
-            for (_, (_, ty)) in type_def.fields.iter() {
-                self.check_user_type_defined(ty, &mut errors);
+        for (_, mod_user_types) in self.mod_user_types.iter() {
+            for (_, type_def) in mod_user_types.iter() {
+                for (_, (_, ty)) in type_def.fields.iter() {
+                    self.check_user_type_defined(ty, errors);
+                }
             }
         }
 
         for (_, func_def) in self.functions.iter() {
-            self.check_user_type_defined(&func_def.ret_type, &mut errors);
+            self.check_user_type_defined(&func_def.ret_type, errors);
             for p_ty in func_def.params.iter() {
-                self.check_user_type_defined(p_ty, &mut errors);
+                self.check_user_type_defined(p_ty, errors);
             }
         }
 
         for top_lvl in &prg.0 {
-            self.resolve_top_lvl(&top_lvl, &mut errors);
+            self.resolve_top_lvl(&top_lvl, errors);
         }
-
-        errors
     }
 
     fn check_user_type_defined(
@@ -101,8 +106,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         errors: &mut Vec<ResolveError<'src>>,
     ) {
         if let Simple::UserType(type_name) = ty.node.simple() {
-            if !self.user_types.contains_key(type_name.to_owned()) {
-                let err = self.not_defined_error(ty.span, ty.span, type_name);
+            let module = type_name.module();
+            if !self.mod_user_types.contains_key(module) {
+                let err = self.not_defined_error(ty.span, ty.span, type_name.name());
                 errors.push(err);
             }
         }
@@ -112,7 +118,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &mut self,
         top_lvl: &TopLvl<'src>,
         errors: &mut Vec<ResolveError<'src>>,
-        prefix: Option<&str>,
+        prefix: Option<&'src str>,
     ) {
         match top_lvl {
             TopLvl::FnDecl {
@@ -154,7 +160,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         let current_name = self.current_name;
                         self.current_name = name.node;
                         self.resolved.insert(name.node);
-                        self.resolve_prg(Some(name.node));
+                        self.resolve_prg(Some(name.node), errors);
                         self.current_name = current_name;
                     } else {
                         errors.push(self.not_defined_error(name.span, name.span, name.node));
@@ -162,9 +168,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             TopLvl::TypeDef(TypeDef::StructDef { name, fields }) => {
-                let full_name = prefix
-                    .map(|prefix| format!("{}.{}", prefix, name.node))
-                    .unwrap_or_else(|| name.node.to_owned());
+                let mod_name = prefix.unwrap_or_else(|| self.current_name);
 
                 let fields = fields
                     .iter()
@@ -177,7 +181,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     fields,
                 };
 
-                self.user_types.insert(full_name, def);
+                // TODO: error for invalid module
+                self.mod_user_types
+                    .get_mut(mod_name)
+                    .unwrap()
+                    .insert(name.node, def);
             }
             TopLvl::Error(err) => {
                 panic!("Invalid top level declaration {:#?}\n{}", top_lvl, err.node)
@@ -495,7 +503,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         ty: Simple::UserType(type_name),
                         ..
                     }) => {
-                        let user_type = self.get_user_type(Spanned::from_span(span, type_name))?;
+                        let user_type = self.get_user_type(&Spanned::from_span(span, type_name))?;
                         let field_type = self.get_field(&user_type, identifier)?;
                         Ok(Some(field_type))
                     }
@@ -507,7 +515,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             }
             ExprKind::StructInit { identifier, fields } => {
                 for (name, value) in fields.0.iter() {
-                    let user_type = self.get_user_type(*identifier)?;
+                    let user_type = self.get_user_type(identifier)?;
                     let field_type = self.get_field(&user_type, name)?;
 
                     let val_type = self.resolve_type(value, Some(field_type))?;
@@ -714,11 +722,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
     fn get_user_type(
         &self,
-        name: Spanned<&'src str>,
+        ident: &Spanned<StructIdent<'src>>,
     ) -> Result<&UserTypeDefinition<'src>, ResolveError<'src>> {
-        self.user_types
-            .get(name.node)
-            .ok_or_else(|| self.not_defined_error(name.span, name.span, name.node))
+        self.mod_user_types
+            .get(ident.node.module())
+            .and_then(|types| types.get(ident.node.name()))
+            .ok_or_else(|| self.not_defined_error(ident.span, ident.span, ident.node.name()))
     }
 
     fn get_field(

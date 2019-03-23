@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, fmt};
 
-use crate::{parse::token::Token, types::Type};
+use crate::{parse::token::Token, types::*};
 
 use super::address::Address;
 
@@ -82,7 +82,7 @@ pub enum Instruction<'src> {
     /// let x: i32
     Decl(Address<'src>, Type<'src>),
     /// x = <expr>
-    Assignment(Address<'src>, Expression<'src>),
+    Assignment(Address<'src>, Box<Expression<'src>>),
     /// goto l
     Jmp(Label),
     /// if x goto l0 else goto l1
@@ -133,7 +133,7 @@ pub enum Expression<'src> {
     /// x = base + offset
     StructGep(Address<'src>, u32),
     /// x = test { 41, "test" }
-    StructInit(&'src str, Vec<Address<'src>>),
+    StructInit(StructIdent<'src>, Vec<Address<'src>>),
     /// allocates the value of its address on the heap
     /// x = new 5
     New(Address<'src>, Type<'src>),

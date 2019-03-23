@@ -1,5 +1,31 @@
 use std::fmt;
 
+#[derive(Debug, Eq, Copy, Clone, PartialEq, Hash)]
+pub struct StructIdent<'src> {
+    file: &'src str,
+    name: &'src str,
+}
+
+impl<'src> StructIdent<'src> {
+    pub fn new(file: &'src str, name: &'src str) -> Self {
+        StructIdent { file, name }
+    }
+
+    pub fn name(&self) -> &'src str {
+        self.name
+    }
+
+    pub fn module(&self) -> &'src str {
+        self.file
+    }
+}
+
+impl<'src> fmt::Display for StructIdent<'src> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}.{}", self.file, self.name)
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Type<'src> {
     Simple(Simple<'src>),
@@ -29,7 +55,7 @@ pub enum Simple<'src> {
     String,
     Void,
     Varargs,
-    UserType(&'src str),
+    UserType(StructIdent<'src>),
 }
 
 impl<'src> fmt::Display for Simple<'src> {
@@ -40,7 +66,7 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Bool => "bool",
             Simple::Void => "void",
             Simple::Varargs => "...",
-            Simple::UserType(name) => name,
+            Simple::UserType(name) => return write!(f, "{}", name),
         };
         write!(f, "{}", s)
     }

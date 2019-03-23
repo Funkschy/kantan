@@ -1,7 +1,7 @@
 use std::{cell::Cell, fmt, hash};
 
 use super::{error::ParseError, token::Token, Spanned};
-use crate::types::Type;
+use crate::types::{StructIdent, Type};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Program<'src>(pub Vec<TopLvl<'src>>);
@@ -183,7 +183,7 @@ pub enum ExprKind<'src> {
         identifier: Spanned<&'src str>,
     },
     StructInit {
-        identifier: Spanned<&'src str>,
+        identifier: Spanned<StructIdent<'src>>,
         fields: InitList<'src>,
     },
 }
