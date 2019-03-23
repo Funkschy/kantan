@@ -5,7 +5,7 @@ use crate::types::*;
 
 #[derive(PartialEq, Debug)]
 pub struct Func<'src> {
-    pub(crate) label: Label,
+    pub(crate) name: &'src str,
     pub(crate) params: Vec<(&'src str, Type<'src>)>,
     pub(crate) ret: Type<'src>,
     pub(crate) blocks: BlockMap<'src>,
@@ -15,7 +15,7 @@ pub struct Func<'src> {
 
 impl<'src> Func<'src> {
     pub fn new(
-        label: Label,
+        name: &'src str,
         params: Vec<(&'src str, Type<'src>)>,
         ret: Type<'src>,
         blocks: BlockMap<'src>,
@@ -37,7 +37,7 @@ impl<'src> Func<'src> {
         }
 
         Func {
-            label,
+            name,
             params,
             ret,
             blocks,
@@ -57,7 +57,7 @@ impl<'src> fmt::Display for Func<'src> {
             .join(", ");
 
         if self.is_extern {
-            return write!(f, "extern fn {}({}): {};", self.label, params, self.ret);
+            return write!(f, "extern fn {}({}): {};", self.name, params, self.ret);
         }
 
         let format = |inst: &Instruction| {
@@ -84,7 +84,7 @@ impl<'src> fmt::Display for Func<'src> {
         write!(
             f,
             "fn {}({}): {} {{\n{}\n}}",
-            self.label, params, self.ret, instructions
+            self.name, params, self.ret, instructions
         )
     }
 }

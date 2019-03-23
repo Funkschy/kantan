@@ -15,19 +15,14 @@ mod error;
 #[allow(dead_code)]
 pub mod symbol;
 
-#[derive(Debug, Clone)]
-struct FunctionDefinition<'src> {
-    ret_type: Spanned<Type<'src>>,
-    params: Vec<Spanned<Type<'src>>>,
-    varargs: bool,
-}
-
 /// modname -> typename -> typedef
 pub type ModTypeMap<'src> = HashMap<&'src str, UserTypeMap<'src>>;
+pub type ModFuncMap<'src> = HashMap<&'src str, FunctionMap<'src>>;
 
 pub struct ResolveResult<'src> {
     pub symbols: SymbolTable<'src>,
     pub mod_user_types: ModTypeMap<'src>,
+    pub mod_functions: ModFuncMap<'src>,
 }
 
 pub(crate) struct Resolver<'src, 'ast> {
@@ -35,19 +30,23 @@ pub(crate) struct Resolver<'src, 'ast> {
     programs: &'ast PrgMap<'src>,
     resolved: HashSet<&'src str>,
     pub(crate) sym_table: SymbolTable<'src>,
-    functions: HashMap<String, FunctionDefinition<'src>>,
+    // TODO: refactor into one map
+    mod_functions: ModFuncMap<'src>,
     mod_user_types: ModTypeMap<'src>,
     current_func_ret_type: Spanned<Type<'src>>,
 }
 
 impl<'src, 'ast> Resolver<'src, 'ast> {
     pub fn new(main_file: &'src str, programs: &'ast PrgMap<'src>) -> Self {
+        let mut resolved = HashSet::new();
+        resolved.insert(main_file);
+
         Resolver {
             current_name: main_file,
             programs,
-            resolved: HashSet::new(),
+            resolved,
             sym_table: SymbolTable::new(),
-            functions: HashMap::new(),
+            mod_functions: HashMap::new(),
             mod_user_types: HashMap::new(),
             current_func_ret_type: Spanned::new(0, 0, Type::Simple(Simple::Void)),
         }
@@ -57,6 +56,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         ResolveResult {
             symbols: self.sym_table,
             mod_user_types: self.mod_user_types,
+            mod_functions: self.mod_functions,
         }
     }
 }
@@ -64,39 +64,44 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 impl<'src, 'ast> Resolver<'src, 'ast> {
     pub fn resolve(&mut self) -> Vec<ResolveError<'src>> {
         let mut errors = vec![];
-        self.resolve_prg(None, &mut errors);
-        errors
-    }
-
-    fn resolve_prg(&mut self, prefix: Option<&'src str>, errors: &mut Vec<ResolveError<'src>>) {
-        let name = &self.current_name;
-        self.mod_user_types.insert(name, HashMap::new());
-        let (_, prg) = self.programs.get(name).unwrap();
-
-        for top_lvl in &prg.0 {
-            self.declare_top_lvl(&top_lvl, errors, prefix);
-        }
+        self.resolve_prg(&mut errors);
 
         // TODO: check for recursive type defs
-
         // Check if every field of a user defined type in every struct is defined
         for (_, mod_user_types) in self.mod_user_types.iter() {
             for (_, type_def) in mod_user_types.iter() {
                 for (_, (_, ty)) in type_def.fields.iter() {
-                    self.check_user_type_defined(ty, errors);
+                    self.check_user_type_defined(ty, &mut errors);
                 }
             }
         }
 
-        for (_, func_def) in self.functions.iter() {
-            self.check_user_type_defined(&func_def.ret_type, errors);
-            for p_ty in func_def.params.iter() {
-                self.check_user_type_defined(p_ty, errors);
+        for (_, mod_functions) in self.mod_functions.iter() {
+            for (_, func_def) in mod_functions.iter() {
+                self.check_user_type_defined(&func_def.ret_type, &mut errors);
+                for p_ty in func_def.params.iter() {
+                    self.check_user_type_defined(p_ty, &mut errors);
+                }
             }
         }
 
-        for top_lvl in &prg.0 {
-            self.resolve_top_lvl(&top_lvl, errors);
+        errors
+    }
+
+    fn resolve_prg(&mut self, errors: &mut Vec<ResolveError<'src>>) {
+        let name = self.current_name;
+
+        self.mod_user_types.insert(name, HashMap::new());
+        self.mod_functions.insert(name, HashMap::new());
+
+        let (_, prg) = self.programs.get(name).unwrap();
+
+        for top_lvl in prg.0.iter() {
+            self.declare_top_lvl(&top_lvl, errors);
+        }
+
+        for top_lvl in prg.0.iter() {
+            self.resolve_top_lvl(top_lvl, errors);
         }
     }
 
@@ -114,12 +119,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
     }
 
-    fn declare_top_lvl(
-        &mut self,
-        top_lvl: &TopLvl<'src>,
-        errors: &mut Vec<ResolveError<'src>>,
-        prefix: Option<&'src str>,
-    ) {
+    fn declare_top_lvl(&mut self, top_lvl: &TopLvl<'src>, errors: &mut Vec<ResolveError<'src>>) {
         match top_lvl {
             TopLvl::FnDecl {
                 name,
@@ -127,13 +127,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 params,
                 ..
             } => {
-                let name = prefix
-                    .map(|prefix| format!("{}.{}", prefix, name.node))
-                    .unwrap_or_else(|| name.node.to_owned());
+                let mod_name = self.current_name;
 
-                if self.functions.contains_key(&name) {
+                if self.mod_functions[mod_name].contains_key(&name.node) {
                     // TODO: replace with proper error
-                    panic!("Duplicate function '{}'", name);
+                    panic!("Duplicate function '{}'", name.node);
                 }
 
                 let varargs = params.varargs;
@@ -145,7 +143,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     varargs,
                 };
 
-                self.functions.insert(name, func_def);
+                // TODO: error for invalid module
+                self.mod_functions
+                    .get_mut(mod_name)
+                    .unwrap()
+                    .insert(name.node, func_def);
             }
             TopLvl::Import { name, .. } => {
                 if name.node == self.current_name {
@@ -160,7 +162,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         let current_name = self.current_name;
                         self.current_name = name.node;
                         self.resolved.insert(name.node);
-                        self.resolve_prg(Some(name.node), errors);
+                        self.resolve_prg(errors);
                         self.current_name = current_name;
                     } else {
                         errors.push(self.not_defined_error(name.span, name.span, name.node));
@@ -168,7 +170,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             TopLvl::TypeDef(TypeDef::StructDef { name, fields }) => {
-                let mod_name = prefix.unwrap_or_else(|| self.current_name);
+                // TODO: check for duplicate typedefs
+                let mod_name = self.current_name;
 
                 let fields = fields
                     .iter()
@@ -205,13 +208,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             self.current_func_ret_type = *ret_type;
             self.sym_table.scope_enter();
 
-            for p in &params.params {
+            for p in params.params.iter() {
+                // TODO: refactor
                 self.sym_table.bind(p.0.node, p.0.span, p.1.node, true);
             }
 
             if !*is_extern {
-                for stmt in &body.0 {
-                    self.resolve_stmt(&stmt, errors);
+                for stmt in body.0.iter() {
+                    self.resolve_stmt(stmt, errors);
                 }
             }
 
@@ -575,14 +579,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 .map(|sym| Some(sym.node.ty)),
 
             ExprKind::Call { callee, args } => {
-                // TODO: replace with proper resolution to enable UFCS
-                let callee_name = self.current_source().slice(callee.span);
-
-                let func_type = self
-                    .functions
-                    .get(callee_name)
-                    .ok_or_else(|| self.not_defined_error(callee.span, span, callee_name))?
-                    .clone();
+                let func_type = self.get_function(callee)?;
 
                 let varargs = func_type.varargs;
                 let no_vararg_passed = func_type.params.len() == args.0.len() + 1;
@@ -720,9 +717,19 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
     }
 
+    fn get_function(
+        &self,
+        ident: &Spanned<UserIdent<'src>>,
+    ) -> Result<&FunctionDefinition<'src>, ResolveError<'src>> {
+        self.mod_functions
+            .get(ident.node.module())
+            .and_then(|funcs| funcs.get(ident.node.name()))
+            .ok_or_else(|| self.not_defined_error(ident.span, ident.span, ident.node.name()))
+    }
+
     fn get_user_type(
         &self,
-        ident: &Spanned<StructIdent<'src>>,
+        ident: &Spanned<UserIdent<'src>>,
     ) -> Result<&UserTypeDefinition<'src>, ResolveError<'src>> {
         self.mod_user_types
             .get(ident.node.module())
@@ -899,18 +906,7 @@ mod tests {
                     32,
                     34,
                     Expr::new(ExprKind::Call {
-                        callee: Box::new(Spanned::new(
-                            29,
-                            37,
-                            Expr::new(ExprKind::Access {
-                                left: Box::new(Spanned::new(
-                                    29,
-                                    32,
-                                    Expr::new(ExprKind::Ident("test")),
-                                )),
-                                identifier: Spanned::new(34, 37, "func"),
-                            }),
-                        )),
+                        callee: Spanned::new(29, 37, UserIdent::new("test", "func")),
                         args: ArgList(vec![]),
                     }),
                 ))]),
@@ -950,7 +946,7 @@ mod tests {
                     18,
                     23,
                     Expr::new(ExprKind::Call {
-                        callee: Box::new(Spanned::new(18, 21, Expr::new(ExprKind::Ident("test")))),
+                        callee: Spanned::new(18, 21, UserIdent::new("test", "test")),
                         args: ArgList(vec![]),
                     }),
                 ))]),

@@ -128,12 +128,12 @@ pub enum Expression<'src> {
     /// x = y
     Copy(Address<'src>),
     /// x = call f (y, z)
-    Call(Label, Vec<Address<'src>>, Type<'src>),
+    Call(UserIdent<'src>, Vec<Address<'src>>, Type<'src>),
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset
     StructGep(Address<'src>, u32),
     /// x = test { 41, "test" }
-    StructInit(StructIdent<'src>, Vec<Address<'src>>),
+    StructInit(UserIdent<'src>, Vec<Address<'src>>),
     /// allocates the value of its address on the heap
     /// x = new 5
     New(Address<'src>, Type<'src>),

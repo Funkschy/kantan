@@ -23,7 +23,7 @@ pub(crate) mod tac;
 
 #[derive(Debug)]
 pub struct Tac<'src> {
-    pub(crate) functions: Vec<Func<'src>>,
+    pub(crate) functions: HashMap<&'src str, HashMap<&'src str, Func<'src>>>,
     pub(crate) literals: HashMap<Label, &'src str>,
     pub(crate) types: ModTypeMap<'src>,
     symbols: SymbolTable<'src>,
@@ -35,8 +35,14 @@ pub struct Tac<'src> {
 
 impl<'src> Tac<'src> {
     pub fn new(resolve_result: ResolveResult<'src>) -> Self {
+        let functions = resolve_result
+            .mod_functions
+            .iter()
+            .map(|(mod_name, _)| (*mod_name, HashMap::new()))
+            .collect();
+
         Tac {
-            functions: vec![],
+            functions,
             literals: HashMap::new(),
             names: NameTable::new(),
             symbols: resolve_result.symbols,
@@ -51,7 +57,7 @@ impl<'src> Tac<'src> {
 impl<'src> Tac<'src> {
     pub fn add_function(
         &mut self,
-        name: String,
+        ident: UserIdent<'src>,
         params: Vec<(&'src str, Type<'src>)>,
         body: &Block<'src>,
         ret_type: Type<'src>,
@@ -69,7 +75,7 @@ impl<'src> Tac<'src> {
                 _ => true,
             };
 
-            let main_func = name == "main";
+            let main_func = ident.name() == "main";
 
             if add_ret {
                 let ret = if main_func {
@@ -96,7 +102,7 @@ impl<'src> Tac<'src> {
             mem::swap(&mut self.current_params, &mut moved_params);
 
             Func::new(
-                name.into(),
+                ident.name(),
                 moved_params.unwrap(),
                 ret_type,
                 BlockMap::from_instructions(block),
@@ -109,7 +115,7 @@ impl<'src> Tac<'src> {
             mem::swap(&mut self.current_params, &mut moved_params);
 
             Func::new(
-                name.into(),
+                ident.name(),
                 moved_params.unwrap(),
                 ret_type,
                 BlockMap::default(),
@@ -118,7 +124,10 @@ impl<'src> Tac<'src> {
             )
         };
 
-        self.functions.push(f);
+        self.functions
+            .get_mut(ident.module())
+            .unwrap()
+            .insert(ident.name(), f);
     }
 
     fn create_block(&mut self, statements: &[Stmt<'src>]) -> InstructionBlock<'src> {
@@ -288,10 +297,8 @@ impl<'src> Tac<'src> {
                     .map(|a| self.expr_instr(&a.node, block))
                     .collect();
 
-                let label = callee.node.to_string().into();
                 let ty = expr.ty().unwrap();
-
-                Expression::Call(label, args, ty)
+                Expression::Call(callee.node, args, ty)
             }
             ExprKind::Assign { left, value, .. } => {
                 let expr = if let Some(rval) = self.address_expr(&value.node) {
@@ -563,14 +570,14 @@ mod tests {
         ))));
         bm.blocks = vec![bb];
 
-        let expected = vec![Func::new(
-            Label::from("main"),
-            vec![],
-            Type::Simple(Simple::I32),
-            bm,
-            false,
-            false,
-        )];
+        let mut expected = HashMap::new();
+        let mut expected_funcs = HashMap::new();
+
+        expected_funcs.insert(
+            "main",
+            Func::new("main", vec![], Type::Simple(Simple::I32), bm, false, false),
+        );
+        expected.insert("main", expected_funcs);
 
         assert_eq!(expected, funcs);
     }
@@ -644,14 +651,14 @@ mod tests {
 
         bm.blocks = vec![bb1, bb2, bb3];
 
-        let expected = vec![Func::new(
-            Label::from("main".to_string()),
-            vec![],
-            Type::Simple(Simple::I32),
-            bm,
-            false,
-            false,
-        )];
+        let mut expected = HashMap::new();
+        let mut expected_funcs = HashMap::new();
+
+        expected_funcs.insert(
+            "main",
+            Func::new("main", vec![], Type::Simple(Simple::I32), bm, false, false),
+        );
+        expected.insert("main", expected_funcs);
 
         assert_eq!(expected, funcs);
     }
@@ -741,14 +748,14 @@ mod tests {
 
         bm.blocks = vec![bb1, bb2, bb3, bb4];
 
-        let expected = vec![Func::new(
-            Label::from("main".to_string()),
-            vec![],
-            Type::Simple(Simple::I32),
-            bm,
-            false,
-            false,
-        )];
+        let mut expected = HashMap::new();
+        let mut expected_funcs = HashMap::new();
+
+        expected_funcs.insert(
+            "main",
+            Func::new("main", vec![], Type::Simple(Simple::I32), bm, false, false),
+        );
+        expected.insert("main", expected_funcs);
 
         assert_eq!(expected, funcs);
     }
@@ -833,14 +840,14 @@ mod tests {
 
         bm.blocks = vec![bb1, bb2, bb3, bb4];
 
-        let expected = vec![Func::new(
-            Label::from("main".to_string()),
-            vec![],
-            Type::Simple(Simple::I32),
-            bm,
-            false,
-            false,
-        )];
+        let mut expected = HashMap::new();
+        let mut expected_funcs = HashMap::new();
+
+        expected_funcs.insert(
+            "main",
+            Func::new("main", vec![], Type::Simple(Simple::I32), bm, false, false),
+        );
+        expected.insert("main", expected_funcs);
 
         assert_eq!(expected, funcs);
     }
@@ -886,24 +893,32 @@ mod tests {
         main_bm.blocks = vec![main_bb];
         test_bm.blocks = vec![test_bb];
 
-        let expected = vec![
+        let mut expected = HashMap::new();
+        let mut expected_funcs = HashMap::new();
+
+        expected_funcs.insert(
+            "test",
             Func::new(
-                Label::from("test"),
+                "test",
                 vec![],
                 Type::Simple(Simple::Void),
                 test_bm,
                 false,
                 false,
             ),
+        );
+        expected_funcs.insert(
+            "main",
             Func::new(
-                Label::from("main"),
+                "main",
                 vec![],
                 Type::Simple(Simple::I32),
                 main_bm,
                 false,
                 false,
             ),
-        ];
+        );
+        expected.insert("main", expected_funcs);
 
         assert_eq!(expected, funcs);
     }

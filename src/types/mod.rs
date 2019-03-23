@@ -1,26 +1,28 @@
 use std::fmt;
 
 #[derive(Debug, Eq, Copy, Clone, PartialEq, Hash)]
-pub struct StructIdent<'src> {
+pub struct UserIdent<'src> {
     file: &'src str,
     name: &'src str,
 }
 
-impl<'src> StructIdent<'src> {
+impl<'src> UserIdent<'src> {
     pub fn new(file: &'src str, name: &'src str) -> Self {
-        StructIdent { file, name }
+        UserIdent { file, name }
     }
 
+    #[inline(always)]
     pub fn name(&self) -> &'src str {
         self.name
     }
 
+    #[inline(always)]
     pub fn module(&self) -> &'src str {
         self.file
     }
 }
 
-impl<'src> fmt::Display for StructIdent<'src> {
+impl<'src> fmt::Display for UserIdent<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}.{}", self.file, self.name)
     }
@@ -55,7 +57,7 @@ pub enum Simple<'src> {
     String,
     Void,
     Varargs,
-    UserType(StructIdent<'src>),
+    UserType(UserIdent<'src>),
 }
 
 impl<'src> fmt::Display for Simple<'src> {

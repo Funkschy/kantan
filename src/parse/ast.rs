@@ -1,7 +1,7 @@
 use std::{cell::Cell, fmt, hash};
 
 use super::{error::ParseError, token::Token, Spanned};
-use crate::types::{StructIdent, Type};
+use crate::types::{Type, UserIdent};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Program<'src>(pub Vec<TopLvl<'src>>);
@@ -47,6 +47,7 @@ pub enum Stmt<'src> {
     Delete(Box<Spanned<Expr<'src>>>),
     Expr(Spanned<Expr<'src>>),
 }
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct VarDecl<'src> {
     pub name: Spanned<&'src str>,
@@ -175,7 +176,8 @@ pub enum ExprKind<'src> {
         value: Box<Spanned<Expr<'src>>>,
     },
     Call {
-        callee: Box<Spanned<Expr<'src>>>,
+        // TODO: handle function pointers
+        callee: Spanned<UserIdent<'src>>,
         args: ArgList<'src>,
     },
     Access {
@@ -183,7 +185,7 @@ pub enum ExprKind<'src> {
         identifier: Spanned<&'src str>,
     },
     StructInit {
-        identifier: Spanned<StructIdent<'src>>,
+        identifier: Spanned<UserIdent<'src>>,
         fields: InitList<'src>,
     },
 }

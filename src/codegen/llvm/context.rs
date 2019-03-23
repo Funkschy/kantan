@@ -4,7 +4,6 @@ use llvm_sys::{analysis::*, core::*, prelude::*, LLVMIntPredicate, LLVMLinkage, 
 
 use crate::{
     mir::{address::*, tac::*},
-    resolve::ModTypeMap,
     types::*,
     Mir, UserTypeDefinition,
 };
@@ -15,25 +14,25 @@ enum Intrinsic {
     MemCpy = 0,
 }
 
-pub struct KantanLLVMContext {
+pub struct KantanLLVMContext<'src> {
     context: LLVMContextRef,
     builder: LLVMBuilderRef,
     // TODO: we probably want separate Modules
     module: LLVMModuleRef,
     temp_var_counter: usize,
     name_table: HashMap<String, LLVMValueRef>,
-    functions: HashMap<String, LLVMValueRef>,
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
     blocks: HashMap<Label, LLVMBasicBlockRef>,
-    user_types: HashMap<String, HashMap<String, LLVMTypeRef>>,
+    functions: HashMap<&'src str, HashMap<&'src str, LLVMValueRef>>,
+    user_types: HashMap<&'src str, HashMap<&'src str, LLVMTypeRef>>,
     // TODO: make hashmap to save memory
     strings: Vec<CString>,
     intrinsics: Vec<LLVMValueRef>,
 }
 
-impl KantanLLVMContext {
-    pub fn new(name: &str, types: &ModTypeMap) -> Self {
+impl<'src> KantanLLVMContext<'src> {
+    pub fn new(name: &str, mir: &Mir<'src>) -> Self {
         unsafe {
             let name = CString::new(name).unwrap().into_raw();
 
@@ -65,20 +64,35 @@ impl KantanLLVMContext {
 
             ctx.add_intrinsics();
 
-            for (m, typemap) in types.iter() {
-                let mut structs = HashMap::new();
+            for (m, typemap) in mir.types.iter() {
+                let mut structs: HashMap<&'src str, _> = HashMap::new();
                 for (n, _ty) in typemap.iter() {
                     // forward declaration of types
                     let s = LLVMStructCreateNamed(ctx.context, ctx.cstring(n));
-                    structs.insert(n.to_string(), s);
+                    structs.insert(n, s);
                 }
-                ctx.user_types.insert(m.to_string(), structs);
+                ctx.user_types.insert(m, structs);
             }
 
-            for (m, typemap) in types.iter() {
+            for (m, typemap) in mir.types.iter() {
                 for (n, ty) in typemap.iter() {
                     ctx.add_llvm_struct(m, n, ty);
                 }
+            }
+
+            // Function definitions need to be evaluated first
+            for (file, functions) in mir.functions.iter() {
+                let mut llvm_funcs = HashMap::new();
+
+                for (_, function) in functions.iter() {
+                    let ret_type = ctx.convert(function.ret);
+
+                    let func_type = ctx.func_type(function.is_varargs, ret_type, &function.params);
+                    let f = ctx.llvm_add_func(func_type, &function.name, function.is_extern);
+                    llvm_funcs.insert(function.name, f);
+                }
+
+                ctx.functions.insert(file, llvm_funcs);
             }
 
             ctx
@@ -121,7 +135,7 @@ impl KantanLLVMContext {
     }
 }
 
-impl KantanLLVMContext {
+impl<'src> KantanLLVMContext<'src> {
     pub fn verify_module(&self) -> Result<(), *mut i8> {
         unsafe {
             let mut error = ptr::null_mut();
@@ -163,7 +177,7 @@ impl KantanLLVMContext {
         )
     }
 
-    fn get_user_type(&self, user_ty: &StructIdent) -> LLVMTypeRef {
+    fn get_user_type(&self, user_ty: &UserIdent) -> LLVMTypeRef {
         self.user_types[user_ty.module()][user_ty.name()]
     }
 
@@ -191,7 +205,7 @@ impl KantanLLVMContext {
     }
 }
 // TODO: run "memory to register promotion" pass
-impl KantanLLVMContext {
+impl<'src> KantanLLVMContext<'src> {
     unsafe fn cstring(&mut self, string: &str) -> *mut i8 {
         let cstr = CString::new(string).unwrap().into_raw();
         self.strings.push(CString::from_raw(cstr));
@@ -226,62 +240,53 @@ impl KantanLLVMContext {
         )
     }
 
-    pub fn generate(&mut self, mir: &Mir) {
+    pub fn generate(&mut self, mir: &Mir<'src>) {
         unsafe {
             for (label, string) in &mir.global_strings {
                 self.add_global_string(label, string);
             }
 
-            let mut llvm_funcs = Vec::with_capacity(mir.functions.len());
-
-            // Function definitions need to be evaluated first
-            for function in &mir.functions {
-                let ret_type = self.convert(function.ret);
-
-                let func_type = self.func_type(function.is_varargs, ret_type, &function.params);
-                let f = self.add_func(func_type, &function.label, function.is_extern);
-                llvm_funcs.push(f);
-            }
-
-            for (i, function) in mir.functions.iter().enumerate() {
-                if function.is_extern {
-                    continue;
-                }
-
-                let f = llvm_funcs[i];
-                self.current_function = Some(f);
-
-                let mut bbs = Vec::with_capacity(function.blocks.blocks.len());
-
-                // generate basic blocks
-                for b in function.blocks.blocks.iter() {
-                    if let Instruction::Label(label) = &b.instructions[0] {
-                        let name: &str = label.borrow();
-                        let bb_ref = self.add_bb(f, name);
-                        self.blocks.insert(label.clone(), bb_ref);
-                        bbs.push(bb_ref);
-                    } else {
-                        panic!("No label");
+            for (file, functions) in mir.functions.iter() {
+                for (_, function) in functions.iter() {
+                    if function.is_extern {
+                        continue;
                     }
-                }
 
-                // allocate arguments on stack
-                LLVMPositionBuilderAtEnd(self.builder, bbs[0]);
-                for (i, (name, ty)) in function.params.iter().enumerate() {
-                    let n = self.cstring(name);
-                    let stack_arg = LLVMBuildAlloca(self.builder, self.convert(*ty), n);
-                    LLVMBuildStore(self.builder, LLVMGetParam(f, i as u32), stack_arg);
-                    self.name_table.insert(name.to_string(), stack_arg);
-                }
+                    let f = self.functions[*file][&function.name];
+                    self.current_function = Some(f);
 
-                // generate actual instructions
-                for (j, b) in function.blocks.blocks.iter().enumerate() {
-                    LLVMPositionBuilderAtEnd(self.builder, bbs[j]);
+                    let mut bbs = Vec::with_capacity(function.blocks.blocks.len());
 
-                    for inst in &b.instructions {
-                        self.translate_mir_instr(inst);
+                    // generate basic blocks
+                    for b in function.blocks.blocks.iter() {
+                        if let Instruction::Label(label) = &b.instructions[0] {
+                            let name: &str = label.borrow();
+                            let bb_ref = self.add_bb(f, name);
+                            self.blocks.insert(label.clone(), bb_ref);
+                            bbs.push(bb_ref);
+                        } else {
+                            panic!("No label");
+                        }
                     }
-                    self.translate_mir_instr(&b.terminator);
+
+                    // allocate arguments on stack
+                    LLVMPositionBuilderAtEnd(self.builder, bbs[0]);
+                    for (i, (name, ty)) in function.params.iter().enumerate() {
+                        let n = self.cstring(name);
+                        let stack_arg = LLVMBuildAlloca(self.builder, self.convert(*ty), n);
+                        LLVMBuildStore(self.builder, LLVMGetParam(f, i as u32), stack_arg);
+                        self.name_table.insert(name.to_string(), stack_arg);
+                    }
+
+                    // generate actual instructions
+                    for (j, b) in function.blocks.blocks.iter().enumerate() {
+                        LLVMPositionBuilderAtEnd(self.builder, bbs[j]);
+
+                        for inst in &b.instructions {
+                            self.translate_mir_instr(inst);
+                        }
+                        self.translate_mir_instr(&b.terminator);
+                    }
                 }
             }
         }
@@ -316,7 +321,7 @@ impl KantanLLVMContext {
         self.globals.insert(label.clone(), glob_str);
     }
 
-    unsafe fn add_func<T: Borrow<str>>(
+    unsafe fn llvm_add_func<T: Borrow<str>>(
         &mut self,
         func_type: LLVMTypeRef,
         name: &T,
@@ -333,9 +338,7 @@ impl KantanLLVMContext {
 
         let real_name = self.cstring(real_name);
 
-        let f = LLVMAddFunction(self.module, real_name, func_type);
-        self.functions.insert(n.to_owned(), f);
-        f
+        LLVMAddFunction(self.module, real_name, func_type)
     }
 
     unsafe fn add_bb(&mut self, f: LLVMValueRef, name: &str) -> LLVMBasicBlockRef {
@@ -479,14 +482,14 @@ impl KantanLLVMContext {
                     UnaryType::Deref => a,
                 }
             }
-            Expression::Call(label, args, ty) => {
+            Expression::Call(ident, args, ty) => {
                 let n = self.cstring(name);
                 let num_args = args.len() as u32;
 
                 let mut args: Vec<LLVMValueRef> =
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
 
-                let f = self.functions[&label.to_string()];
+                let f = self.functions[ident.module()][ident.name()];
                 let name = if *ty != Type::Simple(Simple::Void) {
                     n
                 } else {
@@ -551,7 +554,7 @@ impl KantanLLVMContext {
     }
 }
 
-impl Drop for KantanLLVMContext {
+impl<'src> Drop for KantanLLVMContext<'src> {
     fn drop(&mut self) {
         // TODO: remove
         println!("Dropping the bass");

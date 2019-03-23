@@ -13,7 +13,7 @@ use self::{
     mir::{func::Func, tac::Label, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::{ModTypeMap, ResolveResult, Resolver},
-    types::Type,
+    types::*,
 };
 
 pub(crate) use self::cli::*;
@@ -39,7 +39,16 @@ impl<'src> fmt::Display for UserTypeDefinition<'src> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FunctionDefinition<'src> {
+    ret_type: Spanned<Type<'src>>,
+    params: Vec<Spanned<Type<'src>>>,
+    varargs: bool,
+}
+
 pub type UserTypeMap<'src> = HashMap<&'src str, UserTypeDefinition<'src>>;
+pub type FunctionMap<'src> = HashMap<&'src str, FunctionDefinition<'src>>;
+pub type MirFuncMap<'src> = HashMap<&'src str, Func<'src>>;
 
 #[derive(Debug)]
 pub struct Source {
@@ -200,7 +209,7 @@ fn type_check<'src, W: Write>(
 #[derive(Debug)]
 pub struct Mir<'src> {
     pub global_strings: HashMap<Label, &'src str>,
-    pub functions: Vec<Func<'src>>,
+    pub functions: HashMap<&'src str, MirFuncMap<'src>>,
     pub types: ModTypeMap<'src>,
 }
 
@@ -228,7 +237,12 @@ impl<'src> fmt::Display for Mir<'src> {
         let funcs = self
             .functions
             .iter()
-            .map(|f| f.to_string())
+            .flat_map(|(m, funcs)| {
+                funcs
+                    .iter()
+                    .map(|(_, v)| format!("{}.{}", m, v))
+                    .collect::<Vec<String>>()
+            })
             .collect::<Vec<String>>()
             .join("\n\n");
 
@@ -237,13 +251,19 @@ impl<'src> fmt::Display for Mir<'src> {
 }
 
 fn construct_tac<'src>(
-    main: &'src str,
     ast_sources: &PrgMap<'src>,
     resolve_result: ResolveResult<'src>,
 ) -> Mir<'src> {
     let mut tac = Tac::new(resolve_result);
     for (src_name, (_, prg)) in ast_sources.iter() {
-        for top_lvl in &prg.0 {
+        for top_lvl in prg.0.iter() {
+            if !tac.functions.contains_key(src_name) {
+                // since io is currently inserted into the ast manually, the mir generation would
+                // crash, because it uses the resolve_result to prepare its modules and io may not
+                // have been imported
+                continue;
+            }
+
             if let TopLvl::FnDecl {
                 name,
                 body,
@@ -252,12 +272,6 @@ fn construct_tac<'src>(
                 is_extern,
             } = top_lvl
             {
-                let name = if *src_name != main {
-                    format!("{}.{}", src_name, name.node)
-                } else {
-                    name.node.to_owned()
-                };
-
                 let varargs = params.varargs;
 
                 let params = params
@@ -267,7 +281,9 @@ fn construct_tac<'src>(
                     .collect();
                 let ret_type = ret_type.node;
 
-                tac.add_function(name, params, &body, ret_type, *is_extern, varargs);
+                let ident = UserIdent::new(src_name, name.node);
+
+                tac.add_function(ident, params, &body, ret_type, *is_extern, varargs);
             }
         }
     }
@@ -317,7 +333,7 @@ pub fn compile<'src, W: Write>(
     let symbols = type_check(main, &mut ast_sources, writer)?;
 
     println!("Constructing mir...");
-    let mir = construct_tac(main, &ast_sources, symbols);
+    let mir = construct_tac(&ast_sources, symbols);
 
     Ok(mir)
 }
