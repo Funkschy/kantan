@@ -1,13 +1,13 @@
 use std::{cell::Cell, iter::Peekable};
 
 use super::{ast::*, error::LexError, token::*, *};
-use crate::types::*;
+use crate::{types::*, Source};
 
-type ExprResult<'input> = Result<Spanned<Expr<'input>>, Spanned<ParseError<'input>>>;
-type StmtResult<'input> = Result<Stmt<'input>, Spanned<ParseError<'input>>>;
-type TopLvlResult<'input> = Result<TopLvl<'input>, Spanned<ParseError<'input>>>;
+type ExprResult<'src> = Result<Spanned<Expr<'src>>, Spanned<ParseError<'src>>>;
+type StmtResult<'src> = Result<Stmt<'src>, Spanned<ParseError<'src>>>;
+type TopLvlResult<'src> = Result<TopLvl<'src>, Spanned<ParseError<'src>>>;
 
-fn as_err_stmt<'input>(err: Spanned<ParseError<'input>>) -> Stmt<'input> {
+fn as_err_stmt<'src>(err: Spanned<ParseError<'src>>) -> Stmt<'src> {
     Stmt::Expr(Spanned::new(
         err.span.start,
         err.span.end,
@@ -15,18 +15,18 @@ fn as_err_stmt<'input>(err: Spanned<ParseError<'input>>) -> Stmt<'input> {
     ))
 }
 
-pub struct Parser<'input, I>
+pub struct Parser<'src, I>
 where
-    I: Scanner<'input>,
+    I: Scanner<'src>,
 {
-    pub(crate) source: &'input str,
+    pub(crate) source: &'src Source,
     pub(crate) err_count: usize,
     scanner: Peekable<I>,
 }
 
-impl<'input, I> Parser<'input, I>
+impl<'src, I> Parser<'src, I>
 where
-    I: Scanner<'input>,
+    I: Scanner<'src>,
 {
     pub fn new(scanner: I) -> Self {
         let source = scanner.source();
@@ -40,11 +40,11 @@ where
     }
 }
 
-impl<'input, I> Parser<'input, I>
+impl<'src, I> Parser<'src, I>
 where
-    I: Scanner<'input>,
+    I: Scanner<'src>,
 {
-    pub fn parse(&mut self) -> Program<'input> {
+    pub fn parse(&mut self) -> Program<'src> {
         let mut top_lvl_decls = vec![];
 
         while self.scanner.peek().is_some() {
@@ -63,7 +63,7 @@ where
         Program(top_lvl_decls)
     }
 
-    fn top_lvl_decl(&mut self) -> TopLvlResult<'input> {
+    fn top_lvl_decl(&mut self) -> TopLvlResult<'src> {
         if self.peek_eq(Token::Import) {
             return self.import();
         }
@@ -100,7 +100,7 @@ where
         })
     }
 
-    fn type_definition(&mut self) -> TopLvlResult<'input> {
+    fn type_definition(&mut self) -> TopLvlResult<'src> {
         self.consume(Token::Type)?;
         let name = self.consume_ident()?;
 
@@ -128,7 +128,7 @@ where
         Ok(TopLvl::TypeDef(TypeDef::StructDef { name, fields }))
     }
 
-    fn import(&mut self) -> TopLvlResult<'input> {
+    fn import(&mut self) -> TopLvlResult<'src> {
         self.consume(Token::Import)?;
         let name = self.consume_ident()?;
 
@@ -138,7 +138,7 @@ where
     fn param_list(
         &mut self,
         is_extern: bool,
-    ) -> Result<ParamList<'input>, Spanned<ParseError<'input>>> {
+    ) -> Result<ParamList<'src>, Spanned<ParseError<'src>>> {
         self.consume(Token::LParen)?;
         let mut varargs = false;
 
@@ -159,7 +159,10 @@ where
                 let triple_dot = self.consume(Token::TripleDot)?;
                 varargs = true;
                 let spanned = Spanned::from_span(triple_dot.span, "...");
-                params.push(Param::new(spanned, Type::Simple(Simple::Varargs)));
+                params.push(Param::new(
+                    spanned,
+                    Spanned::from_span(triple_dot.span, Type::Simple(Simple::Varargs)),
+                ));
                 // ... has to be the last param
                 // TODO: replace consume error with special error
                 break;
@@ -169,7 +172,7 @@ where
             self.consume(Token::Colon)?;
             // TODO: user defined types
             let ty = self.consume_type()?;
-            params.push(Param::new(ident, ty.node));
+            params.push(Param::new(ident, ty));
 
             if !self.peek_eq(Token::RParen) {
                 self.consume(Token::Comma)?;
@@ -180,7 +183,7 @@ where
         Ok(ParamList { varargs, params })
     }
 
-    fn block(&mut self) -> Result<Block<'input>, Spanned<ParseError<'input>>> {
+    fn block(&mut self) -> Result<Block<'src>, Spanned<ParseError<'src>>> {
         self.consume(Token::LBrace)?;
         let mut stmts = vec![];
 
@@ -202,7 +205,7 @@ where
         Ok(Block(stmts))
     }
 
-    fn statement(&mut self) -> StmtResult<'input> {
+    fn statement(&mut self) -> StmtResult<'src> {
         if let Some(Ok(Spanned { node, .. })) = self.scanner.peek() {
             // Check different statement types
             match node {
@@ -214,41 +217,50 @@ where
                 Token::If => return Ok(self.if_stmt()?),
                 Token::Return => return Ok(self.return_stmt()?),
                 Token::While => return Ok(self.while_stmt()?),
+                Token::Delete => return Ok(self.delete_stmt()?),
                 _ => {}
             }
         }
 
         // If no statement rule applies, assume an expression
-        let expr = self.expression()?;
+        let expr = self.expression(false)?;
         self.consume(Token::Semi)?;
         Ok(Stmt::Expr(expr))
     }
 
-    fn while_stmt(&mut self) -> StmtResult<'input> {
+    fn delete_stmt(&mut self) -> StmtResult<'src> {
+        self.consume(Token::Delete)?;
+        let expr = self.expression(false)?;
+        self.consume(Token::Semi)?;
+
+        Ok(Stmt::Delete(Box::new(expr)))
+    }
+
+    fn while_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::While)?;
-        let condition = self.expression()?;
+        let condition = self.expression(true)?;
         let body = self.block()?;
 
         Ok(Stmt::While { condition, body })
     }
 
-    fn return_stmt(&mut self) -> StmtResult<'input> {
+    fn return_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::Return)?;
 
         let ret = Ok(Stmt::Return(if self.peek_eq(Token::Semi) {
             None
         } else {
-            Some(self.expression()?)
+            Some(self.expression(false)?)
         }));
 
         self.consume(Token::Semi)?;
         ret
     }
 
-    fn if_stmt(&mut self) -> StmtResult<'input> {
+    fn if_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::If)?;
 
-        let condition = self.expression()?;
+        let condition = self.expression(true)?;
         let then_block = self.block()?;
 
         let else_branch = if self.peek_eq(Token::Else) {
@@ -274,7 +286,7 @@ where
         })
     }
 
-    fn let_decl(&mut self) -> StmtResult<'input> {
+    fn let_decl(&mut self) -> StmtResult<'src> {
         self.consume(Token::Let)?;
 
         let name = self.consume_ident()?;
@@ -288,20 +300,20 @@ where
 
         let eq = self.consume(Token::Equals)?;
 
-        let value = self.expression()?;
-        Ok(Stmt::VarDecl {
+        let value = self.expression(false)?;
+        Ok(Stmt::VarDecl(Box::new(VarDecl {
             name,
             value,
             eq,
             ty,
-        })
+        })))
     }
 
-    pub fn expression(&mut self) -> ExprResult<'input> {
-        let mut left = self.parse_expression(Precedence::Assign)?;
+    pub fn expression(&mut self, no_struct: bool) -> ExprResult<'src> {
+        let mut left = self.parse_expression(Precedence::Assign, no_struct)?;
         while self.peek_eq(Token::Equals) {
             let eq = self.consume(Token::Equals)?;
-            let value = Box::new(self.parse_expression(Precedence::Assign)?);
+            let value = Box::new(self.parse_expression(Precedence::Assign, no_struct)?);
             left = Spanned::new(
                 left.span.start,
                 value.span.end,
@@ -316,29 +328,29 @@ where
         Ok(left)
     }
 
-    fn parse_expression(&mut self, precedence: Precedence) -> ExprResult<'input> {
+    fn parse_expression(&mut self, precedence: Precedence, no_struct: bool) -> ExprResult<'src> {
         let token = self.advance()?;
-        let mut left = self.prefix(&token)?;
+        let mut left = self.prefix(&token, no_struct)?;
 
-        while self.next_higher_precedence(precedence) {
+        while self.next_higher_precedence(precedence, no_struct) {
             let token = self.advance()?;
-            left = self.infix(&token, left)?;
+            left = self.infix(&token, left, no_struct)?;
         }
 
         Ok(left)
     }
 
-    fn eof(&mut self) -> Scanned<'input> {
-        let len = self.source.len();
+    fn eof(&mut self) -> Scanned<'src> {
+        let len = self.source.code.len();
         let span = Span::new(len, len);
         self.make_lex_err(span, "Unexpected end of file")
     }
 
-    fn advance(&mut self) -> Scanned<'input> {
+    fn advance(&mut self) -> Scanned<'src> {
         self.scanner.next().unwrap_or_else(|| self.eof())
     }
 
-    fn match_tok(&mut self, expected: Token<'input>) -> Result<bool, Spanned<ParseError<'input>>> {
+    fn match_tok(&mut self, expected: Token<'src>) -> Result<bool, Spanned<ParseError<'src>>> {
         if self.peek_eq(expected) {
             self.consume(expected)?;
             return Ok(true);
@@ -347,14 +359,14 @@ where
         Ok(false)
     }
 
-    fn peek_eq(&mut self, expected: Token<'input>) -> bool {
+    fn peek_eq(&mut self, expected: Token<'src>) -> bool {
         self.scanner.peek().map_or(false, |peek| match peek {
             Ok(Spanned { node, .. }) => *node == expected,
             _ => false,
         })
     }
 
-    fn consume_ident(&mut self) -> Result<Spanned<&'input str>, Spanned<ParseError<'input>>> {
+    fn consume_ident(&mut self) -> Result<Spanned<&'src str>, Spanned<ParseError<'src>>> {
         if let Some(peek) = self.scanner.peek().cloned() {
             return match peek {
                 Ok(peek) => {
@@ -379,7 +391,7 @@ where
         Err(self.eof().unwrap_err())
     }
 
-    fn consume_type(&mut self) -> Result<Spanned<Type<'input>>, Spanned<ParseError<'input>>> {
+    fn consume_type(&mut self) -> Result<Spanned<Type<'src>>, Spanned<ParseError<'src>>> {
         if let Some(peek) = self.scanner.peek().cloned() {
             return match peek {
                 Ok(peek) => match peek {
@@ -391,12 +403,28 @@ where
                         Ok(Spanned::from_span(span, ty))
                     }
                     Spanned {
-                        node: Token::Ident(ident),
-                        span,
+                        node: Token::Ident(_),
+                        ..
                     } => {
-                        self.advance()?;
+                        let expr = self.expression(true)?;
+
+                        // TODO: refactor to function
+                        let ident = match expr.node.kind() {
+                            ExprKind::Ident(n) => UserIdent::new(&self.source.name, n),
+                            ExprKind::Access { left, identifier } => {
+                                if let ExprKind::Ident(left) = left.node.kind() {
+                                    UserIdent::new(left, identifier.node)
+                                } else {
+                                    // TODO: implement
+                                    unimplemented!()
+                                }
+                            }
+                            // TODO: implement
+                            _ => unimplemented!(),
+                        };
+
                         Ok(Spanned::from_span(
-                            span,
+                            expr.span,
                             Type::Simple(Simple::UserType(ident)),
                         ))
                     }
@@ -438,7 +466,7 @@ where
         Err(self.eof().unwrap_err())
     }
 
-    fn consume(&mut self, expected: Token<'input>) -> Scanned<'input> {
+    fn consume(&mut self, expected: Token<'src>) -> Scanned<'src> {
         if let Some(peek) = self.scanner.peek() {
             if let Ok(peek) = peek {
                 if peek.node == expected {
@@ -456,9 +484,12 @@ where
         self.eof()
     }
 
-    fn next_higher_precedence(&mut self, precedence: Precedence) -> bool {
+    fn next_higher_precedence(&mut self, precedence: Precedence, no_struct: bool) -> bool {
         self.scanner.peek().map_or(false, |scanned| {
             if let Ok(spanned) = scanned {
+                if let Token::LBrace = spanned.node {
+                    return !no_struct && spanned.node.precedence() > precedence;
+                }
                 spanned.node.precedence() > precedence
             } else {
                 false
@@ -468,9 +499,10 @@ where
 
     fn infix(
         &mut self,
-        token: &Spanned<Token<'input>>,
-        left: Spanned<Expr<'input>>,
-    ) -> ExprResult<'input> {
+        token: &Spanned<Token<'src>>,
+        left: Spanned<Expr<'src>>,
+        no_struct: bool,
+    ) -> ExprResult<'src> {
         let tok = token.node;
         match tok {
             Token::EqualsEquals
@@ -480,7 +512,7 @@ where
             | Token::Minus
             | Token::Star
             | Token::Slash => {
-                let right = self.parse_expression(tok.precedence())?;
+                let right = self.parse_expression(tok.precedence(), no_struct)?;
                 let right_span = right.span;
                 let left_span = left.span;
 
@@ -511,48 +543,86 @@ where
                     }),
                 ))
             }
-            Token::LParen => {
-                let valid = match left.node.kind() {
-                    ExprKind::Ident(_) | ExprKind::Access { .. } => true,
-                    _ => false,
+            Token::LBrace => {
+                let init_list = self.init_list()?;
+                let brace = self.consume(Token::RBrace)?;
+
+                let span = Span::new(token.span.start, brace.span.end);
+                let ident = match left.node.kind() {
+                    ExprKind::Ident(n) => UserIdent::new(&self.source.name, n),
+                    ExprKind::Access { left, identifier } => {
+                        if let ExprKind::Ident(left) = left.node.kind() {
+                            UserIdent::new(left, identifier.node)
+                        } else {
+                            // TODO: implement
+                            unimplemented!()
+                        }
+                    }
+                    // TODO: implement
+                    _ => unimplemented!(),
                 };
 
-                if valid {
-                    let arg_list = self.arg_list()?;
-                    let end = self.consume(Token::RParen)?.span.end;
+                Ok(Spanned::from_span(
+                    span,
+                    Expr::new(ExprKind::StructInit {
+                        identifier: Spanned::from_span(left.span, ident),
+                        fields: init_list,
+                    }),
+                ))
+            }
+            Token::LParen => {
+                let ident = match left.node.kind() {
+                    ExprKind::Ident(n) => UserIdent::new(&self.source.name, n),
+                    ExprKind::Access { left, identifier } => {
+                        if let ExprKind::Ident(left) = left.node.kind() {
+                            UserIdent::new(left, identifier.node)
+                        } else {
+                            // TODO: implement
+                            unimplemented!()
+                        }
+                    }
+                    // TODO: implement
+                    _ => unimplemented!(),
+                };
 
-                    Ok(Spanned::new(
-                        left.span.start,
-                        end,
-                        Expr::new(ExprKind::Call {
-                            callee: Box::new(left),
-                            args: arg_list,
-                        }),
-                    ))
-                } else {
-                    // TODO: Implement meaningful error
-                    unimplemented!("Implement meaningful error");
-                }
+                let arg_list = self.arg_list()?;
+                let end = self.consume(Token::RParen)?.span.end;
+                let span = Span::new(left.span.start, end);
+
+                Ok(Spanned::from_span(
+                    span,
+                    Expr::new(ExprKind::Call {
+                        callee: Spanned::from_span(left.span, ident),
+                        args: arg_list,
+                    }),
+                ))
             }
             _ => self.make_infix_err(token),
         }
     }
 
-    fn prefix(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
+    fn prefix(&mut self, token: &Spanned<Token<'src>>, no_struct: bool) -> ExprResult<'src> {
         let ok_spanned = |kind| Ok(Spanned::from_span(token.span, Expr::new(kind)));
 
         match token.node {
+            Token::NullLit => ok_spanned(ExprKind::NullLit),
             Token::DecLit(lit) => ok_spanned(ExprKind::DecLit(lit)),
             Token::StringLit(lit) => ok_spanned(ExprKind::StringLit(lit)),
+            Token::New => {
+                let expr = self.expression(no_struct)?;
+                let new = ExprKind::New(Box::new(Spanned::from_span(expr.span, expr.node)));
+                Ok(Spanned::from_span(expr.span, Expr::new(new)))
+            }
             Token::LParen => {
-                let mut expr = self.expression()?;
+                // ignore no_struct, because it's in parentheses
+                let mut expr = self.expression(false)?;
                 self.consume(Token::RParen)?;
                 expr.span.start -= 1;
                 expr.span.end += 1;
                 Ok(expr)
             }
             Token::Minus => {
-                let next = self.expression()?;
+                let next = self.expression(no_struct)?;
 
                 Ok(Spanned::new(
                     token.span.start,
@@ -560,15 +630,28 @@ where
                     Expr::new(ExprKind::Negate(*token, Box::new(next))),
                 ))
             }
+            Token::Star => {
+                // TODO: change false Precedence
+                let next = self.parse_expression(Precedence::Sum, no_struct)?;
+
+                Ok(Spanned::new(
+                    token.span.start,
+                    next.span.end,
+                    Expr::new(ExprKind::Deref(*token, Box::new(next))),
+                ))
+            }
             Token::Ident(ref name) => {
-                if self.match_tok(Token::LBrace)? {
+                if !no_struct && self.match_tok(Token::LBrace)? {
                     let init_list = self.init_list()?;
                     let brace = self.consume(Token::RBrace)?;
                     Ok(Spanned::new(
                         token.span.start,
                         brace.span.end,
                         Expr::new(ExprKind::StructInit {
-                            identifier: Spanned::from_span(token.span, *name),
+                            identifier: Spanned::from_span(
+                                token.span,
+                                UserIdent::new(&self.source.name, name),
+                            ),
                             fields: init_list,
                         }),
                     ))
@@ -580,13 +663,13 @@ where
         }
     }
 
-    fn init_list(&mut self) -> Result<InitList<'input>, Spanned<ParseError<'input>>> {
+    fn init_list(&mut self) -> Result<InitList<'src>, Spanned<ParseError<'src>>> {
         let mut inits = vec![];
 
         while !self.at_end() && !self.peek_eq(Token::RBrace) {
             let ident = self.consume_ident()?;
             self.consume(Token::Colon)?;
-            let expr = self.expression()?;
+            let expr = self.expression(false)?;
             inits.push((ident, expr));
             if !self.peek_eq(Token::RBrace) {
                 self.consume(Token::Comma)?;
@@ -596,11 +679,11 @@ where
         Ok(InitList(inits))
     }
 
-    fn arg_list(&mut self) -> Result<ArgList<'input>, Spanned<ParseError<'input>>> {
+    fn arg_list(&mut self) -> Result<ArgList<'src>, Spanned<ParseError<'src>>> {
         let mut args = vec![];
 
         while !self.at_end() && !self.peek_eq(Token::RParen) {
-            args.push(self.expression()?);
+            args.push(self.expression(false)?);
             if !self.peek_eq(Token::RParen) {
                 self.consume(Token::Comma)?;
             }
@@ -609,7 +692,7 @@ where
         Ok(ArgList(args))
     }
 
-    fn make_lex_err(&mut self, span: Span, cause: &str) -> Scanned<'input> {
+    fn make_lex_err(&mut self, span: Span, cause: &str) -> Scanned<'src> {
         self.err_count += 1;
         Err(Spanned {
             span,
@@ -617,7 +700,7 @@ where
         })
     }
 
-    fn make_prefix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
+    fn make_prefix_err(&mut self, token: &Spanned<Token<'src>>) -> ExprResult<'src> {
         self.err_count += 1;
         let s = format!("Invalid token in prefix rule: '{}'", token.node);
         Err(Spanned {
@@ -626,7 +709,7 @@ where
         })
     }
 
-    fn make_infix_err(&mut self, token: &Spanned<Token<'input>>) -> ExprResult<'input> {
+    fn make_infix_err(&mut self, token: &Spanned<Token<'src>>) -> ExprResult<'src> {
         self.err_count += 1;
         let s = format!("Invalid token in infix rule: '{}'", token.node);
         Err(Spanned {
@@ -637,9 +720,9 @@ where
 
     fn make_consume_err(
         &mut self,
-        actual: &Spanned<Token<'input>>,
+        actual: &Spanned<Token<'src>>,
         expected: String,
-    ) -> Scanned<'input> {
+    ) -> Scanned<'src> {
         self.err_count += 1;
         Err(Spanned {
             span: actual.span,
@@ -682,7 +765,7 @@ mod tests {
 
     #[test]
     fn test_consume_type_pointer_to_pointer() {
-        let source = "**Person";
+        let source = Source::new("main", "**Person");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -691,7 +774,10 @@ mod tests {
             Spanned::new(
                 0,
                 7,
-                Type::Pointer(Pointer::new(2, Simple::UserType("Person")))
+                Type::Pointer(Pointer::new(
+                    2,
+                    Simple::UserType(UserIdent::new("main", "Person"))
+                ))
             ),
             ty
         );
@@ -699,7 +785,7 @@ mod tests {
 
     #[test]
     fn test_consume_type_pointer() {
-        let source = "*i32";
+        let source = Source::new("main", "*i32");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -712,16 +798,19 @@ mod tests {
 
     #[test]
     fn test_parse_assignment_chain() {
-        let source = "x = y = 0";
+        let source = Source::new("main", "x = y = 0");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        parser.expression().unwrap();
+        parser.expression(false).unwrap();
     }
 
     #[test]
     fn test_parse_return_struct() {
-        let source = "type Test struct {test: i32, second: bool} fn main(): Test { }";
+        let source = Source::new(
+            "main",
+            "type Test struct {test: i32, second: bool} fn main(): Test { }",
+        );
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -744,7 +833,11 @@ mod tests {
                 TopLvl::FnDecl {
                     name: Spanned::new(46, 49, "main"),
                     params: ParamList::default(),
-                    ret_type: Spanned::new(54, 57, Type::Simple(Simple::UserType("Test"))),
+                    ret_type: Spanned::new(
+                        54,
+                        57,
+                        Type::Simple(Simple::UserType(UserIdent::new("main", "Test")))
+                    ),
                     is_extern: false,
                     body: Block(vec![])
                 }
@@ -755,7 +848,10 @@ mod tests {
 
     #[test]
     fn test_parse_struct_definition() {
-        let source = "type Test struct {test: i32, second: bool} fn main(): void { }";
+        let source = Source::new(
+            "main",
+            "type Test struct {test: i32, second: bool} fn main(): void { }",
+        );
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -789,7 +885,7 @@ mod tests {
 
     #[test]
     fn test_parse_empty_struct_definition() {
-        let source = "type Test struct {} fn main(): void { }";
+        let source = Source::new("main", "type Test struct {} fn main(): void { }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -814,7 +910,7 @@ mod tests {
 
     #[test]
     fn test_parse_while_statement() {
-        let source = "fn main(): void { while 1 == 1 { test(); } }";
+        let source = Source::new("main", "fn main(): void { while 1 == 1 { test(); } }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -839,11 +935,7 @@ mod tests {
                         33,
                         38,
                         Expr::new(ExprKind::Call {
-                            callee: Box::new(Spanned::new(
-                                33,
-                                36,
-                                Expr::new(ExprKind::Ident("test"))
-                            )),
+                            callee: Spanned::new(33, 36, UserIdent::new("main", "test")),
                             args: ArgList(vec![])
                         })
                     ))])
@@ -855,7 +947,7 @@ mod tests {
 
     #[test]
     fn test_parse_import_access() {
-        let source = "fn main(): void { test.func(); }";
+        let source = Source::new("main", "fn main(): void { test.func(); }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -870,18 +962,7 @@ mod tests {
                     18,
                     28,
                     Expr::new(ExprKind::Call {
-                        callee: Box::new(Spanned::new(
-                            18,
-                            26,
-                            Expr::new(ExprKind::Access {
-                                left: Box::new(Spanned::new(
-                                    18,
-                                    21,
-                                    Expr::new(ExprKind::Ident("test"))
-                                )),
-                                identifier: Spanned::new(23, 26, "func")
-                            })
-                        )),
+                        callee: Spanned::new(18, 26, UserIdent::new("test", "func")),
                         args: ArgList(vec![])
                     })
                 ))])
@@ -892,7 +973,7 @@ mod tests {
 
     #[test]
     fn test_parse_import() {
-        let source = "import test\nfn main(): void {}";
+        let source = Source::new("main", "import test\nfn main(): void {}");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -916,7 +997,7 @@ mod tests {
 
     #[test]
     fn test_parse_access_through_identifier() {
-        let source = "fn main(): void { test.fun(); }";
+        let source = Source::new("main", "fn main(): void { test.fun(); }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -931,18 +1012,7 @@ mod tests {
                     18,
                     27,
                     Expr::new(ExprKind::Call {
-                        callee: Box::new(Spanned::new(
-                            18,
-                            25,
-                            Expr::new(ExprKind::Access {
-                                left: Box::new(Spanned::new(
-                                    18,
-                                    21,
-                                    Expr::new(ExprKind::Ident("test"))
-                                )),
-                                identifier: Spanned::new(23, 25, "fun")
-                            })
-                        )),
+                        callee: Spanned::new(18, 25, UserIdent::new("test", "fun")),
                         args: ArgList(vec![])
                     })
                 ))])
@@ -953,7 +1023,7 @@ mod tests {
 
     #[test]
     fn test_parse_call_without_args_should_return_call_expr_with_empty_args() {
-        let source = "fn main(): void { test(); }";
+        let source = Source::new("main", "fn main(): void { test(); }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -968,7 +1038,7 @@ mod tests {
                     18,
                     23,
                     Expr::new(ExprKind::Call {
-                        callee: Box::new(Spanned::new(18, 21, Expr::new(ExprKind::Ident("test")))),
+                        callee: Spanned::new(18, 21, UserIdent::new("main", "test")),
                         args: ArgList(vec![])
                     })
                 ))])
@@ -979,7 +1049,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_one_error_should_have_err_count_of_one() {
-        let source = "fn err(): void { 1 ++ 2; 3 + 4; }";
+        let source = Source::new("main", "fn err(): void { 1 ++ 2; 3 + 4; }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1013,7 +1083,7 @@ mod tests {
 
     #[test]
     fn test_parse_let_with_value_should_return_var_decl_stmt() {
-        let source = "fn main(): void { let var = 5; }";
+        let source = Source::new("main", "fn main(): void { let var = 5; }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1024,12 +1094,12 @@ mod tests {
                 ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
-                body: Block(vec![Stmt::VarDecl {
+                body: Block(vec![Stmt::VarDecl(Box::new(VarDecl {
                     name: Spanned::new(22, 24, "var"),
                     value: Spanned::new(28, 28, Expr::new(ExprKind::DecLit("5"))),
                     eq: Spanned::new(26, 26, Token::Equals),
                     ty: Cell::new(None)
-                }])
+                }))])
             }]),
             prg
         );
@@ -1039,7 +1109,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_empty_main_returns_empty_fn_decl() {
-        let source = "fn main(): void {}";
+        let source = Source::new("main", "fn main(): void {}");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1058,7 +1128,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_one_stmt_in_main() {
-        let source = "fn main(): void {1 + 1;}";
+        let source = Source::new("main", "fn main(): void {1 + 1;}");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1087,21 +1157,21 @@ mod tests {
 
     #[test]
     fn test_parsing_number_in_parentheses_should_just_return_number() {
-        let source = "((((42))))";
+        let source = Source::new("main", "((((42))))");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap().node;
+        let expr = parser.expression(false).unwrap().node;
         assert_eq!(Expr::new(ExprKind::DecLit("42")), expr);
     }
 
     #[test]
     fn test_parsing_binary_operations_should_have_correct_precedence() {
-        let source = "1 + 2 * 3";
+        let source = Source::new("main", "1 + 2 * 3");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression(false).unwrap();
         assert_eq!(
             Spanned {
                 node: Expr::new(ExprKind::Binary(
@@ -1122,11 +1192,11 @@ mod tests {
             expr
         );
 
-        let source = "2 * 3 + 1";
+        let source = Source::new("main", "2 * 3 + 1");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression(false).unwrap();
         assert_eq!(
             Spanned {
                 node: Expr::new(ExprKind::Binary(
@@ -1147,11 +1217,11 @@ mod tests {
             expr
         );
 
-        let source = "(2 + 3) * 1";
+        let source = Source::new("main", "(2 + 3) * 1");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression(false).unwrap();
         assert_eq!(
             Spanned {
                 node: Expr::new(ExprKind::Binary(
@@ -1172,11 +1242,11 @@ mod tests {
             expr
         );
 
-        let source = "1 + (2 * 3)";
+        let source = Source::new("main", "1 + (2 * 3)");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
-        let expr = parser.expression().unwrap();
+        let expr = parser.expression(false).unwrap();
         assert_eq!(
             Spanned {
                 node: Expr::new(ExprKind::Binary(

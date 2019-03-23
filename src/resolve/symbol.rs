@@ -11,24 +11,24 @@ pub enum SymbolKind {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Symbol<'input> {
-    pub ty: Type<'input>,
+pub struct Symbol<'src> {
+    pub ty: Type<'src>,
     pub kind: SymbolKind,
-    pub name: &'input str,
+    pub name: &'src str,
 }
 
-impl<'input> Symbol<'input> {
-    fn new(name: &'input str, ty: Type<'input>, kind: SymbolKind) -> Self {
+impl<'src> Symbol<'src> {
+    fn new(name: &'src str, ty: Type<'src>, kind: SymbolKind) -> Self {
         Symbol { ty, kind, name }
     }
 }
 
 #[derive(Debug)]
-pub struct SymbolTable<'input> {
-    scopes: Vec<HashMap<&'input str, Spanned<Symbol<'input>>>>,
+pub struct SymbolTable<'src> {
+    scopes: Vec<HashMap<&'src str, Spanned<Symbol<'src>>>>,
 }
 
-impl<'input> SymbolTable<'input> {
+impl<'src> SymbolTable<'src> {
     pub fn new() -> Self {
         SymbolTable {
             scopes: vec![HashMap::new()],
@@ -36,7 +36,7 @@ impl<'input> SymbolTable<'input> {
     }
 }
 
-impl<'input> SymbolTable<'input> {
+impl<'src> SymbolTable<'src> {
     pub fn scope_enter(&mut self) {
         self.scopes.push(HashMap::new());
     }
@@ -48,7 +48,7 @@ impl<'input> SymbolTable<'input> {
         self.scopes.pop();
     }
 
-    pub fn bind(&mut self, name: &'input str, span: Span, ty: Type<'input>, is_param: bool) {
+    pub fn bind(&mut self, name: &'src str, span: Span, ty: Type<'src>, is_param: bool) {
         let global = self.in_global_scope();
         let scope = self.scopes.last_mut().unwrap();
 
@@ -65,12 +65,12 @@ impl<'input> SymbolTable<'input> {
     }
 }
 
-impl<'input> SymbolTable<'input> {
+impl<'src> SymbolTable<'src> {
     fn in_global_scope(&self) -> bool {
         self.scopes.len() <= 1
     }
 
-    pub fn lookup(&self, name: &'input str) -> Option<&Spanned<Symbol<'input>>> {
+    pub fn lookup(&self, name: &'src str) -> Option<&Spanned<Symbol<'src>>> {
         for scope in self.scopes.iter().rev() {
             let symbol = scope.get(name);
             if symbol.is_some() {
@@ -81,7 +81,7 @@ impl<'input> SymbolTable<'input> {
         None
     }
 
-    pub fn lookup_current(&self, name: &'input str) -> Option<&Spanned<Symbol>> {
+    pub fn lookup_current(&self, name: &'src str) -> Option<&Spanned<Symbol>> {
         let last_scope = self.scopes.last().unwrap();
         last_scope.get(name)
     }

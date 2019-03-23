@@ -40,5 +40,6 @@ fn main(): i32 {
         "%s, lives in %s in house number %s\n", 
         hans.name, hans.address.city, hans.address.hnr
     );
+    p.age = 0;
     return p.age;
 }

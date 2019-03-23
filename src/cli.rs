@@ -23,14 +23,19 @@ pub fn report_errors<W: Write>(source: &Source, prg: &Program, writer: &mut W) -
 fn find_errors(prg: &Program) -> Vec<(Span, String)> {
     fn find_errors_rec(stmt: &Stmt, errors: &mut Vec<(Span, String)>) {
         match stmt {
-            Stmt::VarDecl { value, .. } => {
-                if value.node.is_err() {
-                    errors.push((value.span, value.node.to_string()))
+            Stmt::VarDecl(decl) => {
+                if decl.value.node.is_err() {
+                    errors.push((decl.value.span, decl.value.node.to_string()))
                 }
             }
             Stmt::Expr(Spanned { node: expr, span }) => {
                 if expr.is_err() {
                     errors.push((*span, expr.to_string()));
+                }
+            }
+            Stmt::Delete(expr) => {
+                if expr.node.is_err() {
+                    errors.push((expr.span, expr.node.to_string()));
                 }
             }
             Stmt::Return(val) => {
@@ -129,15 +134,16 @@ pub fn find_line_index(source: &Source, start: usize) -> (usize, usize) {
 
 fn find_dist(source: &Source, start: usize) -> usize {
     let slice = &source.code[..start];
+    let slice = slice
+        .chars()
+        .rev()
+        .take_while(|c| *c != '\n')
+        .collect::<String>();
 
-    UnicodeWidthStr::width(
-        slice
-            .chars()
-            .rev()
-            .take_while(|c| *c != '\n')
-            .collect::<String>()
-            .as_str(),
-    )
+    // tabs are replaced by 4 spaces in the output, so add those to the distance
+    let tabs = slice.chars().filter(|c| *c == '\t').count() * 4;
+
+    UnicodeWidthStr::width(slice.as_str()) + tabs
 }
 
 pub fn err_to_string(
@@ -156,7 +162,8 @@ pub fn err_to_string(
     let len_line_nr = line_nr.to_string().len();
     let filler = " ".repeat(len_line_nr + 1);
 
-    let len = UnicodeWidthStr::width(&source.code[err_tok_span.start..err_tok_span.end]) + 1;
+    let slice = &source.code[err_tok_span.start..err_tok_span.end];
+    let len = UnicodeWidthStr::width(slice) + 1;
     let dist = find_dist(source, err_tok_span.start);
 
     let marker = format!("{}{}", " ".repeat(dist), "^".repeat(len));
@@ -172,6 +179,7 @@ pub fn err_to_string(
         .enumerate()
         .skip(start_line)
         .take(end_line - start_line)
+        .map(|(nr, l)| (nr, l.replace("\t", "    ")))
         .map(|(nr, l)| {
             if nr + 1 == line_nr {
                 format!("{}|\n{} |{}\n{}|{}", filler, line_nr, l, filler, marker)

@@ -3,11 +3,12 @@ use std::fmt;
 use crate::types::Type;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum Token<'input> {
-    Ident(&'input str),
-    DecLit(&'input str),
-    StringLit(&'input str),
-    TypeIdent(Type<'input>),
+pub enum Token<'src> {
+    NullLit,
+    Ident(&'src str),
+    DecLit(&'src str),
+    StringLit(&'src str),
+    TypeIdent(Type<'src>),
 
     // Keywords
     Let,
@@ -20,6 +21,8 @@ pub enum Token<'input> {
     While,
     Type,
     Struct,
+    New,
+    Delete,
 
     // Operators
     Equals, // =
@@ -58,10 +61,11 @@ pub enum Precedence {
     Comparison = 4,
     Sum = 5,
     Product = 6,
-    Call = 7,
+    Unary = 7,
+    Call = 8,
 }
 
-impl<'input> Token<'input> {
+impl<'src> Token<'src> {
     pub fn precedence(&self) -> Precedence {
         match self {
             Token::Equals => Precedence::Assign,
@@ -71,15 +75,16 @@ impl<'input> Token<'input> {
             Token::Smaller | Token::SmallerEquals => Precedence::Comparison,
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
-            Token::LParen | Token::Dot => Precedence::Call,
+            Token::LParen | Token::Dot | Token::LBrace => Precedence::Call,
             _ => Precedence::None,
         }
     }
 }
 
-impl<'input> fmt::Display for Token<'input> {
+impl<'src> fmt::Display for Token<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Token::NullLit => write!(f, "null"),
             Token::Ident(ref name) => write!(f, "{}", name),
             Token::StringLit(ref lit) => write!(f, "{}", lit),
             Token::DecLit(lit) => write!(f, "{}", lit.to_string()),
@@ -95,6 +100,8 @@ impl<'input> fmt::Display for Token<'input> {
             Token::Return => write!(f, "return"),
             Token::Extern => write!(f, "extern"),
             Token::While => write!(f, "while"),
+            Token::New => write!(f, "new"),
+            Token::Delete => write!(f, "delete"),
 
             // Operators
             Token::Equals => write!(f, "="),

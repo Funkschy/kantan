@@ -1,7 +1,7 @@
 use std::{iter::Peekable, str::CharIndices};
 
 use super::{error::*, token::*, *};
-use crate::types::*;
+use crate::{types::*, Source};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct InputPos {
@@ -17,18 +17,21 @@ impl InputPos {
     }
 }
 
-pub struct Lexer<'input> {
-    src: &'input str,
-    chars: Peekable<CharIndices<'input>>,
+pub struct Lexer<'src> {
+    source: &'src Source,
+    src: &'src str,
+    chars: Peekable<CharIndices<'src>>,
     current: Option<InputPos>,
     prev: Option<char>,
 }
 
-impl<'input> Lexer<'input> {
-    pub fn new(src: &'input str) -> Self {
+impl<'src> Lexer<'src> {
+    pub fn new(source: &'src Source) -> Self {
+        let src = &source.code;
         let mut chars = src.char_indices().peekable();
 
         Lexer {
+            source,
             src,
             current: InputPos::new_opt(chars.next()),
             chars,
@@ -37,7 +40,7 @@ impl<'input> Lexer<'input> {
     }
 }
 
-impl<'input> Lexer<'input> {
+impl<'src> Lexer<'src> {
     fn pos(&self) -> CharPos {
         if let Some(InputPos { pos, .. }) = self.current {
             return pos;
@@ -46,7 +49,7 @@ impl<'input> Lexer<'input> {
         self.src.len()
     }
 
-    fn slice(&self, start: CharPos, end: CharPos) -> &'input str {
+    fn slice(&self, start: CharPos, end: CharPos) -> &'src str {
         let end = if end > self.src.len() {
             self.src.len()
         } else {
@@ -61,9 +64,9 @@ impl<'input> Lexer<'input> {
     }
 }
 
-impl<'input> Scanner<'input> for Lexer<'input> {
-    fn source(&self) -> &'input str {
-        &self.src
+impl<'src> Scanner<'src> for Lexer<'src> {
+    fn source(&self) -> &'src Source {
+        &self.source
     }
 }
 
@@ -104,7 +107,7 @@ macro_rules! consume_double {
     }};
 }
 
-impl<'input> Lexer<'input> {
+impl<'src> Lexer<'src> {
     fn advance(&mut self) -> Option<InputPos> {
         let curr = self.current?;
         if self.pos() > 0 {
@@ -117,7 +120,7 @@ impl<'input> Lexer<'input> {
         Some(curr)
     }
 
-    fn read_while<P>(&mut self, predicate: P) -> &'input str
+    fn read_while<P>(&mut self, predicate: P) -> &'src str
     where
         P: Fn(char) -> bool,
     {
@@ -138,7 +141,7 @@ impl<'input> Lexer<'input> {
         self.read_while(|c| c.is_whitespace());
     }
 
-    fn scan_ident(&mut self) -> Scanned<'input> {
+    fn scan_ident(&mut self) -> Scanned<'src> {
         let start = self.pos();
         let slice = self.read_while(|c| c.is_alphanumeric() || c == '_');
         if let Some(keyword) = self.check_keyword(start, slice) {
@@ -157,11 +160,7 @@ impl<'input> Lexer<'input> {
         }
     }
 
-    fn check_keyword(
-        &mut self,
-        start: CharPos,
-        slice: &'input str,
-    ) -> Option<Spanned<Token<'input>>> {
+    fn check_keyword(&mut self, start: CharPos, slice: &'src str) -> Option<Spanned<Token<'src>>> {
         Some(self.spanned(
             start,
             match slice {
@@ -179,19 +178,22 @@ impl<'input> Lexer<'input> {
                 "while" => Token::While,
                 "type" => Token::Type,
                 "struct" => Token::Struct,
+                "null" => Token::NullLit,
+                "new" => Token::New,
+                "delete" => Token::Delete,
                 _ => return None,
             },
         ))
     }
 
-    fn scan_dec_num(&mut self) -> Scanned<'input> {
+    fn scan_dec_num(&mut self) -> Scanned<'src> {
         let start = self.pos();
         let slice = self.read_while(|c| c.is_digit(10));
 
         Ok(self.spanned(start, Token::DecLit(slice)))
     }
 
-    fn scan_string(&mut self) -> Scanned<'input> {
+    fn scan_string(&mut self) -> Scanned<'src> {
         self.advance();
         let start = self.pos();
         let slice = self.read_while(|c| c != '"');
@@ -214,7 +216,7 @@ impl<'input> Lexer<'input> {
         Ok(spanned)
     }
 
-    fn scan_token(&mut self) -> Option<Scanned<'input>> {
+    fn scan_token(&mut self) -> Option<Scanned<'src>> {
         self.skip_whitespace();
         let start = self.pos();
 
@@ -281,8 +283,8 @@ impl<'input> Lexer<'input> {
     }
 }
 
-impl<'input> Iterator for Lexer<'input> {
-    type Item = Scanned<'input>;
+impl<'src> Iterator for Lexer<'src> {
+    type Item = Scanned<'src>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.scan_token()
@@ -295,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_scan_double_dot_returns_error() {
-        let source = "..";
+        let source = Source::new("main", "..");
         let mut lexer = Lexer::new(&source);
 
         let tok = lexer.next().unwrap();
@@ -309,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_scan_triple_dot() {
-        let source = ". ...";
+        let source = Source::new("main", ". ...");
         let lexer = Lexer::new(&source);
 
         let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
@@ -324,8 +326,11 @@ mod tests {
 
     #[test]
     fn test_comments_are_ignored() {
-        let source = "1 + //
-            2";
+        let source = Source::new(
+            "main",
+            "1 + //
+            2",
+        );
 
         let lexer = Lexer::new(&source);
 
@@ -342,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_scan_smaller_and_smaller_equals() {
-        let source = "1 <= 2 <=2< =3";
+        let source = Source::new("main", "1 <= 2 <=2< =3");
         let lexer = Lexer::new(&source);
 
         let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
@@ -363,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_scan_string_should_return_correct_string_without_parens() {
-        let source = r#""hello world""#;
+        let source = Source::new("main", r#""hello world""#);
         let mut lexer = Lexer::new(&source);
 
         let s = lexer.scan_token();
@@ -377,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_scan_string_decl() {
-        let source = r#"let s = "";"#;
+        let source = Source::new("main", r#"let s = "";"#);
         let lexer = Lexer::new(&source);
 
         let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
@@ -395,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_scan_empty_string_should_return_correct_string_without_parens() {
-        let source = r#""""#;
+        let source = Source::new("main", r#""""#);
         let mut lexer = Lexer::new(&source);
 
         let s = lexer.scan_token();
@@ -404,7 +409,7 @@ mod tests {
 
     #[test]
     fn test_scan_string_should_return_lexerror_when_reaching_eof() {
-        let source = r#""hello world"#;
+        let source = Source::new("main", r#""hello world"#);
         let mut lexer = Lexer::new(&source);
 
         let s = lexer.scan_token();
@@ -422,21 +427,21 @@ mod tests {
 
     #[test]
     fn test_slice_returns_correct_substring() {
-        let source = "hello world";
-        let lexer = Lexer::new(source);
+        let source = Source::new("main", "hello world");
+        let lexer = Lexer::new(&source);
 
-        let slice = lexer.slice(0, source.len());
+        let slice = lexer.slice(0, source.code.len());
         assert_eq!("hello world", slice);
 
-        let source = "こんにちは";
-        let mut lexer = Lexer::new(source);
+        let source = Source::new("main", "こんにちは");
+        let mut lexer = Lexer::new(&source);
 
-        let slice = lexer.slice(0, source.len());
+        let slice = lexer.slice(0, source.code.len());
         assert_eq!("こんにちは", slice);
 
         lexer.advance();
         let pos = lexer.pos();
-        let slice = lexer.slice(pos, source.len());
+        let slice = lexer.slice(pos, source.code.len());
 
         assert_eq!("んにちは", slice);
 
@@ -449,8 +454,8 @@ mod tests {
 
     #[test]
     fn pos_after_advance_equals_sizeof_char() {
-        let source = "こんにちは";
-        let mut lexer = Lexer::new(source);
+        let source = Source::new("main", "こんにちは");
+        let mut lexer = Lexer::new(&source);
 
         let pos = lexer.pos();
         assert_eq!(0, pos);
@@ -463,20 +468,20 @@ mod tests {
 
     #[test]
     fn test_read_while() {
-        let source = "hello1 world";
-        let mut lexer = Lexer::new(source);
+        let source = Source::new("main", "hello1 world");
+        let mut lexer = Lexer::new(&source);
 
         let slice = lexer.read_while(|c| c.is_alphabetic());
         assert_eq!("hello", slice);
 
-        let source = "こんにちは";
-        let mut lexer = Lexer::new(source);
+        let source = Source::new("main", "こんにちは");
+        let mut lexer = Lexer::new(&source);
 
         let slice = lexer.read_while(|c| c.is_alphabetic());
         assert_eq!("こんにちは", slice);
 
-        let source = "hello1 world";
-        let mut lexer = Lexer::new(source);
+        let source = Source::new("main", "hello1 world");
+        let mut lexer = Lexer::new(&source);
 
         let slice = lexer.read_while(|c| !c.is_digit(10));
         assert_eq!("hello", slice);
@@ -484,8 +489,8 @@ mod tests {
 
     #[test]
     fn test_scan_non_ascii_identifier_should_return_error() {
-        let source = "let こんにちは";
-        let mut lexer = Lexer::new(source);
+        let source = Source::new("main", "let こんにちは");
+        let mut lexer = Lexer::new(&source);
 
         lexer.scan_ident().unwrap();
         let ident = lexer.scan_token().unwrap();
@@ -493,7 +498,7 @@ mod tests {
         assert_eq!(
             Err(Spanned::new(
                 4,
-                source.len() - 'は'.len_utf8(),
+                source.code.len() - 'は'.len_utf8(),
                 ParseError::LexError(LexError::with_cause(
                     "Non ascii identifiers are currently not supported"
                 ))
@@ -506,19 +511,23 @@ mod tests {
 
     #[test]
     fn test_scan_unicode_string_literal() {
-        let source = r#""こんにちは""#;
-        let mut lexer = Lexer::new(source);
+        let source = Source::new("main", r#""こんにちは""#);
+        let mut lexer = Lexer::new(&source);
 
         let ident = lexer.scan_token().unwrap().unwrap();
-        let expected = Spanned::new(1, source.len() - 2, Token::StringLit("こんにちは"));
+        let expected = Spanned::new(
+            1,
+            source.code.len() - 2,
+            Token::StringLit("こんにちは"),
+        );
 
         assert_eq!(expected, ident);
     }
 
     #[test]
     fn test_scan_declaration() {
-        let source = "let test: i32 = (42);";
-        let lexer = Lexer::new(source);
+        let source = Source::new("main", "let test: i32 = (42);");
+        let lexer = Lexer::new(&source);
 
         let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
         let expected = vec![
@@ -538,8 +547,8 @@ mod tests {
 
     #[test]
     fn test_scan_double_equals() {
-        let source = "= == =";
-        let lexer = Lexer::new(source);
+        let source = Source::new("main", "= == =");
+        let lexer = Lexer::new(&source);
 
         let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
         let expected = vec![
@@ -553,8 +562,8 @@ mod tests {
 
     #[test]
     fn test_scan_illegal_char_should_return_some_err() {
-        let source = "i32 `";
-        let lexer = Lexer::new(source);
+        let source = Source::new("main", "i32 `");
+        let lexer = Lexer::new(&source);
 
         let tokens: Vec<Scanned> = lexer.skip(1).map(|e| e).collect();
         let backtick = tokens.get(0);
@@ -568,8 +577,8 @@ mod tests {
 
     #[test]
     fn test_scan_operators() {
-        let source = "=*+/-";
-        let lexer = Lexer::new(source);
+        let source = Source::new("main", "=*+/-");
+        let lexer = Lexer::new(&source);
 
         let tokens: Vec<Token> = lexer.map(|e| e.unwrap().node).collect();
         let expected = vec![
@@ -585,8 +594,8 @@ mod tests {
 
     #[test]
     fn test_scan_number_in_multiple_parens() {
-        let source = "(((42)))";
-        let lexer = Lexer::new(source);
+        let source = Source::new("main", "(((42)))");
+        let lexer = Lexer::new(&source);
 
         let tokens: Vec<Token> = lexer.map(|e| e.unwrap().node).collect();
         let expected = vec![

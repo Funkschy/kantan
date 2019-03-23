@@ -3,17 +3,17 @@ use std::error;
 use std::fmt;
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
-pub enum ParseError<'input> {
+pub enum ParseError<'src> {
     LexError(LexError),
     PrefixError(String),
     InfixError(String),
     ConsumeError {
-        actual: Token<'input>,
+        actual: Token<'src>,
         expected: String,
     },
 }
 
-impl<'input> fmt::Display for ParseError<'input> {
+impl<'src> fmt::Display for ParseError<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ParseError::LexError(err) => write!(f, "{}", err.as_string()),
@@ -26,7 +26,7 @@ impl<'input> fmt::Display for ParseError<'input> {
     }
 }
 
-impl<'input> From<LexError> for ParseError<'input> {
+impl<'src> From<LexError> for ParseError<'src> {
     fn from(value: LexError) -> Self {
         ParseError::LexError(value)
     }

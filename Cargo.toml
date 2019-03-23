@@ -10,3 +10,4 @@ keywords = ["compiler", "rust", "parser", "kantan"]
 ansi_term = "0.11.0"
 unicode-width = "0.1.5"
 llvm-sys = "70.1.0"
+clap = "2.32.0"

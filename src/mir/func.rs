@@ -4,21 +4,21 @@ use super::{blockmap::BlockMap, tac::*};
 use crate::types::*;
 
 #[derive(PartialEq, Debug)]
-pub struct Func<'input> {
-    pub(crate) label: Label,
-    pub(crate) params: Vec<(&'input str, Type<'input>)>,
-    pub(crate) ret: Type<'input>,
-    pub(crate) blocks: BlockMap<'input>,
+pub struct Func<'src> {
+    pub(crate) name: &'src str,
+    pub(crate) params: Vec<(&'src str, Type<'src>)>,
+    pub(crate) ret: Type<'src>,
+    pub(crate) blocks: BlockMap<'src>,
     pub(crate) is_extern: bool,
     pub(crate) is_varargs: bool,
 }
 
-impl<'input> Func<'input> {
+impl<'src> Func<'src> {
     pub fn new(
-        label: Label,
-        params: Vec<(&'input str, Type<'input>)>,
-        ret: Type<'input>,
-        blocks: BlockMap<'input>,
+        name: &'src str,
+        params: Vec<(&'src str, Type<'src>)>,
+        ret: Type<'src>,
+        blocks: BlockMap<'src>,
         is_extern: bool,
         is_varargs: bool,
     ) -> Self {
@@ -37,7 +37,7 @@ impl<'input> Func<'input> {
         }
 
         Func {
-            label,
+            name,
             params,
             ret,
             blocks,
@@ -47,7 +47,7 @@ impl<'input> Func<'input> {
     }
 }
 
-impl<'input> fmt::Display for Func<'input> {
+impl<'src> fmt::Display for Func<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let params = self
             .params
@@ -57,7 +57,7 @@ impl<'input> fmt::Display for Func<'input> {
             .join(", ");
 
         if self.is_extern {
-            return write!(f, "extern fn {}({}): {};", self.label, params, self.ret);
+            return write!(f, "extern fn {}({}): {};", self.name, params, self.ret);
         }
 
         let format = |inst: &Instruction| {
@@ -84,7 +84,7 @@ impl<'input> fmt::Display for Func<'input> {
         write!(
             f,
             "fn {}({}): {} {{\n{}\n}}",
-            self.label, params, self.ret, instructions
+            self.name, params, self.ret, instructions
         )
     }
 }
