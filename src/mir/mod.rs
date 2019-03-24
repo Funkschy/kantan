@@ -137,7 +137,7 @@ impl<'src> Tac<'src> {
         for s in statements {
             match s {
                 Stmt::Expr(e) => {
-                    self.expr_instr(false, &e.node, &mut block);
+                    self.expr_instr(true, &e.node, &mut block);
                 }
                 Stmt::VarDecl(decl) => {
                     let VarDecl {
