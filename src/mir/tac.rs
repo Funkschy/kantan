@@ -169,7 +169,7 @@ impl<'src> fmt::Display for Expression<'src> {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum UnaryType {
     BoolNegate,
     I32Negate,

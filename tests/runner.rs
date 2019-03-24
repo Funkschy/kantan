@@ -1,6 +1,34 @@
-use std::{fs, process::Command, str::from_utf8};
+use std::{ffi::OsStr, fs, path::PathBuf, process::Command, str::from_utf8};
 
 const NAME: &str = "test.s";
+
+fn compile_dir(name: &str) {
+    let paths = fs::read_dir(name)
+        .unwrap()
+        .into_iter()
+        .map(|f| f.unwrap().path())
+        .collect::<Vec<PathBuf>>();
+
+    let files = paths
+        .iter()
+        .map(|p| p.file_name().unwrap())
+        .collect::<Vec<&OsStr>>();
+
+    let mut files = files
+        .iter()
+        .map(|f| f.to_str().unwrap())
+        .collect::<Vec<&str>>();
+
+    let out = format!("../../../{}", NAME);
+    let mut args = vec!["--emit", "asm", "-o", &out];
+    files.append(&mut args);
+
+    Command::new("../../../target/debug/kantan")
+        .current_dir(name)
+        .args(&files)
+        .output()
+        .expect("Failed to execute kantan");
+}
 
 fn compile(name: &str) {
     Command::new("target/debug/kantan")
@@ -64,13 +92,18 @@ fn test_all_files() {
     let files = fs::read_dir("tests/files").unwrap();
 
     for file in files {
-        let name = file.unwrap().path().display().to_string();
+        let path = file.unwrap().path();
+        let name = path.display().to_string();
 
         if name.ends_with(".expected") {
             continue;
         }
 
-        compile(&name);
+        if path.is_dir() {
+            compile_dir(&name);
+        } else {
+            compile(&name);
+        }
         link(NAME, &name);
         let output = execute();
         let expected = get_expected(&name);

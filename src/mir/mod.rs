@@ -137,7 +137,7 @@ impl<'src> Tac<'src> {
         for s in statements {
             match s {
                 Stmt::Expr(e) => {
-                    self.expr_instr(&e.node, &mut block);
+                    self.expr_instr(false, &e.node, &mut block);
                 }
                 Stmt::VarDecl(decl) => {
                     let VarDecl {
@@ -147,7 +147,7 @@ impl<'src> Tac<'src> {
                     let expr = if let Some(rval) = self.address_expr(&value.node) {
                         rval.into()
                     } else {
-                        self.expr(&value.node, &mut block)
+                        self.expr(true, &value.node, &mut block)
                     };
 
                     self.names.bind(name.node);
@@ -163,7 +163,7 @@ impl<'src> Tac<'src> {
                         // If the return value is a struct initilizer, we need to first declare it
                         // as a variable, because the llvm codegenerator expects that the target of
                         // the struct memcpy was already alloca'd
-                        let address = self.expr_instr(node, &mut block);
+                        let address = self.expr_instr(true, node, &mut block);
                         Instruction::Return(Some(address))
                     } else {
                         Instruction::Return(None)
@@ -171,7 +171,7 @@ impl<'src> Tac<'src> {
                     block.push(ret);
                 }
                 Stmt::Delete(expr) => {
-                    let address = self.expr_instr(&expr.node, &mut block);
+                    let address = self.expr_instr(true, &expr.node, &mut block);
                     let address = self.temp_assign(Expression::Copy(address), &mut block);
                     block.push(Instruction::Delete(address));
                 }
@@ -213,7 +213,7 @@ impl<'src> Tac<'src> {
         let condition_label = self.label();
         block.push(condition_label.clone().into());
 
-        let condition = self.expr_instr(condition, block);
+        let condition = self.expr_instr(true, condition, block);
         let mut body = self.create_block(&body.0);
         let body_label = self.label();
 
@@ -232,7 +232,7 @@ impl<'src> Tac<'src> {
         block: &mut InstructionBlock<'src>,
         end_label: Label,
     ) {
-        let condition = self.expr_instr(condition, block);
+        let condition = self.expr_instr(true, condition, block);
 
         let mut then_block = self.create_block(&then_block.0);
         let then_label = self.label();
@@ -279,14 +279,19 @@ impl<'src> Tac<'src> {
         }
     }
 
-    fn expr(&mut self, expr: &Expr<'src>, block: &mut InstructionBlock<'src>) -> Expression<'src> {
+    fn expr(
+        &mut self,
+        rhs: bool,
+        expr: &Expr<'src>,
+        block: &mut InstructionBlock<'src>,
+    ) -> Expression<'src> {
         match expr.kind() {
             ExprKind::Binary(l, op, r) | ExprKind::BoolBinary(l, op, r) => {
                 // TODO: find correct dec size
                 let bin_type = Option::from(&op.node).map(BinaryType::I32).unwrap();
 
-                let left = self.expr_instr(&l.node, block);
-                let right = self.expr_instr(&r.node, block);
+                let left = self.expr_instr(true, &l.node, block);
+                let right = self.expr_instr(true, &r.node, block);
 
                 Expression::Binary(left, bin_type, right)
             }
@@ -294,7 +299,7 @@ impl<'src> Tac<'src> {
                 let args: Vec<Address> = args
                     .0
                     .iter()
-                    .map(|a| self.expr_instr(&a.node, block))
+                    .map(|a| self.expr_instr(true, &a.node, block))
                     .collect();
 
                 let ty = expr.ty().unwrap();
@@ -304,13 +309,13 @@ impl<'src> Tac<'src> {
                 let expr = if let Some(rval) = self.address_expr(&value.node) {
                     rval.into()
                 } else {
-                    self.expr(&value.node, block)
+                    self.expr(true, &value.node, block)
                 };
 
                 let address = if let ExprKind::Ident(name) = left.node.kind() {
                     self.names.lookup(name).into()
                 } else {
-                    let e = self.expr(&left.node, block);
+                    let e = self.expr(false, &left.node, block);
                     // remove the deref/copy, so that the value can be assigned
                     if let Expression::Copy(a) = &e {
                         a.clone()
@@ -323,14 +328,18 @@ impl<'src> Tac<'src> {
             ExprKind::Negate(op, expr) => {
                 // TODO: find correct dec size
                 let u_type = Option::from(&op.node).unwrap();
-                let address = self.expr_instr(&expr.node, block);
+                let address = self.expr_instr(true, &expr.node, block);
 
                 Expression::Unary(u_type, address)
             }
             ExprKind::Deref(op, expr) => {
                 let u_type = Option::from(&op.node).unwrap();
-                let address = self.expr_instr(&expr.node, block);
+                let mut address = self.expr_instr(rhs, &expr.node, block);
 
+                // Expressions on the right side of an assignment have to be derefed twice
+                if rhs {
+                    address = self.temp_assign(Expression::Unary(u_type, address), block);
+                }
                 Expression::Unary(u_type, address)
             }
             ExprKind::Access { left, identifier } => {
@@ -338,13 +347,13 @@ impl<'src> Tac<'src> {
 
                 let (ty_name, address) = match left.node.ty().unwrap() {
                     Type::Simple(UserType(ty_name)) => {
-                        (ty_name, self.expr_instr(&left.node, block))
+                        (ty_name, self.expr_instr(rhs, &left.node, block))
                     }
                     Type::Pointer(Pointer {
                         number,
                         ty: UserType(ty_name),
                     }) => {
-                        let mut address = self.expr_instr(&left.node, block);
+                        let mut address = self.expr_instr(rhs, &left.node, block);
                         for _ in 0..number {
                             address = self.temp_assign(Expression::Copy(address), block);
                         }
@@ -366,7 +375,7 @@ impl<'src> Tac<'src> {
                 let values = fields
                     .0
                     .iter()
-                    .map(|(_, e)| self.expr_instr(&e.node, block))
+                    .map(|(_, e)| self.expr_instr(true, &e.node, block))
                     .collect();
                 Expression::StructInit(identifier.node, values)
             }
@@ -383,7 +392,7 @@ impl<'src> Tac<'src> {
                     let temp = self.temp();
                     block.push(Instruction::Decl(temp.clone(), ty));
 
-                    let e = self.expr(&expr.node, block);
+                    let e = self.expr(true, &expr.node, block);
                     if let Expression::Copy(a) = &e {
                         a.clone()
                     } else {
@@ -399,6 +408,7 @@ impl<'src> Tac<'src> {
     /// Splits an expression and returns an address to the result
     fn expr_instr(
         &mut self,
+        rhs: bool,
         expr: &Expr<'src>,
         block: &mut InstructionBlock<'src>,
     ) -> Address<'src> {
@@ -407,7 +417,7 @@ impl<'src> Tac<'src> {
             return rval;
         }
 
-        let e = self.expr(expr, block);
+        let e = self.expr(rhs, expr, block);
 
         if let Expression::Copy(a) = e {
             return a;
