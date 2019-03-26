@@ -174,6 +174,7 @@ impl TargetMachine {
                 cpu,
                 features,
                 level.into(),
+                // TODO: find out what this does and act accordingly
                 LLVMRelocMode::LLVMRelocPIC,
                 LLVMCodeModel::LLVMCodeModelDefault,
             );
