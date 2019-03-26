@@ -1,6 +1,5 @@
 use super::token::Token;
-use std::error;
-use std::fmt;
+use std::{error, fmt};
 
 const REPO_URL: &'static str = env!("CARGO_PKG_REPOSITORY");
 

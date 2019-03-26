@@ -136,10 +136,7 @@ where
         Ok(TopLvl::Import { name })
     }
 
-    fn param_list(
-        &mut self,
-        is_extern: bool,
-    ) -> Result<ParamList<'src>, Spanned<ParseError<'src>>> {
+    fn param_list(&mut self, is_extern: bool) -> ParseResult<'src, ParamList<'src>> {
         self.consume(Token::LParen)?;
         let mut varargs = false;
 
@@ -184,7 +181,7 @@ where
         Ok(ParamList { varargs, params })
     }
 
-    fn block(&mut self) -> Result<Block<'src>, Spanned<ParseError<'src>>> {
+    fn block(&mut self) -> ParseResult<'src, Block<'src>> {
         self.consume(Token::LBrace)?;
         let mut stmts = vec![];
 
@@ -351,7 +348,7 @@ where
         self.scanner.next().unwrap_or_else(|| self.eof())
     }
 
-    fn match_tok(&mut self, expected: Token<'src>) -> Result<bool, Spanned<ParseError<'src>>> {
+    fn match_tok(&mut self, expected: Token<'src>) -> ParseResult<'src, bool> {
         if self.peek_eq(expected) {
             self.consume(expected)?;
             return Ok(true);
@@ -367,7 +364,7 @@ where
         })
     }
 
-    fn consume_ident(&mut self) -> Result<Spanned<&'src str>, Spanned<ParseError<'src>>> {
+    fn consume_ident(&mut self) -> ParseResult<'src, Spanned<&'src str>> {
         if let Some(peek) = self.scanner.peek().cloned() {
             return match peek {
                 Ok(peek) => {
@@ -419,60 +416,64 @@ where
         })
     }
 
-    fn consume_type(&mut self) -> Result<Spanned<Type<'src>>, Spanned<ParseError<'src>>> {
+    fn consume_type(&mut self) -> ParseResult<'src, Spanned<Type<'src>>> {
         if let Some(peek) = self.scanner.peek().cloned() {
             return match peek {
-                Ok(peek) => match peek {
-                    Spanned {
-                        node: Token::TypeIdent(ty),
-                        span,
-                    } => {
-                        self.advance()?;
-                        Ok(Spanned::from_span(span, ty))
-                    }
-                    Spanned {
-                        node: Token::Ident(_),
-                        ..
-                    } => {
-                        let expr = self.expression(true)?;
-                        let ident = self.user_ident(&expr)?;
-
-                        Ok(Spanned::from_span(
-                            expr.span,
-                            Type::Simple(Simple::UserType(ident)),
-                        ))
-                    }
-                    Spanned {
-                        node: Token::Star, ..
-                    } => {
-                        let mut counter = 1;
-                        let start = self.advance()?.span.start;
-                        // count *
-                        while self.match_tok(Token::Star)? {
-                            counter += 1;
-                        }
-
-                        let (inner, end) = if let Spanned {
-                            node: Type::Simple(s),
+                Ok(peek) => {
+                    match peek {
+                        Spanned {
+                            node: Token::TypeIdent(ty),
                             span,
-                        } = self.consume_type()?
-                        {
-                            (s, span.end)
-                        } else {
-                            unreachable!()
-                        };
+                        } => {
+                            self.advance()?;
+                            Ok(Spanned::from_span(span, ty))
+                        }
+                        Spanned {
+                            node: Token::Ident(_),
+                            ..
+                        } => {
+                            let expr = self.expression(true)?;
+                            let ident = self.user_ident(&expr)?;
 
-                        Ok(Spanned::new(
-                            start,
-                            end,
-                            Type::Pointer(Pointer::new(counter, inner)),
-                        ))
+                            Ok(Spanned::from_span(
+                                expr.span,
+                                Type::Simple(Simple::UserType(ident)),
+                            ))
+                        }
+                        Spanned {
+                            node: Token::Star, ..
+                        } => {
+                            let mut counter = 1;
+                            let start = self.advance()?.span.start;
+                            // count *s
+                            while self.match_tok(Token::Star)? {
+                                counter += 1;
+                            }
+
+                            let ty = self.consume_type()?;
+                            let (inner, end) = if let Type::Simple(s) = ty.node {
+                                (s, ty.span.end)
+                            } else {
+                                return Err(Spanned::from_span(
+                                    ty.span,
+                                    ParseError::InternalError(
+                                        "Unreachable code reached in the consumption of a pointer type",
+                                    ),
+                                ));
+                            };
+
+                            Ok(Spanned::new(
+                                start,
+                                end,
+                                Type::Pointer(Pointer::new(counter, inner)),
+                            ))
+                        }
+                        _ => {
+                            let tok = Spanned::clone(&peek);
+                            Err(self.make_consume_err(&tok, "Type".to_owned()).unwrap_err())
+                        }
                     }
-                    _ => {
-                        let tok = Spanned::clone(&peek);
-                        Err(self.make_consume_err(&tok, "Type".to_owned()).unwrap_err())
-                    }
-                },
+                }
                 Err(err) => Err(err),
             };
         }
@@ -653,7 +654,7 @@ where
         }
     }
 
-    fn init_list(&mut self) -> Result<InitList<'src>, Spanned<ParseError<'src>>> {
+    fn init_list(&mut self) -> ParseResult<'src, InitList<'src>> {
         let mut inits = vec![];
 
         while !self.at_end() && !self.peek_eq(Token::RBrace) {
@@ -669,7 +670,7 @@ where
         Ok(InitList(inits))
     }
 
-    fn arg_list(&mut self) -> Result<ArgList<'src>, Spanned<ParseError<'src>>> {
+    fn arg_list(&mut self) -> ParseResult<'src, ArgList<'src>> {
         let mut args = vec![];
 
         while !self.at_end() && !self.peek_eq(Token::RParen) {
