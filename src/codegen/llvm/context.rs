@@ -556,8 +556,6 @@ impl<'src> KantanLLVMContext<'src> {
 
 impl<'src> Drop for KantanLLVMContext<'src> {
     fn drop(&mut self) {
-        // TODO: remove
-        println!("Dropping the bass");
         unsafe {
             LLVMDisposeBuilder(self.builder);
             LLVMDisposeModule(self.module);

@@ -3,6 +3,7 @@ name = "kantan"
 version = "0.1.0"
 authors = ["Funkschy <felixschoeller@outlook.de>"]
 edition = "2018"
+repository = "https://github.com/funkschy/kantan"
 description = "A compiler for the Kantan programming language"
 keywords = ["compiler", "rust", "parser", "kantan"]
 

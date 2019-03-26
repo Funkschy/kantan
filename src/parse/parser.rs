@@ -3,9 +3,10 @@ use std::{cell::Cell, iter::Peekable};
 use super::{ast::*, error::LexError, token::*, *};
 use crate::{types::*, Source};
 
-type ExprResult<'src> = Result<Spanned<Expr<'src>>, Spanned<ParseError<'src>>>;
-type StmtResult<'src> = Result<Stmt<'src>, Spanned<ParseError<'src>>>;
-type TopLvlResult<'src> = Result<TopLvl<'src>, Spanned<ParseError<'src>>>;
+type ParseResult<'src, T> = Result<T, Spanned<ParseError<'src>>>;
+type ExprResult<'src> = ParseResult<'src, Spanned<Expr<'src>>>;
+type StmtResult<'src> = ParseResult<'src, Stmt<'src>>;
+type TopLvlResult<'src> = ParseResult<'src, TopLvl<'src>>;
 
 fn as_err_stmt<'src>(err: Spanned<ParseError<'src>>) -> Stmt<'src> {
     Stmt::Expr(Spanned::new(
@@ -391,6 +392,33 @@ where
         Err(self.eof().unwrap_err())
     }
 
+    /// Parses a user ident of type name or package.name
+    fn user_ident(&mut self, expr: &Spanned<Expr<'src>>) -> ParseResult<'src, UserIdent<'src>> {
+        Ok(match expr.node.kind() {
+            ExprKind::Ident(n) => UserIdent::new(&self.source.name, n),
+            ExprKind::Access { left, identifier } => {
+                if let ExprKind::Ident(left) = left.node.kind() {
+                    UserIdent::new(left, identifier.node)
+                } else {
+                    return Err(Spanned::from_span(
+                        left.span,
+                        ParseError::InternalError(
+                            "The left side of this expression has to be an Identifier",
+                        ),
+                    ));
+                }
+            }
+            _ => {
+                return Err(Spanned::from_span(
+                    expr.span,
+                    ParseError::InternalError(
+                        "The expression for a user_ident has to be an Ident or an Access",
+                    ),
+                ));
+            }
+        })
+    }
+
     fn consume_type(&mut self) -> Result<Spanned<Type<'src>>, Spanned<ParseError<'src>>> {
         if let Some(peek) = self.scanner.peek().cloned() {
             return match peek {
@@ -407,21 +435,7 @@ where
                         ..
                     } => {
                         let expr = self.expression(true)?;
-
-                        // TODO: refactor to function
-                        let ident = match expr.node.kind() {
-                            ExprKind::Ident(n) => UserIdent::new(&self.source.name, n),
-                            ExprKind::Access { left, identifier } => {
-                                if let ExprKind::Ident(left) = left.node.kind() {
-                                    UserIdent::new(left, identifier.node)
-                                } else {
-                                    // TODO: implement
-                                    unimplemented!()
-                                }
-                            }
-                            // TODO: implement
-                            _ => unimplemented!(),
-                        };
+                        let ident = self.user_ident(&expr)?;
 
                         Ok(Spanned::from_span(
                             expr.span,
@@ -548,19 +562,7 @@ where
                 let brace = self.consume(Token::RBrace)?;
 
                 let span = Span::new(token.span.start, brace.span.end);
-                let ident = match left.node.kind() {
-                    ExprKind::Ident(n) => UserIdent::new(&self.source.name, n),
-                    ExprKind::Access { left, identifier } => {
-                        if let ExprKind::Ident(left) = left.node.kind() {
-                            UserIdent::new(left, identifier.node)
-                        } else {
-                            // TODO: implement
-                            unimplemented!()
-                        }
-                    }
-                    // TODO: implement
-                    _ => unimplemented!(),
-                };
+                let ident = self.user_ident(&left)?;
 
                 Ok(Spanned::from_span(
                     span,
@@ -571,19 +573,7 @@ where
                 ))
             }
             Token::LParen => {
-                let ident = match left.node.kind() {
-                    ExprKind::Ident(n) => UserIdent::new(&self.source.name, n),
-                    ExprKind::Access { left, identifier } => {
-                        if let ExprKind::Ident(left) = left.node.kind() {
-                            UserIdent::new(left, identifier.node)
-                        } else {
-                            // TODO: implement
-                            unimplemented!()
-                        }
-                    }
-                    // TODO: implement
-                    _ => unimplemented!(),
-                };
+                let ident = self.user_ident(&left)?;
 
                 let arg_list = self.arg_list()?;
                 let end = self.consume(Token::RParen)?.span.end;

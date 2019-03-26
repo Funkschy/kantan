@@ -2,11 +2,14 @@ use super::token::Token;
 use std::error;
 use std::fmt;
 
+const REPO_URL: &'static str = env!("CARGO_PKG_REPOSITORY");
+
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ParseError<'src> {
     LexError(LexError),
     PrefixError(String),
     InfixError(String),
+    InternalError(&'static str),
     ConsumeError {
         actual: Token<'src>,
         expected: String,
@@ -19,6 +22,11 @@ impl<'src> fmt::Display for ParseError<'src> {
             ParseError::LexError(err) => write!(f, "{}", err.as_string()),
             ParseError::PrefixError(err) => write!(f, "{}", err),
             ParseError::InfixError(err) => write!(f, "{}", err),
+            ParseError::InternalError(err) => write!(
+                f,
+                "An internal error has occured: {}\nPlease report this at {}/issues",
+                err, REPO_URL
+            ),
             ParseError::ConsumeError { expected, actual } => {
                 write!(f, "Expected {}, but got {}", expected, actual)
             }
