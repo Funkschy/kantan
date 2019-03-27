@@ -13,12 +13,14 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct NameTable<'src> {
     scopes: Vec<HashMap<&'src str, String>>,
+    total: HashMap<&'src str, usize>,
 }
 
 impl<'src> NameTable<'src> {
     pub fn new() -> Self {
         NameTable {
             scopes: vec![HashMap::new()],
+            total: HashMap::new(),
         }
     }
 }
@@ -36,16 +38,11 @@ impl<'src> NameTable<'src> {
     }
 
     pub fn bind(&mut self, name: &'src str) {
-        // count all occurences of name in all active scopes
-        let num = self
-            .scopes
-            .iter()
-            .rev()
-            .filter_map(|scope| scope.get(name))
-            .count();
+        let num = *self.total.entry(name).or_insert(0);
 
         let scope = self.scopes.last_mut().unwrap();
         scope.insert(name, format!("{}{}", name, num));
+        self.total.insert(name, num + 1);
     }
 }
 

@@ -12,19 +12,21 @@ impl<'src> BlockMap<'src> {
     pub fn from_instructions(block: InstructionBlock<'src>) -> Self {
         let mut mappings = HashMap::new();
         let mut blocks = vec![];
+        let mut vardecls = vec![];
         let mut bb = BasicBlock::default();
         let mut label = Label::from(BlockMap::entry_name());
         let mut label_count = 1;
 
-        bb.instructions.push(label.clone().into());
+        vardecls.push(label.clone().into());
+        bb.instructions.push(Instruction::Nop);
 
         for instr in block.0 {
             match instr {
-                Instruction::Assignment(..)
-                | Instruction::Decl(..)
-                | Instruction::Delete(..)
-                | Instruction::Nop => {
+                Instruction::Assignment(..) | Instruction::Delete(..) | Instruction::Nop => {
                     bb.instructions.push(instr);
+                }
+                Instruction::Decl(..) => {
+                    vardecls.push(instr);
                 }
                 Instruction::Label(ref l) => {
                     if !bb.instructions.is_empty() {
@@ -63,6 +65,10 @@ impl<'src> BlockMap<'src> {
                 }
             }
         }
+
+        let first = &mut blocks[0].instructions;
+        vardecls.append(first);
+        blocks[0].instructions = vardecls;
 
         BlockMap { mappings, blocks }
     }
@@ -128,6 +134,7 @@ mod tests {
         let expected = vec![BasicBlock {
             instructions: vec![
                 Instruction::Label(Label::from(".entry0".to_string())),
+                Instruction::Nop,
                 Instruction::Assignment(
                     Address::Name("x".to_string()),
                     Box::new(Expression::Copy(Address::Const(Constant::new(
@@ -220,6 +227,7 @@ mod tests {
             BasicBlock {
                 instructions: vec![
                     Instruction::Label(Label::from(".entry0".to_string())),
+                    Instruction::Nop,
                     Instruction::Assignment(
                         Address::Name("x".to_string()),
                         Box::new(Expression::Copy(Address::Const(Constant::new(
@@ -331,6 +339,7 @@ mod tests {
             BasicBlock {
                 instructions: vec![
                     Instruction::Label(Label::from(".entry0".to_string())),
+                    Instruction::Nop,
                     Instruction::Assignment(
                         Address::Name("x".to_string()),
                         Box::new(Expression::Copy(Address::Const(Constant::new(

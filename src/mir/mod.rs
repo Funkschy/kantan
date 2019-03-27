@@ -535,6 +535,10 @@ mod tests {
         bb.instructions = vec![
             Label::from(".entry0".to_string()).into(),
             Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Name("y0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Name("z0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Nop,
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
@@ -542,7 +546,6 @@ mod tests {
                     "0",
                 )))),
             ),
-            Instruction::Decl(Address::Name("y0".to_string()), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Name("y0".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
@@ -550,7 +553,6 @@ mod tests {
                     "2",
                 )))),
             ),
-            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
@@ -559,7 +561,6 @@ mod tests {
                     Address::Name("y0".to_string()),
                 )),
             ),
-            Instruction::Decl(Address::Name("z0".to_string()), Type::Simple(Simple::I32)),
             Instruction::Assignment(
                 Address::Name("z0".to_string()),
                 Box::new(Expression::Binary(
@@ -619,6 +620,8 @@ mod tests {
         bb1.instructions = vec![
             Label::from(".entry0".to_string()).into(),
             Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
+            Instruction::Nop,
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
@@ -626,7 +629,6 @@ mod tests {
                     "0",
                 )))),
             ),
-            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
@@ -703,6 +705,8 @@ mod tests {
         bb1.instructions = vec![
             Label::from(".entry0".to_string()).into(),
             Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
+            Instruction::Nop,
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
@@ -710,7 +714,6 @@ mod tests {
                     "0",
                 )))),
             ),
-            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
@@ -798,6 +801,8 @@ mod tests {
         bb1.instructions = vec![
             Label::from(".entry0".to_string()).into(),
             Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
+            Instruction::Nop,
             Instruction::Assignment(
                 Address::Name("x0".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
@@ -811,7 +816,6 @@ mod tests {
         let mut bb2 = BasicBlock::default();
         bb2.instructions = vec![
             Instruction::Label(Label::new(1)),
-            Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
@@ -890,14 +894,14 @@ mod tests {
             .insert(Label::from(".entry0".to_string()), 0);
 
         let mut main_bb = BasicBlock::default();
-        main_bb.instructions = vec![Label::from(".entry0".to_string()).into()];
+        main_bb.instructions = vec![Label::from(".entry0".to_string()).into(), Instruction::Nop];
         main_bb.terminator = Instruction::Return(Some(Address::Const(Constant::new(
             Type::Simple(Simple::I32),
             "0",
         ))));
 
         let mut test_bb = BasicBlock::default();
-        test_bb.instructions = vec![Label::from(".entry0".to_string()).into()];
+        test_bb.instructions = vec![Label::from(".entry0".to_string()).into(), Instruction::Nop];
         test_bb.terminator = Instruction::Return(None);
 
         main_bm.blocks = vec![main_bb];

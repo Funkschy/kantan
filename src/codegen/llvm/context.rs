@@ -279,8 +279,8 @@ impl<'src> KantanLLVMContext<'src> {
                     }
 
                     // generate actual instructions
-                    for (j, b) in function.blocks.blocks.iter().enumerate() {
-                        LLVMPositionBuilderAtEnd(self.builder, bbs[j]);
+                    for (i, b) in function.blocks.blocks.iter().enumerate() {
+                        LLVMPositionBuilderAtEnd(self.builder, bbs[i]);
 
                         for inst in &b.instructions {
                             self.translate_mir_instr(inst);
@@ -400,7 +400,7 @@ impl<'src> KantanLLVMContext<'src> {
                 LLVMBuildCondBr(self.builder, cond, then_bb_ref, else_bb_ref);
             }
             Instruction::Label(_) => {}
-            _ => unimplemented!("{}", instr),
+            Instruction::Nop => {}
         }
     }
 
