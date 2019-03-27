@@ -12,7 +12,6 @@ use self::symbol::*;
 use super::*;
 
 mod error;
-#[allow(dead_code)]
 pub mod symbol;
 
 /// modname -> typename -> typedef

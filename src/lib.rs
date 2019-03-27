@@ -1,9 +1,7 @@
 use std::{borrow::Borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
 
 mod cli;
-#[allow(dead_code)]
 pub mod codegen;
-#[allow(dead_code)]
 mod mir;
 mod parse;
 mod resolve;

@@ -19,7 +19,6 @@ pub struct KantanLLVMContext<'src> {
     builder: LLVMBuilderRef,
     // TODO: we probably want separate Modules
     module: LLVMModuleRef,
-    temp_var_counter: usize,
     name_table: HashMap<String, LLVMValueRef>,
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
@@ -51,7 +50,6 @@ impl<'src> KantanLLVMContext<'src> {
                 context,
                 builder,
                 module,
-                temp_var_counter: 0,
                 name_table,
                 functions,
                 current_function: None,

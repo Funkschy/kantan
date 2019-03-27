@@ -1,7 +1,7 @@
 use super::token::Token;
 use std::{error, fmt};
 
-const REPO_URL: &'static str = env!("CARGO_PKG_REPOSITORY");
+const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ParseError<'src> {

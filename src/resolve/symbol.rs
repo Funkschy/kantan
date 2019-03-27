@@ -80,16 +80,18 @@ impl<'src> SymbolTable<'src> {
 
         None
     }
-
-    pub fn lookup_current(&self, name: &'src str) -> Option<&Spanned<Symbol>> {
-        let last_scope = self.scopes.last().unwrap();
-        last_scope.get(name)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    impl<'src> SymbolTable<'src> {
+        pub fn lookup_current(&self, name: &'src str) -> Option<&Spanned<Symbol>> {
+            let last_scope = self.scopes.last().unwrap();
+            last_scope.get(name)
+        }
+    }
 
     #[test]
     fn test_lookup_should_return_symbol_from_outer_scope_if_not_found() {

@@ -1,9 +1,10 @@
 import io
 
 fn f(i: i32): i32 {
-    let x = 20 + 2;
-    let y = x + 20 + 2;
-    let z = y;
+    let x = 20;
+    let x = x + 2;
+    let x = x + 20 + 2;
+    let z = x;
     let v = -i;
     return z + v;
 }
