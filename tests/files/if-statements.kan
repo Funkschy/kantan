@@ -1,6 +1,6 @@
 import io
 
-fn f(i: i32): i32 {
+def f(i: i32): i32 {
     let x = 20;
     let x = x + 2;
     let x = x + 20 + 2;
@@ -9,7 +9,7 @@ fn f(i: i32): i32 {
     return z + v;
 }
 
-fn main(): i32 {
+def main(): i32 {
     let s = "correct";
     let x = 0;
     if f(2) == 44 {

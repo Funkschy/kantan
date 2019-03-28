@@ -173,7 +173,7 @@ fn find_main<'src>(ast_sources: &PrgMap<'src>) -> Option<&'src str> {
         .iter()
         .find(|(_, (_, prg))| {
             prg.0.iter().any(|top_lvl| {
-                if let TopLvl::FnDecl { name, .. } = top_lvl {
+                if let TopLvl::FuncDecl { name, .. } = top_lvl {
                     name.node == "main"
                 } else {
                     false
@@ -262,7 +262,7 @@ fn construct_tac<'src>(
                 continue;
             }
 
-            if let TopLvl::FnDecl {
+            if let TopLvl::FuncDecl {
                 name,
                 body,
                 params,
@@ -296,9 +296,9 @@ fn construct_tac<'src>(
 pub fn stdlib() -> Vec<Source> {
     let io = Source::new(
         "io",
-        "extern fn putchar(i: i32): i32; 
-         extern fn puts(s: string): i32;
-         extern fn printf(fmt: string, ...): i32;",
+        "extern def putchar(i: i32): i32; 
+         extern def puts(s: string): i32;
+         extern def printf(fmt: string, ...): i32;",
     );
     vec![io]
 }

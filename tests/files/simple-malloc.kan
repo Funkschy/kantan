@@ -9,10 +9,10 @@ type Person struct {
     address: *Address
 }
 
-extern fn malloc(size: i32): *Address;
-extern fn free(ptr: *Address): void;
+extern def malloc(size: i32): *Address;
+extern def free(ptr: *Address): void;
 
-fn main(): void {
+def main(): void {
     let a = malloc(8);
     a.street = "One Street";
 

@@ -8,7 +8,7 @@ pub struct Program<'src>(pub Vec<TopLvl<'src>>);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum TopLvl<'src> {
-    FnDecl {
+    FuncDecl {
         name: Spanned<&'src str>,
         params: ParamList<'src>,
         body: Block<'src>,

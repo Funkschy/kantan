@@ -1,7 +1,7 @@
-fn test(ptr: **i32): void {
+def test(ptr: **i32): void {
 
 }
 
-fn main(): void {
+def main(): void {
 
 }

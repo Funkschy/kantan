@@ -515,7 +515,7 @@ mod tests {
         let mut cursor = Cursor::new(Vec::default());
 
         let source = "
-            fn main(): void {
+            def main(): void {
                 let x = 0;
                 let y = 2;
 
@@ -598,7 +598,7 @@ mod tests {
         let mut cursor = Cursor::new(Vec::default());
 
         let source = "
-            fn main(): i32 {
+            def main(): i32 {
                 let x = 0;
                 if x == 0 {
                     x = 2;
@@ -680,7 +680,7 @@ mod tests {
         let mut cursor = Cursor::new(Vec::default());
 
         let source = "
-            fn main(): i32 {
+            def main(): i32 {
                 let x = 0;
                 if x == 0 {
                     x = 2;
@@ -778,7 +778,7 @@ mod tests {
         let mut cursor = Cursor::new(Vec::default());
 
         let source = "
-            fn main(): void {
+            def main(): void {
                 let x = 0;
                 while x < 10 {
                     x = x + 1;
@@ -871,11 +871,11 @@ mod tests {
         let mut cursor = Cursor::new(Vec::default());
 
         let source = "
-            fn test(): void {
+            def test(): void {
 
             }
 
-            fn main(): void {
+            def main(): void {
 
             }
         ";

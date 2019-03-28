@@ -1,5 +1,5 @@
 import io
 
-fn main(): void {
+def main(): void {
     io.printf("Hello World\n");
 }

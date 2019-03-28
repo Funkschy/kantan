@@ -15,7 +15,7 @@ type City struct {
     name: string
 }
 
-fn make_peter(age: i32): Person {
+def make_peter(age: i32): Person {
     return Person { 
         name: "Peter", 
         age: age, 
@@ -26,7 +26,7 @@ fn make_peter(age: i32): Person {
     };
 }
 
-fn main(): i32 {
+def main(): i32 {
     let p = make_peter(20);
     let hans = p;
     hans.address.city.name = "Neuss";

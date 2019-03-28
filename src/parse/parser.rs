@@ -55,7 +55,7 @@ where
             } else if let Err(err) = decl {
                 top_lvl_decls.push(TopLvl::Error(err));
                 self.err_count += 1;
-                while !(self.peek_eq(Token::Fn) || self.peek_eq(Token::Type) || self.at_end()) {
+                while !(self.peek_eq(Token::Def) || self.peek_eq(Token::Type) || self.at_end()) {
                     self.advance().unwrap();
                 }
             }
@@ -78,7 +78,7 @@ where
             self.consume(Token::Extern)?;
         }
 
-        self.consume(Token::Fn)?;
+        self.consume(Token::Def)?;
         let name = self.consume_ident()?;
         let params = self.param_list(is_extern)?;
 
@@ -92,7 +92,7 @@ where
             Block::default()
         };
 
-        Ok(TopLvl::FnDecl {
+        Ok(TopLvl::FuncDecl {
             name,
             params,
             body,
@@ -736,7 +736,7 @@ where
             }
 
             match peek.node {
-                Token::Type | Token::Fn | Token::If | Token::Let | Token::Return => return,
+                Token::Type | Token::Def | Token::If | Token::Let | Token::Return => return,
                 _ => {}
             }
 
@@ -800,7 +800,7 @@ mod tests {
     fn test_parse_return_struct() {
         let source = Source::new(
             "main",
-            "type Test struct {test: i32, second: bool} fn main(): Test { }",
+            "type Test struct {test: i32, second: bool} def main(): Test { }",
         );
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
@@ -821,12 +821,12 @@ mod tests {
                         ),
                     ]
                 }),
-                TopLvl::FnDecl {
-                    name: Spanned::new(46, 49, "main"),
+                TopLvl::FuncDecl {
+                    name: Spanned::new(47, 50, "main"),
                     params: ParamList::default(),
                     ret_type: Spanned::new(
-                        54,
-                        57,
+                        55,
+                        58,
                         Type::Simple(Simple::UserType(UserIdent::new("main", "Test")))
                     ),
                     is_extern: false,
@@ -841,7 +841,7 @@ mod tests {
     fn test_parse_struct_definition() {
         let source = Source::new(
             "main",
-            "type Test struct {test: i32, second: bool} fn main(): void { }",
+            "type Test struct {test: i32, second: bool} def main(): void { }",
         );
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
@@ -862,10 +862,10 @@ mod tests {
                         ),
                     ]
                 }),
-                TopLvl::FnDecl {
-                    name: Spanned::new(46, 49, "main"),
+                TopLvl::FuncDecl {
+                    name: Spanned::new(47, 50, "main"),
                     params: ParamList::default(),
-                    ret_type: Spanned::new(54, 57, Type::Simple(Simple::Void)),
+                    ret_type: Spanned::new(55, 58, Type::Simple(Simple::Void)),
                     is_extern: false,
                     body: Block(vec![])
                 }
@@ -876,7 +876,7 @@ mod tests {
 
     #[test]
     fn test_parse_empty_struct_definition() {
-        let source = Source::new("main", "type Test struct {} fn main(): void { }");
+        let source = Source::new("main", "type Test struct {} def main(): void { }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -887,10 +887,10 @@ mod tests {
                     name: Spanned::new(5, 8, "Test"),
                     fields: Vec::new()
                 }),
-                TopLvl::FnDecl {
-                    name: Spanned::new(23, 26, "main"),
+                TopLvl::FuncDecl {
+                    name: Spanned::new(24, 27, "main"),
                     params: ParamList::default(),
-                    ret_type: Spanned::new(31, 34, Type::Simple(Simple::Void)),
+                    ret_type: Spanned::new(32, 35, Type::Simple(Simple::Void)),
                     is_extern: false,
                     body: Block(vec![])
                 }
@@ -901,32 +901,32 @@ mod tests {
 
     #[test]
     fn test_parse_while_statement() {
-        let source = Source::new("main", "fn main(): void { while 1 == 1 { test(); } }");
+        let source = Source::new("main", "def main(): void { while 1 == 1 { test(); } }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
-                name: Spanned::new(3, 6, "main"),
+            Program(vec![TopLvl::FuncDecl {
+                name: Spanned::new(4, 7, "main"),
                 params: ParamList::default(),
-                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
+                ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 is_extern: false,
                 body: Block(vec![Stmt::While {
                     condition: Spanned::new(
-                        24,
-                        29,
+                        25,
+                        30,
                         Expr::new(ExprKind::BoolBinary(
-                            Box::new(Spanned::new(24, 24, Expr::new(ExprKind::DecLit("1")))),
-                            Spanned::new(26, 27, Token::EqualsEquals),
-                            Box::new(Spanned::new(29, 29, Expr::new(ExprKind::DecLit("1")))),
+                            Box::new(Spanned::new(25, 25, Expr::new(ExprKind::DecLit("1")))),
+                            Spanned::new(27, 28, Token::EqualsEquals),
+                            Box::new(Spanned::new(30, 30, Expr::new(ExprKind::DecLit("1")))),
                         ))
                     ),
                     body: Block(vec![Stmt::Expr(Spanned::new(
-                        33,
-                        38,
+                        34,
+                        39,
                         Expr::new(ExprKind::Call {
-                            callee: Spanned::new(33, 36, UserIdent::new("main", "test")),
+                            callee: Spanned::new(34, 37, UserIdent::new("main", "test")),
                             args: ArgList(vec![])
                         })
                     ))])
@@ -938,22 +938,22 @@ mod tests {
 
     #[test]
     fn test_parse_import_access() {
-        let source = Source::new("main", "fn main(): void { test.func(); }");
+        let source = Source::new("main", "def main(): void { test.func(); }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
-                name: Spanned::new(3, 6, "main"),
+            Program(vec![TopLvl::FuncDecl {
+                name: Spanned::new(4, 7, "main"),
                 params: ParamList::default(),
-                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
+                ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
-                    18,
-                    28,
+                    19,
+                    29,
                     Expr::new(ExprKind::Call {
-                        callee: Spanned::new(18, 26, UserIdent::new("test", "func")),
+                        callee: Spanned::new(19, 27, UserIdent::new("test", "func")),
                         args: ArgList(vec![])
                     })
                 ))])
@@ -964,7 +964,7 @@ mod tests {
 
     #[test]
     fn test_parse_import() {
-        let source = Source::new("main", "import test\nfn main(): void {}");
+        let source = Source::new("main", "import test\ndef main(): void {}");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -974,10 +974,10 @@ mod tests {
                 TopLvl::Import {
                     name: Spanned::new(7, 10, "test")
                 },
-                TopLvl::FnDecl {
-                    name: Spanned::new(15, 18, "main"),
+                TopLvl::FuncDecl {
+                    name: Spanned::new(16, 19, "main"),
                     is_extern: false,
-                    ret_type: Spanned::new(23, 26, Type::Simple(Simple::Void)),
+                    ret_type: Spanned::new(24, 27, Type::Simple(Simple::Void)),
                     params: ParamList::default(),
                     body: Block(vec![])
                 }
@@ -988,22 +988,22 @@ mod tests {
 
     #[test]
     fn test_parse_access_through_identifier() {
-        let source = Source::new("main", "fn main(): void { test.fun(); }");
+        let source = Source::new("main", "def main(): void { test.fun(); }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
-                name: Spanned::new(3, 6, "main"),
-                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
+            Program(vec![TopLvl::FuncDecl {
+                name: Spanned::new(4, 7, "main"),
+                ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
                 body: Block(vec![Stmt::Expr(Spanned::new(
-                    18,
-                    27,
+                    19,
+                    28,
                     Expr::new(ExprKind::Call {
-                        callee: Spanned::new(18, 25, UserIdent::new("test", "fun")),
+                        callee: Spanned::new(19, 26, UserIdent::new("test", "fun")),
                         args: ArgList(vec![])
                     })
                 ))])
@@ -1014,22 +1014,22 @@ mod tests {
 
     #[test]
     fn test_parse_call_without_args_should_return_call_expr_with_empty_args() {
-        let source = Source::new("main", "fn main(): void { test(); }");
+        let source = Source::new("main", "def main(): void { test(); }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
-                name: Spanned::new(3, 6, "main"),
-                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
+            Program(vec![TopLvl::FuncDecl {
+                name: Spanned::new(4, 7, "main"),
+                ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
                 body: Block(vec![Stmt::Expr(Spanned::new(
-                    18,
-                    23,
+                    19,
+                    24,
                     Expr::new(ExprKind::Call {
-                        callee: Spanned::new(18, 21, UserIdent::new("main", "test")),
+                        callee: Spanned::new(19, 22, UserIdent::new("main", "test")),
                         args: ArgList(vec![])
                     })
                 ))])
@@ -1040,15 +1040,15 @@ mod tests {
 
     #[test]
     fn test_parse_with_one_error_should_have_err_count_of_one() {
-        let source = Source::new("main", "fn err(): void { 1 ++ 2; 3 + 4; }");
+        let source = Source::new("main", "def err(): void { 1 ++ 2; 3 + 4; }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
-                name: Spanned::new(3, 5, "err"),
-                ret_type: Spanned::new(10, 13, Type::Simple(Simple::Void)),
+            Program(vec![TopLvl::FuncDecl {
+                name: Spanned::new(4, 6, "err"),
+                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
                 body: Block(vec![
@@ -1056,15 +1056,15 @@ mod tests {
                         node: Expr::new(ExprKind::Error(ParseError::PrefixError(
                             "Invalid token in prefix rule: '+'".to_owned()
                         ),)),
-                        span: Span::new(20, 20)
+                        span: Span::new(21, 21)
                     }),
                     Stmt::Expr(Spanned {
                         node: Expr::new(ExprKind::Binary(
-                            Box::new(Spanned::new(25, 25, Expr::new(ExprKind::DecLit("3")))),
-                            Spanned::new(27, 27, Token::Plus),
-                            Box::new(Spanned::new(29, 29, Expr::new(ExprKind::DecLit("4"))))
+                            Box::new(Spanned::new(26, 26, Expr::new(ExprKind::DecLit("3")))),
+                            Spanned::new(28, 28, Token::Plus),
+                            Box::new(Spanned::new(30, 30, Expr::new(ExprKind::DecLit("4"))))
                         )),
-                        span: Span::new(25, 29)
+                        span: Span::new(26, 30)
                     })
                 ])
             }]),
@@ -1074,21 +1074,21 @@ mod tests {
 
     #[test]
     fn test_parse_let_with_value_should_return_var_decl_stmt() {
-        let source = Source::new("main", "fn main(): void { let var = 5; }");
+        let source = Source::new("main", "def main(): void { let var = 5; }");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
-                name: Spanned::new(3, 6, "main"),
-                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
+            Program(vec![TopLvl::FuncDecl {
+                name: Spanned::new(4, 7, "main"),
+                ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 is_extern: false,
                 params: ParamList::default(),
                 body: Block(vec![Stmt::VarDecl(Box::new(VarDecl {
-                    name: Spanned::new(22, 24, "var"),
-                    value: Spanned::new(28, 28, Expr::new(ExprKind::DecLit("5"))),
-                    eq: Spanned::new(26, 26, Token::Equals),
+                    name: Spanned::new(23, 25, "var"),
+                    value: Spanned::new(29, 29, Expr::new(ExprKind::DecLit("5"))),
+                    eq: Spanned::new(27, 27, Token::Equals),
                     ty: Cell::new(None)
                 }))])
             }]),
@@ -1100,16 +1100,16 @@ mod tests {
 
     #[test]
     fn test_parse_with_empty_main_returns_empty_fn_decl() {
-        let source = Source::new("main", "fn main(): void {}");
+        let source = Source::new("main", "def main(): void {}");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
-                name: Spanned::new(3, 6, "main"),
+            Program(vec![TopLvl::FuncDecl {
+                name: Spanned::new(4, 7, "main"),
                 is_extern: false,
-                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
+                ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
                 body: Block(vec![])
             }]),
@@ -1119,24 +1119,24 @@ mod tests {
 
     #[test]
     fn test_parse_with_one_stmt_in_main() {
-        let source = Source::new("main", "fn main(): void {1 + 1;}");
+        let source = Source::new("main", "def main(): void {1 + 1;}");
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
-                name: Spanned::new(3, 6, "main"),
-                ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
+            Program(vec![TopLvl::FuncDecl {
+                name: Spanned::new(4, 7, "main"),
+                ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
                 is_extern: false,
                 body: Block(vec![Stmt::Expr(Spanned::new(
-                    17,
-                    21,
+                    18,
+                    22,
                     Expr::new(ExprKind::Binary(
-                        Box::new(Spanned::new(17, 17, Expr::new(ExprKind::DecLit("1")))),
-                        Spanned::new(19, 19, Token::Plus),
-                        Box::new(Spanned::new(21, 21, Expr::new(ExprKind::DecLit("1"))))
+                        Box::new(Spanned::new(18, 18, Expr::new(ExprKind::DecLit("1")))),
+                        Spanned::new(20, 20, Token::Plus),
+                        Box::new(Spanned::new(22, 22, Expr::new(ExprKind::DecLit("1"))))
                     ))
                 ))])
             }]),
