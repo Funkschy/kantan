@@ -57,7 +57,7 @@ impl<'src> fmt::Display for Func<'src> {
             .join(", ");
 
         if self.is_extern {
-            return write!(f, "extern fn {}({}): {};", self.name, params, self.ret);
+            return write!(f, "extern def {}({}): {};", self.name, params, self.ret);
         }
 
         let format = |inst: &Instruction| {
@@ -83,7 +83,7 @@ impl<'src> fmt::Display for Func<'src> {
 
         write!(
             f,
-            "fn {}({}): {} {{\n{}\n}}",
+            "def {}({}): {} {{\n{}\n}}",
             self.name, params, self.ret, instructions
         )
     }

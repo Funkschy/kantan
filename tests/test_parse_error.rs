@@ -8,7 +8,7 @@ fn test_multiple_plus_and_slash_operator() {
 
     let source = Source::new(
         "test",
-        r#"fn main(): void {
+        r#"def main(): void {
     let mystr = "hello";
     mystr = "world";
     mystr = 1;
@@ -44,7 +44,7 @@ fn test_hiragana_identifier() {
 
     let source = Source::new(
         "test-kana",
-        "fn main(): void {\n\tlet こんにちは = \"hello\";\n}",
+        "def main(): void {\n\tlet こんにちは = \"hello\";\n}",
     );
 
     kantan::compile(&vec![source], &mut cursor).unwrap_err();
@@ -67,7 +67,7 @@ fn test_kanji_identifier() {
 
     let source = Source::new(
         "test-kanji",
-        r#"fn main(): void {
+        r#"def main(): void {
     let 今日 = "03.12.2017";
     今日 = "04.12.2017";
     今日 = 1;
@@ -104,7 +104,7 @@ fn test_valid_equality_operation_should_print_nothing() {
 
     let source = Source::new(
         "test-equals",
-        r#"fn main(): void {
+        r#"def main(): void {
  let s = "hello";
  let s2 = "world";
  let res = s == s2;

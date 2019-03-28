@@ -5,11 +5,11 @@ type Node struct {
     next: *Node
 }
 
-fn make_node(data: i32, next: *Node): *Node {
+def make_node(data: i32, next: *Node): *Node {
     return new Node { data: data, next: next };
 }
 
-fn traverse(node: *Node): void {
+def traverse(node: *Node): void {
     let n = node;
     while 1 == 1 {
         io.printf("%d\n", n.data);
@@ -21,7 +21,7 @@ fn traverse(node: *Node): void {
     }
 }
 
-fn main(): void {
+def main(): void {
     let third = make_node(42, null);
     let second = make_node(0, third);
     let first = make_node(1, second);

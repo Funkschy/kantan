@@ -1,6 +1,6 @@
 import io
 
-fn fib(n: i32): i32 {
+def fib(n: i32): i32 {
     if n <= 1 {
         return n;
     }
@@ -8,6 +8,6 @@ fn fib(n: i32): i32 {
     return fib(n - 2) + fib(n - 1);
 }
 
-fn main(): void {
+def main(): void {
     io.printf("%d\n", fib(12));
 }

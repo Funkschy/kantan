@@ -170,7 +170,7 @@ impl<'src> Lexer<'src> {
                 "void" => Token::TypeIdent(Type::Simple(Simple::Void)),
                 "return" => Token::Return,
                 "let" => Token::Let,
-                "fn" => Token::Fn,
+                "def" => Token::Def,
                 "if" => Token::If,
                 "else" => Token::Else,
                 "import" => Token::Import,

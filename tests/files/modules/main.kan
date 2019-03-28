@@ -2,11 +2,11 @@ import io
 import lib
 import bintree
 
-fn test(): void {
+def test(): void {
     io.printf("Test\n");
 }
 
-fn main(): void {
+def main(): void {
     let p = new lib.Person{ name: "Felix" };
     let p2 = lib.test();
     let p3 = bintree.Person { name: "Person", age: 20 };

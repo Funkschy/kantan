@@ -12,7 +12,7 @@ pub enum Token<'src> {
 
     // Keywords
     Let,
-    Fn,
+    Def,
     If,
     Else,
     Import,
@@ -93,7 +93,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::Type => write!(f, "type"),
             Token::Struct => write!(f, "struct"),
             Token::Let => write!(f, "let"),
-            Token::Fn => write!(f, "fn"),
+            Token::Def=> write!(f, "def"),
             Token::If => write!(f, "if"),
             Token::Else => write!(f, "else"),
             Token::Import => write!(f, "import"),

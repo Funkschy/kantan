@@ -75,7 +75,7 @@ mod tests {
         let source = r#"
             import io
 
-            fn f(i: i32): i32 {
+            def f(i: i32): i32 {
                 let x = 20 + 2;
                 let y = x + 20 + 2;
                 let z = y;
@@ -83,7 +83,7 @@ mod tests {
                 return z + v;
             }
 
-            fn main(): i32 {
+            def main(): i32 {
                 let s = "correct";
                 let x = 0;
                 if f(2) == 44 {
@@ -129,7 +129,7 @@ mod tests {
                 hnr: string // number of the house
             }
 
-            fn make_peter(age: i32): Person {
+            def make_peter(age: i32): Person {
                 return Person { 
                     name: "Peter", 
                     age: age, 
@@ -140,7 +140,7 @@ mod tests {
                 };
             }
 
-            fn main(): i32 {
+            def main(): i32 {
                 let p = make_peter(20);
                 io.printf("%s\n", p.name);
                 p.name = "Hans";
@@ -176,7 +176,7 @@ mod tests {
                 name: string
             }
 
-            fn make_peter(age: i32): Person {
+            def make_peter(age: i32): Person {
                 return Person { 
                     name: "Peter", 
                     age: age, 
@@ -187,7 +187,7 @@ mod tests {
                 };
             }
 
-            fn main(): i32 {
+            def main(): i32 {
                 let p = make_peter(20);
                 let hans = p;
                 hans.address.city.name = "Neuss";
