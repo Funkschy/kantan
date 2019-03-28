@@ -224,14 +224,9 @@ impl<'src> Lexer<'src> {
 
         let scanned: Scanned = match ch {
             '=' => consume_double!(self, start, Token::Equals, Token::EqualsEquals),
+            '!' => consume_double!(self, start, '=', Token::Bang, Token::BangEquals),
             '<' => consume_double!(self, start, '=', Token::Smaller, Token::SmallerEquals),
-            '&' => consume_double!(
-                self,
-                start,
-                '&',
-                Token::Ampersand,
-                Token::AmpersandAmpersand
-            ),
+            '&' => consume_double!(self, start, Token::Ampersand, Token::AmpersandAmpersand),
             '+' => consume_single!(self, start, Token::Plus),
             '-' => consume_single!(self, start, Token::Minus),
             '*' => consume_single!(self, start, Token::Star),

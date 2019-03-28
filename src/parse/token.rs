@@ -25,6 +25,7 @@ pub enum Token<'src> {
     Delete,
 
     // Operators
+    Bang,   // !
     Equals, // =
     Plus,   // +
     Minus,  // -
@@ -47,6 +48,7 @@ pub enum Token<'src> {
 
     // double Operators
     EqualsEquals,       // ==
+    BangEquals,         // !=
     SmallerEquals,      // <=
     AmpersandAmpersand, // &&
 }
@@ -70,7 +72,7 @@ impl<'src> Token<'src> {
         match self {
             Token::Equals => Precedence::Assign,
             Token::AmpersandAmpersand => Precedence::And,
-            Token::EqualsEquals => Precedence::Equality,
+            Token::EqualsEquals | Token::BangEquals => Precedence::Equality,
             // TODO: add greater
             Token::Smaller | Token::SmallerEquals => Precedence::Comparison,
             Token::Plus | Token::Minus => Precedence::Sum,
@@ -93,7 +95,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::Type => write!(f, "type"),
             Token::Struct => write!(f, "struct"),
             Token::Let => write!(f, "let"),
-            Token::Def=> write!(f, "def"),
+            Token::Def => write!(f, "def"),
             Token::If => write!(f, "if"),
             Token::Else => write!(f, "else"),
             Token::Import => write!(f, "import"),
@@ -104,6 +106,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::Delete => write!(f, "delete"),
 
             // Operators
+            Token::Bang => write!(f, "!"),
             Token::Equals => write!(f, "="),
             Token::Plus => write!(f, "+"),
             Token::Minus => write!(f, "-"),
@@ -126,6 +129,7 @@ impl<'src> fmt::Display for Token<'src> {
 
             // double Operators
             Token::EqualsEquals => write!(f, "=="),
+            Token::BangEquals => write!(f, "!="),
             Token::SmallerEquals => write!(f, "<="),
             Token::AmpersandAmpersand => write!(f, "&&"),
         }

@@ -542,6 +542,9 @@ impl<'src> KantanLLVMContext<'src> {
             IntBinaryType::Eq => {
                 LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntEQ, left, right, n)
             }
+            IntBinaryType::Neq => {
+                LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntNE, left, right, n)
+            }
             IntBinaryType::Smaller => {
                 LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntSLT, left, right, n)
             }

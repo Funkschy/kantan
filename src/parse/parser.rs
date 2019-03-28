@@ -521,6 +521,7 @@ where
         let tok = token.node;
         match tok {
             Token::EqualsEquals
+            | Token::BangEquals
             | Token::SmallerEquals
             | Token::Smaller
             | Token::Plus
@@ -532,7 +533,10 @@ where
                 let left_span = left.span;
 
                 let expr = match tok {
-                    Token::EqualsEquals | Token::SmallerEquals | Token::Smaller => {
+                    Token::EqualsEquals
+                    | Token::BangEquals
+                    | Token::SmallerEquals
+                    | Token::Smaller => {
                         ExprKind::BoolBinary(Box::new(left), *token, Box::new(right))
                     }
                     _ => ExprKind::Binary(

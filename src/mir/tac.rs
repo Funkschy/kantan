@@ -225,6 +225,7 @@ pub enum IntBinaryType {
     Mul,
     Div,
     Eq,
+    Neq,
     Smaller,
     SmallerEq,
 }
@@ -239,6 +240,7 @@ impl<'a> From<&Token<'a>> for Option<IntBinaryType> {
             Token::Star => Some(Mul),
             Token::Slash => Some(Div),
             Token::EqualsEquals => Some(Eq),
+            Token::BangEquals => Some(Neq),
             Token::Smaller => Some(Smaller),
             Token::SmallerEquals => Some(SmallerEq),
             _ => None,
@@ -256,6 +258,7 @@ impl fmt::Display for IntBinaryType {
             Mul => "*",
             Div => "/",
             Eq => "==",
+            Neq => "!=",
             Smaller => "<",
             SmallerEq => "<=",
         };
