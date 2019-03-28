@@ -173,7 +173,7 @@ fn find_main<'src>(ast_sources: &PrgMap<'src>) -> Option<&'src str> {
         .iter()
         .find(|(_, (_, prg))| {
             prg.0.iter().any(|top_lvl| {
-                if let TopLvl::FnDecl { name, .. } = top_lvl {
+                if let TopLvl::FuncDecl { name, .. } = top_lvl {
                     name.node == "main"
                 } else {
                     false
@@ -262,7 +262,7 @@ fn construct_tac<'src>(
                 continue;
             }
 
-            if let TopLvl::FnDecl {
+            if let TopLvl::FuncDecl {
                 name,
                 body,
                 params,

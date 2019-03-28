@@ -120,7 +120,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
     fn declare_top_lvl(&mut self, top_lvl: &TopLvl<'src>, errors: &mut Vec<ResolveError<'src>>) {
         match top_lvl {
-            TopLvl::FnDecl {
+            TopLvl::FuncDecl {
                 name,
                 ret_type,
                 params,
@@ -196,7 +196,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     }
 
     fn resolve_top_lvl(&mut self, top_lvl: &TopLvl<'src>, errors: &mut Vec<ResolveError<'src>>) {
-        if let TopLvl::FnDecl {
+        if let TopLvl::FuncDecl {
             params,
             ref body,
             ret_type,
@@ -896,7 +896,7 @@ mod tests {
             TopLvl::Import {
                 name: Spanned::new(7, 10, "test"),
             },
-            TopLvl::FnDecl {
+            TopLvl::FuncDecl {
                 name: Spanned::new(16, 19, "main"),
                 ret_type: Spanned::new(24, 27, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
@@ -912,7 +912,7 @@ mod tests {
             },
         ]);
 
-        let test_ast = Program(vec![TopLvl::FnDecl {
+        let test_ast = Program(vec![TopLvl::FuncDecl {
             name: Spanned::new(3, 6, "func"),
             ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
             is_extern: false,
@@ -936,7 +936,7 @@ mod tests {
         let source = Source::new("test", "fn main(): void { test(); } fn test(): void {}");
 
         let ast = Program(vec![
-            TopLvl::FnDecl {
+            TopLvl::FuncDecl {
                 name: Spanned::new(3, 6, "main"),
                 ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
@@ -950,7 +950,7 @@ mod tests {
                     }),
                 ))]),
             },
-            TopLvl::FnDecl {
+            TopLvl::FuncDecl {
                 name: Spanned::new(25, 28, "test"),
                 ret_type: Spanned::new(39, 42, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
@@ -973,7 +973,7 @@ mod tests {
     fn test_resolve_without_errors_should_return_empty_vec() {
         let source = Source::new("test", "fn main(): void { let x = 10; }");
 
-        let ast = Program(vec![TopLvl::FnDecl {
+        let ast = Program(vec![TopLvl::FuncDecl {
             name: Spanned::new(3, 6, "main"),
             ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
             params: ParamList::default(),
@@ -995,7 +995,7 @@ mod tests {
         let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
 
-        if let TopLvl::FnDecl { body, .. } = &(&map["test"].1).0[0] {
+        if let TopLvl::FuncDecl { body, .. } = &(&map["test"].1).0[0] {
             if let Stmt::VarDecl(decl) = &body.0[0] {
                 assert_eq!(decl.value.node.ty(), Some(Type::Simple(Simple::I32)));
                 return;
@@ -1009,7 +1009,7 @@ mod tests {
     fn test_resolve_with_assign_error_should_return_correct_error() {
         let source = Source::new("test", r#"fn main(): void { let x = 10; x = ""; }"#);
 
-        let ast = Program(vec![TopLvl::FnDecl {
+        let ast = Program(vec![TopLvl::FuncDecl {
             name: Spanned::new(3, 6, "main"),
             ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
             params: ParamList::default(),

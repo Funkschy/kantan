@@ -92,7 +92,7 @@ where
             Block::default()
         };
 
-        Ok(TopLvl::FnDecl {
+        Ok(TopLvl::FuncDecl {
             name,
             params,
             body,
@@ -821,7 +821,7 @@ mod tests {
                         ),
                     ]
                 }),
-                TopLvl::FnDecl {
+                TopLvl::FuncDecl {
                     name: Spanned::new(47, 50, "main"),
                     params: ParamList::default(),
                     ret_type: Spanned::new(
@@ -862,7 +862,7 @@ mod tests {
                         ),
                     ]
                 }),
-                TopLvl::FnDecl {
+                TopLvl::FuncDecl {
                     name: Spanned::new(47, 50, "main"),
                     params: ParamList::default(),
                     ret_type: Spanned::new(55, 58, Type::Simple(Simple::Void)),
@@ -887,7 +887,7 @@ mod tests {
                     name: Spanned::new(5, 8, "Test"),
                     fields: Vec::new()
                 }),
-                TopLvl::FnDecl {
+                TopLvl::FuncDecl {
                     name: Spanned::new(24, 27, "main"),
                     params: ParamList::default(),
                     ret_type: Spanned::new(32, 35, Type::Simple(Simple::Void)),
@@ -907,7 +907,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
+            Program(vec![TopLvl::FuncDecl {
                 name: Spanned::new(4, 7, "main"),
                 params: ParamList::default(),
                 ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
@@ -944,7 +944,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
+            Program(vec![TopLvl::FuncDecl {
                 name: Spanned::new(4, 7, "main"),
                 params: ParamList::default(),
                 ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
@@ -974,7 +974,7 @@ mod tests {
                 TopLvl::Import {
                     name: Spanned::new(7, 10, "test")
                 },
-                TopLvl::FnDecl {
+                TopLvl::FuncDecl {
                     name: Spanned::new(16, 19, "main"),
                     is_extern: false,
                     ret_type: Spanned::new(24, 27, Type::Simple(Simple::Void)),
@@ -994,7 +994,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
+            Program(vec![TopLvl::FuncDecl {
                 name: Spanned::new(4, 7, "main"),
                 ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 is_extern: false,
@@ -1020,7 +1020,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
+            Program(vec![TopLvl::FuncDecl {
                 name: Spanned::new(4, 7, "main"),
                 ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 is_extern: false,
@@ -1046,7 +1046,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
+            Program(vec![TopLvl::FuncDecl {
                 name: Spanned::new(4, 6, "err"),
                 ret_type: Spanned::new(11, 14, Type::Simple(Simple::Void)),
                 is_extern: false,
@@ -1080,7 +1080,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
+            Program(vec![TopLvl::FuncDecl {
                 name: Spanned::new(4, 7, "main"),
                 ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 is_extern: false,
@@ -1106,7 +1106,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
+            Program(vec![TopLvl::FuncDecl {
                 name: Spanned::new(4, 7, "main"),
                 is_extern: false,
                 ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
@@ -1125,7 +1125,7 @@ mod tests {
 
         let prg = parser.parse();
         assert_eq!(
-            Program(vec![TopLvl::FnDecl {
+            Program(vec![TopLvl::FuncDecl {
                 name: Spanned::new(4, 7, "main"),
                 ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 params: ParamList::default(),
