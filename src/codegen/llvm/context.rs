@@ -366,6 +366,23 @@ impl<'src> KantanLLVMContext<'src> {
             }
             Instruction::Assignment(a, e) => {
                 let n = a.to_string();
+
+                if let Expression::StructInit(_, values) = e.as_ref() {
+                    let var = self.name_table[&n];
+
+                    for (i, value) in values.iter().enumerate() {
+                        let a = self.translate_mir_address(value);
+                        let ptr = LLVMBuildStructGEP(
+                            self.builder,
+                            var,
+                            i as u32,
+                            self.cstring(&format!("{}.{}", n, i)),
+                        );
+                        LLVMBuildStore(self.builder, a, ptr);
+                    }
+                    return;
+                }
+
                 let expr = self.translate_mir_expr(e, &n);
 
                 if *a == Address::Empty {
@@ -376,12 +393,7 @@ impl<'src> KantanLLVMContext<'src> {
                     return;
                 }
 
-                // translate_mir_expr allocas a new struct, which needs to be memcpyed
-                if let Expression::StructInit(identifier, _) = e.as_ref() {
-                    let dest = self.name_table[&n];
-                    let ty = self.get_user_type(identifier);
-                    self.build_memcpy(dest, expr, ty);
-                } else if let Some(ptr) = self.name_table.get(&n) {
+                if let Some(ptr) = self.name_table.get(&n) {
                     LLVMBuildStore(self.builder, expr, *ptr);
                 } else {
                     self.name_table.insert(n, expr);
