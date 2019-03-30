@@ -33,6 +33,7 @@ pub enum Token<'src> {
     Slash,  // /
 
     Smaller,   // <
+    Greater,   // >
     Ampersand, // &
 
     TripleDot, // ...
@@ -50,6 +51,7 @@ pub enum Token<'src> {
     EqualsEquals,       // ==
     BangEquals,         // !=
     SmallerEquals,      // <=
+    GreaterEquals,      // >=
     AmpersandAmpersand, // &&
 }
 
@@ -73,8 +75,9 @@ impl<'src> Token<'src> {
             Token::Equals => Precedence::Assign,
             Token::AmpersandAmpersand => Precedence::And,
             Token::EqualsEquals | Token::BangEquals => Precedence::Equality,
-            // TODO: add greater
-            Token::Smaller | Token::SmallerEquals => Precedence::Comparison,
+            Token::Greater | Token::GreaterEquals | Token::Smaller | Token::SmallerEquals => {
+                Precedence::Comparison
+            }
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
             Token::LParen | Token::Dot | Token::LBrace => Precedence::Call,
@@ -114,6 +117,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::Slash => write!(f, "/"),
 
             Token::Smaller => write!(f, "<"),
+            Token::Greater => write!(f, ">"),
             Token::Ampersand => write!(f, "&"),
 
             Token::TripleDot => write!(f, "..."),
@@ -131,6 +135,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::EqualsEquals => write!(f, "=="),
             Token::BangEquals => write!(f, "!="),
             Token::SmallerEquals => write!(f, "<="),
+            Token::GreaterEquals => write!(f, ">="),
             Token::AmpersandAmpersand => write!(f, "&&"),
         }
     }

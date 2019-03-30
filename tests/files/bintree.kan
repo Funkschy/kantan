@@ -29,17 +29,13 @@ def new_node(person: Person): *Node {
 }
 
 def insert_node(node: *Node, person: Person): void {
-    if node.data.age == person.age {
-        return;
-    }
-
     if person.age < node.data.age {
         if node.left == null {
             node.left = new_node(person);
         } else {
             insert_node(node.left, person);
         }
-    } else {
+    } else if person.age > node.data.age {
         if node.right == null {
             node.right = new_node(person);
         } else {
@@ -67,11 +63,9 @@ def traverse_node(node: *Node): void {
 }
 
 def delete_tree(tree: *Tree): void {
-    if tree.root == null {
-        return;
+    if tree.root != null {
+        delete_node(tree.root);
     }
-
-    delete_node(tree.root);
 }
 
 def delete_node(node: *Node): void {

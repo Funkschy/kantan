@@ -202,7 +202,6 @@ impl<'src> KantanLLVMContext<'src> {
         }
     }
 }
-// TODO: run "memory to register promotion" pass
 impl<'src> KantanLLVMContext<'src> {
     unsafe fn cstring(&mut self, string: &str) -> *mut i8 {
         let cstr = CString::new(string).unwrap().into_raw();
@@ -551,17 +550,17 @@ impl<'src> KantanLLVMContext<'src> {
             IntBinaryType::Mul => LLVMBuildMul(self.builder, left, right, n),
             // TODO: signed vs unsigned
             IntBinaryType::Div => LLVMBuildSDiv(self.builder, left, right, n),
-            IntBinaryType::Eq => {
-                LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntEQ, left, right, n)
-            }
-            IntBinaryType::Neq => {
-                LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntNE, left, right, n)
-            }
-            IntBinaryType::Smaller => {
-                LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntSLT, left, right, n)
-            }
-            IntBinaryType::SmallerEq => {
-                LLVMBuildICmp(self.builder, LLVMIntPredicate::LLVMIntSLE, left, right, n)
+            _ => {
+                let int_pred = match ty {
+                    IntBinaryType::Eq => LLVMIntPredicate::LLVMIntEQ,
+                    IntBinaryType::Neq => LLVMIntPredicate::LLVMIntNE,
+                    IntBinaryType::Smaller => LLVMIntPredicate::LLVMIntSLT,
+                    IntBinaryType::SmallerEq => LLVMIntPredicate::LLVMIntSLE,
+                    IntBinaryType::Greater => LLVMIntPredicate::LLVMIntSGT,
+                    IntBinaryType::GreaterEq => LLVMIntPredicate::LLVMIntSGE,
+                    _ => unreachable!(),
+                };
+                LLVMBuildICmp(self.builder, int_pred, left, right, n)
             }
         }
     }

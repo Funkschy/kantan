@@ -523,7 +523,9 @@ where
             Token::EqualsEquals
             | Token::BangEquals
             | Token::SmallerEquals
+            | Token::GreaterEquals
             | Token::Smaller
+            | Token::Greater
             | Token::Plus
             | Token::Minus
             | Token::Star
@@ -535,6 +537,8 @@ where
                 let expr = match tok {
                     Token::EqualsEquals
                     | Token::BangEquals
+                    | Token::GreaterEquals
+                    | Token::Greater
                     | Token::SmallerEquals
                     | Token::Smaller => {
                         ExprKind::BoolBinary(Box::new(left), *token, Box::new(right))

@@ -226,6 +226,7 @@ impl<'src> Lexer<'src> {
             '=' => consume_double!(self, start, Token::Equals, Token::EqualsEquals),
             '!' => consume_double!(self, start, '=', Token::Bang, Token::BangEquals),
             '<' => consume_double!(self, start, '=', Token::Smaller, Token::SmallerEquals),
+            '>' => consume_double!(self, start, '=', Token::Greater, Token::GreaterEquals),
             '&' => consume_double!(self, start, Token::Ampersand, Token::AmpersandAmpersand),
             '+' => consume_single!(self, start, Token::Plus),
             '-' => consume_single!(self, start, Token::Minus),
@@ -253,7 +254,7 @@ impl<'src> Lexer<'src> {
                         _ => {
                             return Some(Err(Spanned::new(
                                 start,
-                                self.pos(),
+                                self.pos() - 1,
                                 ParseError::LexError(LexError::with_cause("too many '.'")),
                             )));
                         }

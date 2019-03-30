@@ -228,6 +228,8 @@ pub enum IntBinaryType {
     Neq,
     Smaller,
     SmallerEq,
+    Greater,
+    GreaterEq,
 }
 
 impl<'a> From<&Token<'a>> for Option<IntBinaryType> {
@@ -243,6 +245,8 @@ impl<'a> From<&Token<'a>> for Option<IntBinaryType> {
             Token::BangEquals => Some(Neq),
             Token::Smaller => Some(Smaller),
             Token::SmallerEquals => Some(SmallerEq),
+            Token::Greater => Some(Greater),
+            Token::GreaterEquals => Some(GreaterEq),
             _ => None,
         }
     }
@@ -261,6 +265,8 @@ impl fmt::Display for IntBinaryType {
             Neq => "!=",
             Smaller => "<",
             SmallerEq => "<=",
+            Greater => ">",
+            GreaterEq => ">=",
         };
 
         write!(f, "{}", s)
