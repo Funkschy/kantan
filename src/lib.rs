@@ -16,6 +16,12 @@ use self::{
 
 pub(crate) use self::cli::*;
 
+pub const NAME: &str = env!("CARGO_PKG_NAME");
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
+pub const AUTHOR: &str = env!("CARGO_PKG_AUTHORS");
+pub const DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
+
 pub type PrgMap<'src> = HashMap<&'src str, (&'src Source, Program<'src>)>;
 
 #[derive(Debug)]

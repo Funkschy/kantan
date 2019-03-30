@@ -3,7 +3,7 @@ use std::{fs, io};
 
 use kantan::{
     codegen::llvm::{emit_to_file, CodeGenArgs, CodeGenOptLevel, OutputType},
-    compile, stdlib, CompilationError, Source,
+    compile, stdlib, CompilationError, Source, AUTHOR, DESCRIPTION, NAME, VERSION,
 };
 
 fn main() -> Result<(), CompilationError> {
@@ -57,6 +57,7 @@ fn main() -> Result<(), CompilationError> {
     Ok(())
 }
 
+/// removes the .kan ending
 fn get_file_name(name: &str) -> String {
     let len = name.len();
 
@@ -68,10 +69,10 @@ fn get_file_name(name: &str) -> String {
 }
 
 pub fn parse_args<'a>() -> ArgMatches<'a> {
-    App::new("kantanc")
-        .version("0.1")
-        .author("Felix Schoeller")
-        .about("The official compiler for the Kantan programming language")
+    App::new(NAME)
+        .version(VERSION)
+        .author(AUTHOR)
+        .about(DESCRIPTION)
         .arg(
             Arg::with_name("output")
                 .short("o")
