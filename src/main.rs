@@ -1,7 +1,10 @@
 use clap::{App, Arg, ArgMatches};
 use std::{fs, io};
 
-use kantan::{codegen::llvm::emit_to_file, compile, stdlib, CompilationError, Source};
+use kantan::{
+    codegen::llvm::{emit_to_file, CodeGenArgs, CodeGenOptLevel, OutputType},
+    compile, stdlib, CompilationError, Source,
+};
 
 fn main() -> Result<(), CompilationError> {
     let args = parse_args();
@@ -34,15 +37,22 @@ fn main() -> Result<(), CompilationError> {
     let output_file = if let Some(out) = args.value_of("output") {
         out.trim()
     } else {
-        "test.o"
+        "out.o"
     };
 
-    let emit_asm = args
-        .value_of("emit")
-        .map(|ty| ty.trim() == "asm")
-        .unwrap_or(false);
+    let opt_lvl = args
+        .value_of("opt")
+        .and_then(CodeGenOptLevel::convert)
+        .unwrap_or(CodeGenOptLevel::OptNone);
 
-    emit_to_file(&mir, output_file, &mut err_writer, emit_asm);
+    let output_type = args
+        .value_of("emit")
+        .and_then(|ty| OutputType::convert(ty.trim()))
+        .unwrap_or(OutputType::Object);
+
+    let codegen_args = CodeGenArgs::new(output_file, &mut err_writer, output_type, opt_lvl);
+
+    emit_to_file(&mir, codegen_args);
 
     Ok(())
 }
@@ -75,7 +85,15 @@ pub fn parse_args<'a>() -> ArgMatches<'a> {
                 .short("e")
                 .long("emit")
                 .value_name("type")
-                .possible_values(&["asm", "obj"])
+                .possible_values(&["asm", "obj", "llvm-ir"])
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("opt")
+                .short("O")
+                .long("opt-lvl")
+                .value_name("level")
+                .possible_values(&["0", "1", "2", "3"])
                 .takes_value(true),
         )
         .arg(Arg::with_name("source-file").multiple(true).required(true))

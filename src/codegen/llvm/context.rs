@@ -15,10 +15,10 @@ enum Intrinsic {
 }
 
 pub struct KantanLLVMContext<'src> {
-    context: LLVMContextRef,
-    builder: LLVMBuilderRef,
     // TODO: we probably want separate Modules
     module: LLVMModuleRef,
+    context: LLVMContextRef,
+    builder: LLVMBuilderRef,
     name_table: HashMap<String, LLVMValueRef>,
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
