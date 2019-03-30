@@ -96,11 +96,24 @@ impl Into<Vec<u8>> for TargetTriple {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum CodeGenOptLevel {
     OptNone,
     OptLess,
     OptDefault,
     OptAggressive,
+}
+
+impl CodeGenOptLevel {
+    pub fn convert(value: &str) -> Option<Self> {
+        Some(match value {
+            "0" => CodeGenOptLevel::OptNone,
+            "1" => CodeGenOptLevel::OptLess,
+            "2" => CodeGenOptLevel::OptDefault,
+            "3" => CodeGenOptLevel::OptAggressive,
+            _ => return None,
+        })
+    }
 }
 
 impl Into<LLVMCodeGenOptLevel> for CodeGenOptLevel {
@@ -112,6 +125,17 @@ impl Into<LLVMCodeGenOptLevel> for CodeGenOptLevel {
             CodeGenOptLevel::OptLess => LLVMCodeGenLevelLess,
             CodeGenOptLevel::OptDefault => LLVMCodeGenLevelDefault,
             CodeGenOptLevel::OptAggressive => LLVMCodeGenLevelAggressive,
+        }
+    }
+}
+
+impl Into<u32> for CodeGenOptLevel {
+    fn into(self) -> u32 {
+        match self {
+            CodeGenOptLevel::OptNone => 0,
+            CodeGenOptLevel::OptLess => 1,
+            CodeGenOptLevel::OptDefault => 2,
+            CodeGenOptLevel::OptAggressive => 3,
         }
     }
 }

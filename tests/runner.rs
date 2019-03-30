@@ -32,7 +32,8 @@ fn compile_dir(name: &str) {
 
 fn compile(name: &str) {
     Command::new("target/debug/kantan")
-        .args(&[name, "--emit", "asm", "-o", NAME])
+        // small optimization level
+        .args(&[name, "--emit", "asm", "-o", NAME, "-O", "1"])
         .output()
         .expect("Failed to execute kantan");
 }
