@@ -188,28 +188,30 @@ pub enum ExprKind<'src> {
         identifier: Spanned<UserIdent<'src>>,
         fields: InitList<'src>,
     },
+    SizeOf(Type<'src>),
 }
 
 impl<'src> Expr<'src> {
     /// Gets the sub expressions of this expression
-    pub fn sub_exprs(&self) -> Vec<&Expr<'src>> {
+    pub fn sub_exprs(&self) -> Vec<&Spanned<Expr<'src>>> {
         use self::ExprKind::*;
 
         match self.kind() {
             Error(_) => panic!(),
             NullLit => vec![],
+            SizeOf(_) => vec![],
             DecLit(_) => vec![],
             StringLit(_) => vec![],
-            New(expr) => vec![&expr.node],
-            Negate(_, expr) => vec![&expr.node],
-            Deref(_, expr) => vec![&expr.node],
-            Binary(l, _, r) => vec![&l.node, &r.node],
-            BoolBinary(l, _, r) => vec![&l.node, &r.node],
+            New(expr) => vec![expr],
+            Negate(_, expr) => vec![expr],
+            Deref(_, expr) => vec![expr],
+            Binary(l, _, r) => vec![l, r],
+            BoolBinary(l, _, r) => vec![l, r],
             Ident(_) => vec![],
-            Assign { left, value, .. } => vec![&left.node, &value.node],
-            Call { args, .. } => args.0.iter().map(|a| &a.node).collect(),
-            Access { left, .. } => vec![&left.node],
-            StructInit { fields, .. } => fields.0.iter().map(|(_, e)| &e.node).collect(),
+            Assign { left, value, .. } => vec![left, value],
+            Call { args, .. } => args.0.iter().collect(),
+            Access { left, .. } => vec![left],
+            StructInit { fields, .. } => fields.0.iter().map(|(_, e)| e).collect(),
         }
     }
 }
@@ -221,6 +223,7 @@ impl<'src> fmt::Display for Expr<'src> {
         match self.kind() {
             Error(err) => write!(f, "{}", err),
             NullLit => write!(f, "null"),
+            SizeOf(ty) => write!(f, "sizeof({})", ty),
             DecLit(lit) => write!(f, "{}", lit),
             StringLit(lit) => write!(f, "{}", lit),
             New(expr) => write!(f, "new {}", expr.node),

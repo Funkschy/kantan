@@ -137,6 +137,8 @@ pub enum Expression<'src> {
     /// allocates the value of its address on the heap
     /// x = new 5
     New(Address<'src>, Type<'src>),
+    /// x = sizeof(ty)
+    SizeOf(Type<'src>),
 }
 
 impl<'src> fmt::Display for Expression<'src> {
@@ -148,6 +150,7 @@ impl<'src> fmt::Display for Expression<'src> {
             Unary(op, a) => format!("{} {}", op, a),
             Copy(a) => format!("{}", a),
             New(a, ty) => format!("new(sizeof({}), {})", ty, a),
+            SizeOf(ty) => format!("sizeof({})", ty),
             StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
             StructInit(ident, values) => format!(
                 "{} {{ {} }}",
@@ -202,6 +205,7 @@ impl<'a> From<&Token<'a>> for Option<UnaryType> {
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum BinaryType {
+    Ptr(PtrBinaryType),
     I16(IntBinaryType),
     I32(IntBinaryType),
 }
@@ -212,9 +216,41 @@ impl fmt::Display for BinaryType {
 
         let s = match self {
             I16(bt) | I32(bt) => bt.to_string(),
+            Ptr(bt) => bt.to_string(),
         };
 
         write!(f, "{}", s)
+    }
+}
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub enum PtrBinaryType {
+    Add,
+    Sub,
+}
+
+impl fmt::Display for PtrBinaryType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use PtrBinaryType::*;
+
+        let s = match self {
+            Add => "+",
+            Sub => "-",
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
+impl<'a> From<&Token<'a>> for Option<PtrBinaryType> {
+    fn from(value: &Token) -> Self {
+        use PtrBinaryType::*;
+
+        match value {
+            Token::Plus => Some(Add),
+            Token::Minus => Some(Sub),
+            _ => None,
+        }
     }
 }
 

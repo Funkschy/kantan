@@ -1,7 +1,7 @@
 use std::fmt;
 
 use super::types::Type;
-use crate::{err_to_string, find_line_index, format_error, Source, Span};
+use crate::{err_to_string, find_line_index, format_error, parse::token::Token, Source, Span};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ResolveError<'src> {
@@ -74,9 +74,14 @@ impl<'src> fmt::Display for ResolveError<'src> {
             ResolveErrorType::Deref(NonPtrError(ty)) => {
                 self.fmt_err(&format!("{} cannot be dereferenced", ty))
             }
-            ResolveErrorType::Delete(NonPtrError(ty)) => {
-                self.fmt_err(&format!("{} cannot be deleted. Only Pointers can", ty))
-            }
+            ResolveErrorType::Delete(NonPtrError(ty)) => self.fmt_err(&format!(
+                "{} cannot be deleted. Only Heap allocated pointers can",
+                ty
+            )),
+            ResolveErrorType::NotArithmetic(ref err) => self.fmt_err(&format!(
+                "Cannot use operator '{}' on expression of type '{}'",
+                err.op, err.ty
+            )),
         };
 
         write!(f, "{}", s)
@@ -94,6 +99,19 @@ pub enum ResolveErrorType<'src> {
     Inference(TypeInferenceError),
     Deref(NonPtrError<'src>),
     Delete(NonPtrError<'src>),
+    NotArithmetic(ArithmeticError<'src>),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ArithmeticError<'src> {
+    ty: Type<'src>,
+    op: Token<'src>,
+}
+
+impl<'src> ArithmeticError<'src> {
+    pub fn new(ty: Type<'src>, op: Token<'src>) -> Self {
+        ArithmeticError { ty, op }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]

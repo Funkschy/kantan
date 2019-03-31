@@ -607,6 +607,12 @@ where
             Token::NullLit => ok_spanned(ExprKind::NullLit),
             Token::DecLit(lit) => ok_spanned(ExprKind::DecLit(lit)),
             Token::StringLit(lit) => ok_spanned(ExprKind::StringLit(lit)),
+            Token::Sizeof => {
+                // TODO: support sizeof expr
+                let ty = self.consume_type()?;
+                let size_of = ExprKind::SizeOf(ty.node);
+                Ok(Spanned::from_span(ty.span, Expr::new(size_of)))
+            }
             Token::New => {
                 let expr = self.expression(no_struct)?;
                 let new = ExprKind::New(Box::new(Spanned::from_span(expr.span, expr.node)));
