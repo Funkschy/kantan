@@ -302,7 +302,7 @@ fn construct_tac<'src>(
 pub fn stdlib() -> Vec<Source> {
     let io = Source::new(
         "io",
-        "extern def putchar(i: i32): i32; 
+        "extern def putchar(i: i32): i32;
          extern def puts(s: string): i32;
          extern def printf(fmt: string, ...): i32;",
     );
