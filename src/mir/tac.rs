@@ -137,6 +137,8 @@ pub enum Expression<'src> {
     /// allocates the value of its address on the heap
     /// x = new 5
     New(Address<'src>, Type<'src>),
+    /// x = sizeof(ty)
+    SizeOf(Type<'src>),
 }
 
 impl<'src> fmt::Display for Expression<'src> {
@@ -148,6 +150,7 @@ impl<'src> fmt::Display for Expression<'src> {
             Unary(op, a) => format!("{} {}", op, a),
             Copy(a) => format!("{}", a),
             New(a, ty) => format!("new(sizeof({}), {})", ty, a),
+            SizeOf(ty) => format!("sizeof({})", ty),
             StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
             StructInit(ident, values) => format!(
                 "{} {{ {} }}",

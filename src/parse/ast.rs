@@ -188,6 +188,7 @@ pub enum ExprKind<'src> {
         identifier: Spanned<UserIdent<'src>>,
         fields: InitList<'src>,
     },
+    SizeOf(Type<'src>),
 }
 
 impl<'src> Expr<'src> {
@@ -198,6 +199,7 @@ impl<'src> Expr<'src> {
         match self.kind() {
             Error(_) => panic!(),
             NullLit => vec![],
+            SizeOf(_) => vec![],
             DecLit(_) => vec![],
             StringLit(_) => vec![],
             New(expr) => vec![expr],
@@ -221,6 +223,7 @@ impl<'src> fmt::Display for Expr<'src> {
         match self.kind() {
             Error(err) => write!(f, "{}", err),
             NullLit => write!(f, "null"),
+            SizeOf(ty) => write!(f, "sizeof({})", ty),
             DecLit(lit) => write!(f, "{}", lit),
             StringLit(lit) => write!(f, "{}", lit),
             New(expr) => write!(f, "new {}", expr.node),

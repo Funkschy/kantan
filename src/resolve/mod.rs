@@ -441,6 +441,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             ExprKind::DecLit(_) => Ok(Some(Type::Simple(Simple::I32))),
+            ExprKind::SizeOf(_) => Ok(Some(Type::Simple(Simple::I32))),
             ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
             ExprKind::Negate(op, expr) => {
                 let ty = self.resolve_type(expr, None)?;

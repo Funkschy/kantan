@@ -464,6 +464,16 @@ impl<'src> KantanLLVMContext<'src> {
 
     unsafe fn translate_mir_expr(&mut self, e: &Expression, name: &str) -> LLVMValueRef {
         match e {
+            Expression::SizeOf(ty) => {
+                let ty = self.convert(*ty);
+                // TODO: remove when i64 is supported
+                LLVMBuildIntCast(
+                    self.builder,
+                    LLVMSizeOf(ty),
+                    LLVMInt32TypeInContext(self.context),
+                    self.cstring(name),
+                )
+            }
             Expression::New(a, ty) => {
                 let ty = self.convert(*ty);
                 let value = self.name_table[&a.to_string()];

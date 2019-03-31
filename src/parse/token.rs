@@ -23,6 +23,7 @@ pub enum Token<'src> {
     Struct,
     New,
     Delete,
+    Sizeof,
 
     // Operators
     Bang,   // !
@@ -107,6 +108,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::While => write!(f, "while"),
             Token::New => write!(f, "new"),
             Token::Delete => write!(f, "delete"),
+            Token::Sizeof => write!(f, "sizeof"),
 
             // Operators
             Token::Bang => write!(f, "!"),

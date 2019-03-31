@@ -399,6 +399,7 @@ impl<'src> Tac<'src> {
                     .collect();
                 Expression::StructInit(identifier.node, values)
             }
+            ExprKind::SizeOf(ty) => Expression::SizeOf(*ty),
             ExprKind::New(expr) => {
                 let ty = expr.node.ty().unwrap();
 
