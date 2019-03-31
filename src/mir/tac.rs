@@ -202,6 +202,7 @@ impl<'a> From<&Token<'a>> for Option<UnaryType> {
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum BinaryType {
+    Ptr(PtrBinaryType),
     I16(IntBinaryType),
     I32(IntBinaryType),
 }
@@ -212,9 +213,41 @@ impl fmt::Display for BinaryType {
 
         let s = match self {
             I16(bt) | I32(bt) => bt.to_string(),
+            Ptr(bt) => bt.to_string(),
         };
 
         write!(f, "{}", s)
+    }
+}
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub enum PtrBinaryType {
+    Add,
+    Sub,
+}
+
+impl fmt::Display for PtrBinaryType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use PtrBinaryType::*;
+
+        let s = match self {
+            Add => "+",
+            Sub => "-",
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
+impl<'a> From<&Token<'a>> for Option<PtrBinaryType> {
+    fn from(value: &Token) -> Self {
+        use PtrBinaryType::*;
+
+        match value {
+            Token::Plus => Some(Add),
+            Token::Minus => Some(Sub),
+            _ => None,
+        }
     }
 }
 

@@ -475,9 +475,26 @@ impl<'src> KantanLLVMContext<'src> {
             Expression::Binary(l, ty, r) => {
                 let left = self.translate_mir_address(l);
                 let right = self.translate_mir_address(r);
+
                 match ty {
                     BinaryType::I16(ty) | BinaryType::I32(ty) => {
                         self.int_binary(left, right, *ty, name)
+                    }
+                    BinaryType::Ptr(ty) => {
+                        let mut right = match ty {
+                            PtrBinaryType::Add => vec![right],
+                            PtrBinaryType::Sub => {
+                                vec![LLVMBuildNeg(self.builder, right, self.cstring("offset"))]
+                            }
+                        };
+
+                        LLVMBuildInBoundsGEP(
+                            self.builder,
+                            left,
+                            right.as_mut_ptr(),
+                            1,
+                            self.cstring(name),
+                        )
                     }
                 }
             }

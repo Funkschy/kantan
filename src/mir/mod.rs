@@ -286,8 +286,28 @@ impl<'src> Tac<'src> {
         block: &mut InstructionBlock<'src>,
     ) -> Expression<'src> {
         match expr.kind() {
-            ExprKind::Binary(l, op, r) | ExprKind::BoolBinary(l, op, r) => {
+            ExprKind::Binary(l, op, r) => {
+                let lty = l.node.ty().unwrap();
+                let rty = r.node.ty().unwrap();
+
+                let left = self.expr_instr(true, &l.node, block);
+                let right = self.expr_instr(true, &r.node, block);
+
                 // TODO: find correct dec size
+                if lty.is_ptr() || rty.is_ptr() {
+                    let bin_type = Option::from(&op.node).map(BinaryType::Ptr).unwrap();
+                    // the pointer has to be on the left side of the Expression
+                    if lty.is_ptr() {
+                        Expression::Binary(left, bin_type, right)
+                    } else {
+                        Expression::Binary(right, bin_type, left)
+                    }
+                } else {
+                    let bin_type = Option::from(&op.node).map(BinaryType::I32).unwrap();
+                    Expression::Binary(left, bin_type, right)
+                }
+            }
+            ExprKind::BoolBinary(l, op, r) => {
                 let bin_type = Option::from(&op.node).map(BinaryType::I32).unwrap();
 
                 let left = self.expr_instr(true, &l.node, block);

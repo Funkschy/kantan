@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    parse::{ast::*, Span, Spanned},
+    parse::{ast::*, token::Token, Span, Spanned},
     types::*,
     Source, UserTypeDefinition, UserTypeMap,
 };
@@ -248,6 +248,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                                 .compare_binary_types(
                                     eq.span,
                                     expr_span,
+                                    eq.node,
                                     var_type.borrow().node,
                                     ty,
                                 )
@@ -397,14 +398,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         // basically a BFS
         while !queue.is_empty() {
             let e = queue.pop().unwrap();
-            let mut subs = e.sub_exprs();
+            let mut subs = e.node.sub_exprs();
             exprs.push(e);
             queue.append(&mut subs);
         }
 
         // check child expressions
-        for expr in exprs.iter().rev() {
-            let opt_ty = self.check_expr(span, expr)?;
+        for Spanned { node: expr, span } in exprs.iter().rev() {
+            let opt_ty = self.check_expr(*span, expr)?;
             // if the type is there already, fill it in
             if let Some(ty) = opt_ty {
                 expr.set_ty(ty);
@@ -444,8 +445,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ExprKind::Negate(op, expr) => {
                 let ty = self.resolve_type(expr, None)?;
                 // TODO: unary operation error
-                Some(self.compare_binary_types(op.span, span, ty, Type::Simple(Simple::I32)))
-                    .transpose()
+                Some(self.compare_binary_types(
+                    op.span,
+                    span,
+                    op.node,
+                    ty,
+                    Type::Simple(Simple::I32),
+                ))
+                .transpose()
             }
             ExprKind::Deref(op, expr) => {
                 let ty = self.resolve_type(expr, None)?;
@@ -464,7 +471,17 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 let left = self.resolve_type(l, None)?;
                 let right = self.resolve_type(r, None)?;
 
-                Some(self.compare_binary_types(op.span, span, left, right)).transpose()
+                let wrong_type = Self::check_type_predicate(left, right, Type::arithmetic);
+
+                if let Some(wrong) = wrong_type {
+                    return Err(self.error(
+                        op.span,
+                        span,
+                        ResolveErrorType::NotArithmetic(ArithmeticError::new(wrong, op.node)),
+                    ));
+                }
+
+                Some(self.compare_binary_types(op.span, span, op.node, left, right)).transpose()
             }
             ExprKind::BoolBinary(l, op, r) => {
                 let left = self.resolve_type(l, None);
@@ -493,7 +510,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     (left?, right?)
                 };
 
-                self.compare_binary_types(op.span, span, left, right)?;
+                self.compare_binary_types(op.span, span, op.node, left, right)?;
                 Ok(Some(Type::Simple(Simple::Bool)))
             }
             // currently only field access
@@ -545,7 +562,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // check if type of right expression is the same as that of
                     // the declared variable
                     Some(
-                        self.compare_binary_types(eq.span, span, ty, val_type)
+                        self.compare_assignment(eq.span, span, ty, val_type)
                             .map_err(
                                 // convert error into illegal assignment error
                                 |ResolveError {
@@ -568,7 +585,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // the type of left is the expected type for the right expr
                     let val_type = self.resolve_type(value, Some(ty))?;
 
-                    Some(self.compare_binary_types(eq.span, span, ty, val_type)).transpose()
+                    Some(self.compare_assignment(eq.span, span, ty, val_type)).transpose()
                 }
             }
             ExprKind::Ident(name) => self
@@ -669,6 +686,19 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     fn current_source(&self) -> &'src Source {
         let (src, _) = self.programs[self.current_name];
         src
+    }
+
+    fn check_type_predicate<F>(first: Type<'src>, second: Type<'src>, pred: F) -> Option<Type<'src>>
+    where
+        F: Fn(&Type<'src>) -> bool,
+    {
+        if !pred(&first) {
+            Some(first)
+        } else if !pred(&second) {
+            Some(second)
+        } else {
+            None
+        }
     }
 
     fn ty_unwrap(
@@ -859,7 +889,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         Ok(())
     }
 
-    fn compare_binary_types(
+    fn compare_assignment(
         &self,
         err_span: Span,
         expr_span: Span,
@@ -877,6 +907,57 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ))
         } else {
             Ok(first)
+        }
+    }
+
+    fn allowed_binary(
+        op: Token<'src>,
+        first: Type<'src>,
+        second: Type<'src>,
+    ) -> (bool, Type<'src>) {
+        if first == second {
+            return (true, first);
+        }
+
+        let first_ptr = first.is_ptr();
+        let second_int = second.is_int();
+
+        if let Token::Plus = op {
+            // return the pointer type as the expression type
+            if first_ptr && second_int {
+                return (true, first);
+            } else if first.is_int() && second.is_ptr() {
+                return (true, second);
+            }
+        } else if let Token::Minus = op {
+            // int - ptr is not allowed
+            return (first_ptr && second_int, first);
+        }
+
+        (false, first)
+    }
+
+    fn compare_binary_types(
+        &self,
+        err_span: Span,
+        expr_span: Span,
+        op: Token<'src>,
+        first: Type<'src>,
+        second: Type<'src>,
+    ) -> Result<Type<'src>, ResolveError<'src>> {
+        let (allowed, ty) = Self::allowed_binary(op, first, second);
+
+        if !allowed {
+            Err(self.error(
+                err_span,
+                expr_span,
+                ResolveErrorType::IllegalOperation(BinaryOperationError {
+                    left_type: first,
+                    right_type: second,
+                }),
+            ))
+        } else {
+            Ok(ty)
         }
     }
 }

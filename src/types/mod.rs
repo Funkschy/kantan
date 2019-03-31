@@ -35,17 +35,40 @@ pub enum Type<'src> {
 }
 
 impl<'src> Type<'src> {
+    #[inline]
     pub fn is_ptr(&self) -> bool {
         match self {
             Type::Pointer(_) => true,
+            Type::Simple(Simple::String) => true,
             _ => false,
         }
     }
 
+    #[inline]
+    pub fn is_int(&self) -> bool {
+        match self {
+            Type::Simple(Simple::I32) => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
     pub fn simple(&self) -> &Simple<'src> {
         match self {
             Type::Simple(s) => &s,
             Type::Pointer(p) => &p.ty,
+        }
+    }
+
+    /// Checks if you can do arithmetic operations (+, -, *, ...) on this type
+    #[inline]
+    pub fn arithmetic(&self) -> bool {
+        if self.is_ptr() {
+            true
+        } else if let Type::Simple(s) = self {
+            s.arithmetic()
+        } else {
+            false
         }
     }
 }
@@ -58,6 +81,15 @@ pub enum Simple<'src> {
     Void,
     Varargs,
     UserType(UserIdent<'src>),
+}
+
+impl<'src> Simple<'src> {
+    pub fn arithmetic(&self) -> bool {
+        match self {
+            Simple::I32 => true,
+            _ => false,
+        }
+    }
 }
 
 impl<'src> fmt::Display for Simple<'src> {

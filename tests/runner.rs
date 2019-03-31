@@ -110,7 +110,7 @@ fn test_all_files() {
         let expected = get_expected(&name);
         let leak_free = valgrind();
         clean_up();
-        assert_eq!(expected, output, "output != expected in {}", name);
+        assert_eq!(expected, output, "expected != output in {}", name);
         assert!(leak_free, "memory leaks in {}", name);
     }
 }
