@@ -53,6 +53,11 @@ impl<'src> Type<'src> {
     }
 
     #[inline]
+    pub fn is_num(&self) -> bool {
+        self.is_int()
+    }
+
+    #[inline]
     pub fn simple(&self) -> &Simple<'src> {
         match self {
             Type::Simple(s) => &s,

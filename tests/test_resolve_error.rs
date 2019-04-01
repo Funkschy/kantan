@@ -111,6 +111,33 @@ fn test_call_of_undefined_function() {
 }
 
 #[test]
+fn test_add_string_should_return_type_error() {
+    let mut cursor = Cursor::new(Vec::new());
+
+    let source = Source::new(
+        "test-equals",
+        r#"def main(): void {
+ let s = "hello " + "world";
+ }"#,
+    );
+
+    kantan::compile(&vec![source], &mut cursor).unwrap_err();
+    let output = String::from_utf8(cursor.into_inner()).unwrap();
+
+    let expected = concat!(
+        r#"error: binary operation '+' cannot be applied to 'string' and 'string'
+--> test-equals:2:19
+  |
+2 | let s = "hello " + "world";
+  |"#,
+        "\u{1b}[31m                  ^\u{1b}[0m - not allowed
+"
+    );
+
+    assert_eq!(expected, output);
+}
+
+#[test]
 fn test_invalid_equality_operation_should_return_error_message() {
     let mut cursor = Cursor::new(Vec::new());
 

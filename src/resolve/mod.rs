@@ -1,7 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    parse::{ast::*, token::Token, Span, Spanned},
+    parse::{
+        ast::*,
+        token::{Precedence, Token},
+        Span, Spanned,
+    },
     types::*,
     Source, UserTypeDefinition, UserTypeMap,
 };
@@ -917,6 +921,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         second: Type<'src>,
     ) -> (bool, Type<'src>) {
         if first == second {
+            let prec = op.precedence();
+            // Hacky solution, because we want to allow ==, <, !=, ... for pointers,
+            // but not +, *, ... . So we use the precedence, to determine, if
+            // this is an arithmetic expression
+            if prec == Precedence::Sum || prec == Precedence::Product {
+                return (first.is_num() && second.is_num(), first);
+            }
             return (true, first);
         }
 
