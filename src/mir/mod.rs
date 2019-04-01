@@ -5,7 +5,7 @@ use std::{collections::HashMap, mem};
 
 use super::{
     parse::ast::*,
-    resolve::{symbol::SymbolTable, ModTypeMap, ResolveResult},
+    resolve::{symbol::SymbolTable, ModFuncMap, ModTypeMap, ResolveResult},
     types::*,
     Spanned,
 };
@@ -26,6 +26,7 @@ pub struct Tac<'src> {
     pub(crate) functions: HashMap<&'src str, HashMap<&'src str, Func<'src>>>,
     pub(crate) literals: HashMap<Label, &'src str>,
     pub(crate) types: ModTypeMap<'src>,
+    mod_funcs: ModFuncMap<'src>,
     symbols: SymbolTable<'src>,
     names: NameTable<'src>,
     temp_count: usize,
@@ -45,6 +46,7 @@ impl<'src> Tac<'src> {
             functions,
             literals: HashMap::new(),
             names: NameTable::new(),
+            mod_funcs: resolve_result.mod_functions,
             symbols: resolve_result.symbols,
             types: resolve_result.mod_user_types,
             temp_count: 0,
@@ -303,7 +305,14 @@ impl<'src> Tac<'src> {
                         Expression::Binary(right, bin_type, left)
                     }
                 } else {
-                    let bin_type = Option::from(&op.node).map(BinaryType::I32).unwrap();
+                    let bin_type = Option::from(&op.node)
+                        .map(match lty {
+                            Type::Simple(Simple::I32) => BinaryType::I32,
+                            Type::Simple(Simple::F32) => BinaryType::F32,
+                            // TODO: is this even reachable? Maybe internal error
+                            _ => unimplemented!(),
+                        })
+                        .unwrap();
                     Expression::Binary(left, bin_type, right)
                 }
             }
@@ -322,8 +331,15 @@ impl<'src> Tac<'src> {
                     .map(|a| self.expr_instr(true, &a.node, block))
                     .collect();
 
-                let ty = expr.ty().unwrap();
-                Expression::Call(callee.node, args, ty)
+                let varargs = self.mod_funcs[callee.node.module()][callee.node.name()].varargs;
+
+                let ret_type = expr.ty().unwrap();
+                Expression::Call {
+                    ident: callee.node,
+                    args,
+                    ret_type,
+                    varargs,
+                }
             }
             ExprKind::Assign { left, value, .. } => {
                 let expr = if let Some(rval) = self.address_expr(&value.node) {
@@ -445,7 +461,11 @@ impl<'src> Tac<'src> {
         }
 
         // void functions should be assigned to an empty address
-        if let Expression::Call(_, _, Type::Simple(Simple::Void)) = e {
+        if let Expression::Call {
+            ret_type: Type::Simple(Simple::Void),
+            ..
+        } = e
+        {
             return self.assign(Address::Empty, e, block);
         }
 
@@ -470,6 +490,7 @@ impl<'src> Tac<'src> {
         Some(match expr.kind() {
             ExprKind::NullLit => Address::Null(expr.ty().unwrap()),
             ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
+            ExprKind::FloatLit(lit) => Address::new_const(Type::Simple(Simple::F32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
             ExprKind::Ident(ident) => {
                 if let Some(arg) = self.find_param(ident) {
@@ -578,7 +599,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x0".to_string()),
-                    BinaryType::I32(IntBinaryType::Mul),
+                    BinaryType::I32(NumBinaryType::Mul),
                     Address::Name("y0".to_string()),
                 )),
             ),
@@ -586,7 +607,7 @@ mod tests {
                 Address::Name("z0".to_string()),
                 Box::new(Expression::Binary(
                     Address::Temp(TempVar::from(0)),
-                    BinaryType::I32(IntBinaryType::Add),
+                    BinaryType::I32(NumBinaryType::Add),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "2")),
                 )),
             ),
@@ -654,7 +675,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x0".to_string()),
-                    BinaryType::I32(IntBinaryType::Eq),
+                    BinaryType::I32(NumBinaryType::Eq),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 )),
             ),
@@ -739,7 +760,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x0".to_string()),
-                    BinaryType::I32(IntBinaryType::Eq),
+                    BinaryType::I32(NumBinaryType::Eq),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 )),
             ),
@@ -841,7 +862,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x0".to_string()),
-                    BinaryType::I32(IntBinaryType::Smaller),
+                    BinaryType::I32(NumBinaryType::Smaller),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "10")),
                 )),
             ),
@@ -859,7 +880,7 @@ mod tests {
                 Address::Name("x0".to_string()),
                 Box::new(Expression::Binary(
                     Address::Name("x0".to_string()),
-                    BinaryType::I32(IntBinaryType::Add),
+                    BinaryType::I32(NumBinaryType::Add),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "1")),
                 )),
             ),

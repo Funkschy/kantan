@@ -445,6 +445,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             ExprKind::DecLit(_) => Ok(Some(Type::Simple(Simple::I32))),
+            ExprKind::FloatLit(_) => Ok(Some(Type::Simple(Simple::F32))),
             ExprKind::SizeOf(_) => Ok(Some(Type::Simple(Simple::I32))),
             ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
             ExprKind::Negate(op, expr) => {

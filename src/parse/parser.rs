@@ -606,6 +606,7 @@ where
         match token.node {
             Token::NullLit => ok_spanned(ExprKind::NullLit),
             Token::DecLit(lit) => ok_spanned(ExprKind::DecLit(lit)),
+            Token::FloatLit(lit) => ok_spanned(ExprKind::FloatLit(lit)),
             Token::StringLit(lit) => ok_spanned(ExprKind::StringLit(lit)),
             Token::Sizeof => {
                 // TODO: support sizeof expr

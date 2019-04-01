@@ -165,6 +165,7 @@ impl<'src> Lexer<'src> {
             start,
             match slice {
                 "i32" => Token::TypeIdent(Type::Simple(Simple::I32)),
+                "f32" => Token::TypeIdent(Type::Simple(Simple::F32)),
                 "string" => Token::TypeIdent(Type::Simple(Simple::String)),
                 "bool" => Token::TypeIdent(Type::Simple(Simple::Bool)),
                 "void" => Token::TypeIdent(Type::Simple(Simple::Void)),
@@ -187,9 +188,21 @@ impl<'src> Lexer<'src> {
         ))
     }
 
-    fn scan_dec_num(&mut self) -> Scanned<'src> {
+    fn scan_num(&mut self) -> Scanned<'src> {
         let start = self.pos();
         let slice = self.read_while(|c| c.is_digit(10));
+
+        if let Some(InputPos { value: '.', .. }) = self.current {
+            if let Some((_, peek)) = self.chars.peek() {
+                if peek.is_digit(10) {
+                    // consume '.'
+                    self.advance();
+                    self.read_while(|c| c.is_digit(10));
+                    let slice = self.slice(start, self.pos());
+                    return Ok(self.spanned(start, Token::FloatLit(slice)));
+                }
+            }
+        }
 
         Ok(self.spanned(start, Token::DecLit(slice)))
     }
@@ -265,7 +278,7 @@ impl<'src> Lexer<'src> {
             ',' => consume_single!(self, start, Token::Comma),
             '"' => self.scan_string(),
             c if c.is_alphabetic() => self.scan_ident(),
-            c if c.is_digit(10) => self.scan_dec_num(),
+            c if c.is_digit(10) => self.scan_num(),
             _ => {
                 self.advance();
                 let span = Span::new(start, start);
@@ -316,6 +329,25 @@ mod tests {
             vec![
                 Spanned::new(0, 1, Token::Dot),
                 Spanned::new(2, 4, Token::TripleDot),
+            ],
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_float_lit_is_scanned_correctly() {
+        let source = Source::new("main", ".1. 1.0 1");
+
+        let lexer = Lexer::new(&source);
+
+        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        assert_eq!(
+            vec![
+                Spanned::new(0, 1, Token::Dot),
+                Spanned::new(1, 1, Token::DecLit("1")),
+                Spanned::new(2, 2, Token::Dot),
+                Spanned::new(4, 6, Token::FloatLit("1.0")),
+                Spanned::new(8, 8, Token::DecLit("1")),
             ],
             tokens
         );

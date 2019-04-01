@@ -102,7 +102,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x".to_string()),
-                    BinaryType::I32(IntBinaryType::Mul),
+                    BinaryType::I32(NumBinaryType::Mul),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "3")),
                 )),
             ),
@@ -110,7 +110,7 @@ mod tests {
                 Address::Name("y".to_string()),
                 Box::new(Expression::Binary(
                     Address::Temp(TempVar::from(0)),
-                    BinaryType::I32(IntBinaryType::Add),
+                    BinaryType::I32(NumBinaryType::Add),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "3")),
                 )),
             ),
@@ -146,7 +146,7 @@ mod tests {
                     Address::Temp(TempVar::from(0)),
                     Box::new(Expression::Binary(
                         Address::Name("x".to_string()),
-                        BinaryType::I32(IntBinaryType::Mul),
+                        BinaryType::I32(NumBinaryType::Mul),
                         Address::Const(Constant::new(Type::Simple(Simple::I32), "3")),
                     )),
                 ),
@@ -154,7 +154,7 @@ mod tests {
                     Address::Name("y".to_string()),
                     Box::new(Expression::Binary(
                         Address::Temp(TempVar::from(0)),
-                        BinaryType::I32(IntBinaryType::Add),
+                        BinaryType::I32(NumBinaryType::Add),
                         Address::Const(Constant::new(Type::Simple(Simple::I32), "3")),
                     )),
                 ),
@@ -192,7 +192,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x".to_string()),
-                    BinaryType::I32(IntBinaryType::Eq),
+                    BinaryType::I32(NumBinaryType::Eq),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 )),
             ),
@@ -239,7 +239,7 @@ mod tests {
                         Address::Temp(TempVar::from(0)),
                         Box::new(Expression::Binary(
                             Address::Name("x".to_string()),
-                            BinaryType::I32(IntBinaryType::Eq),
+                            BinaryType::I32(NumBinaryType::Eq),
                             Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                         )),
                     ),
@@ -294,7 +294,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x".to_string()),
-                    BinaryType::I32(IntBinaryType::Eq),
+                    BinaryType::I32(NumBinaryType::Eq),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 )),
             ),
@@ -351,7 +351,7 @@ mod tests {
                         Address::Temp(TempVar::from(0)),
                         Box::new(Expression::Binary(
                             Address::Name("x".to_string()),
-                            BinaryType::I32(IntBinaryType::Eq),
+                            BinaryType::I32(NumBinaryType::Eq),
                             Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                         )),
                     ),

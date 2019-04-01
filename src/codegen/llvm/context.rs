@@ -1,6 +1,9 @@
-use std::{borrow::Borrow, collections::HashMap, ffi::CString, ptr};
+use std::{borrow::Borrow, collections::HashMap, ffi::CString, mem, ptr};
 
-use llvm_sys::{analysis::*, core::*, prelude::*, LLVMIntPredicate, LLVMLinkage, LLVMUnnamedAddr};
+use llvm_sys::{
+    analysis::*, core::*, prelude::*, LLVMIntPredicate, LLVMLinkage, LLVMRealPredicate,
+    LLVMUnnamedAddr,
+};
 
 use crate::{
     mir::{address::*, tac::*},
@@ -183,6 +186,7 @@ impl<'src> KantanLLVMContext<'src> {
         match ty {
             Type::Simple(ty) => match ty {
                 Simple::I32 => LLVMInt32TypeInContext(self.context),
+                Simple::F32 => LLVMFloatTypeInContext(self.context),
                 Simple::Bool => LLVMInt1TypeInContext(self.context),
                 Simple::Void => LLVMVoidTypeInContext(self.context),
                 Simple::String => {
@@ -219,12 +223,6 @@ impl<'src> KantanLLVMContext<'src> {
 
         let mut params: Vec<LLVMTypeRef> = if !varargs {
             iter.map(|(_, t)| self.convert(*t)).collect()
-        } else if params.len() > 1 {
-            iter.rev()
-                .skip(1) // skip last parameter, because ... is not a type
-                .map(|(_, t)| self.convert(*t))
-                .rev()
-                .collect()
         } else {
             Vec::new()
         };
@@ -423,8 +421,13 @@ impl<'src> KantanLLVMContext<'src> {
                 self.name_table[&t.to_string()],
                 self.cstring(&t.to_string()),
             ),
-            // TODO: other types
-            Address::Const(c) => LLVMConstInt(self.convert(c.ty), c.literal.parse().unwrap(), 1),
+            Address::Const(c) => {
+                if c.ty.is_int() {
+                    LLVMConstInt(self.convert(c.ty), c.literal.parse().unwrap(), true as i32)
+                } else {
+                    LLVMConstRealOfString(self.convert(c.ty), self.cstring(c.literal))
+                }
+            }
             Address::Global(g) => {
                 let string: LLVMValueRef = self.globals[g];
 
@@ -490,6 +493,7 @@ impl<'src> KantanLLVMContext<'src> {
                     BinaryType::I16(ty) | BinaryType::I32(ty) => {
                         self.int_binary(left, right, *ty, name)
                     }
+                    BinaryType::F32(ty) => self.float_binary(left, right, *ty, name),
                     BinaryType::Ptr(ty) => {
                         let mut right = match ty {
                             PtrBinaryType::Add => vec![right],
@@ -518,15 +522,39 @@ impl<'src> KantanLLVMContext<'src> {
                     UnaryType::Deref => a,
                 }
             }
-            Expression::Call(ident, args, ty) => {
+            Expression::Call {
+                ident,
+                args,
+                ret_type,
+                varargs,
+            } => {
                 let n = self.cstring(name);
                 let num_args = args.len() as u32;
+
+                let float_type = LLVMFloatTypeInContext(self.context);
 
                 let mut args: Vec<LLVMValueRef> =
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
 
+                for a in args.iter_mut() {
+                    // If a float is passed as an argument to a variadic function,
+                    // it has to be promoted to a double implicitly
+                    if *varargs && LLVMTypeOf(*a) == float_type {
+                        // convert float to double
+                        let double = LLVMBuildFPExt(
+                            self.builder,
+                            *a,
+                            LLVMDoubleTypeInContext(self.context),
+                            self.cstring("promoted"),
+                        );
+
+                        // replace float with double
+                        mem::replace(a, double);
+                    }
+                }
+
                 let f = self.functions[ident.module()][ident.name()];
-                let name = if *ty != Type::Simple(Simple::Void) {
+                let name = if *ret_type != Type::Simple(Simple::Void) {
                     n
                 } else {
                     // void functions can't have a name
@@ -562,29 +590,59 @@ impl<'src> KantanLLVMContext<'src> {
         }
     }
 
-    unsafe fn int_binary(
+    unsafe fn float_binary(
         &mut self,
         left: LLVMValueRef,
         right: LLVMValueRef,
-        ty: IntBinaryType,
+        ty: NumBinaryType,
         name: &str,
     ) -> LLVMValueRef {
         let n = self.cstring(name);
 
         match ty {
-            IntBinaryType::Add => LLVMBuildAdd(self.builder, left, right, n),
-            IntBinaryType::Sub => LLVMBuildSub(self.builder, left, right, n),
-            IntBinaryType::Mul => LLVMBuildMul(self.builder, left, right, n),
+            NumBinaryType::Add => LLVMBuildFAdd(self.builder, left, right, n),
+            NumBinaryType::Sub => LLVMBuildFSub(self.builder, left, right, n),
+            NumBinaryType::Mul => LLVMBuildFMul(self.builder, left, right, n),
             // TODO: signed vs unsigned
-            IntBinaryType::Div => LLVMBuildSDiv(self.builder, left, right, n),
+            NumBinaryType::Div => LLVMBuildFDiv(self.builder, left, right, n),
+            _ => {
+                let real_pred = match ty {
+                    NumBinaryType::Eq => LLVMRealPredicate::LLVMRealOEQ,
+                    NumBinaryType::Neq => LLVMRealPredicate::LLVMRealONE,
+                    NumBinaryType::Smaller => LLVMRealPredicate::LLVMRealOLT,
+                    NumBinaryType::SmallerEq => LLVMRealPredicate::LLVMRealOLE,
+                    NumBinaryType::Greater => LLVMRealPredicate::LLVMRealOGT,
+                    NumBinaryType::GreaterEq => LLVMRealPredicate::LLVMRealOGE,
+                    _ => unreachable!(),
+                };
+                LLVMBuildFCmp(self.builder, real_pred, left, right, n)
+            }
+        }
+    }
+
+    unsafe fn int_binary(
+        &mut self,
+        left: LLVMValueRef,
+        right: LLVMValueRef,
+        ty: NumBinaryType,
+        name: &str,
+    ) -> LLVMValueRef {
+        let n = self.cstring(name);
+
+        match ty {
+            NumBinaryType::Add => LLVMBuildAdd(self.builder, left, right, n),
+            NumBinaryType::Sub => LLVMBuildSub(self.builder, left, right, n),
+            NumBinaryType::Mul => LLVMBuildMul(self.builder, left, right, n),
+            // TODO: signed vs unsigned
+            NumBinaryType::Div => LLVMBuildSDiv(self.builder, left, right, n),
             _ => {
                 let int_pred = match ty {
-                    IntBinaryType::Eq => LLVMIntPredicate::LLVMIntEQ,
-                    IntBinaryType::Neq => LLVMIntPredicate::LLVMIntNE,
-                    IntBinaryType::Smaller => LLVMIntPredicate::LLVMIntSLT,
-                    IntBinaryType::SmallerEq => LLVMIntPredicate::LLVMIntSLE,
-                    IntBinaryType::Greater => LLVMIntPredicate::LLVMIntSGT,
-                    IntBinaryType::GreaterEq => LLVMIntPredicate::LLVMIntSGE,
+                    NumBinaryType::Eq => LLVMIntPredicate::LLVMIntEQ,
+                    NumBinaryType::Neq => LLVMIntPredicate::LLVMIntNE,
+                    NumBinaryType::Smaller => LLVMIntPredicate::LLVMIntSLT,
+                    NumBinaryType::SmallerEq => LLVMIntPredicate::LLVMIntSLE,
+                    NumBinaryType::Greater => LLVMIntPredicate::LLVMIntSGT,
+                    NumBinaryType::GreaterEq => LLVMIntPredicate::LLVMIntSGE,
                     _ => unreachable!(),
                 };
                 LLVMBuildICmp(self.builder, int_pred, left, right, n)

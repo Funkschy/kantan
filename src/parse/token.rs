@@ -7,6 +7,7 @@ pub enum Token<'src> {
     NullLit,
     Ident(&'src str),
     DecLit(&'src str),
+    FloatLit(&'src str),
     StringLit(&'src str),
     TypeIdent(Type<'src>),
 
@@ -94,6 +95,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::Ident(ref name) => write!(f, "{}", name),
             Token::StringLit(ref lit) => write!(f, "{}", lit),
             Token::DecLit(lit) => write!(f, "{}", lit.to_string()),
+            Token::FloatLit(lit) => write!(f, "{}", lit.to_string()),
             Token::TypeIdent(ty) => write!(f, "{}", ty.to_string()),
             // Keywords
             Token::Type => write!(f, "type"),

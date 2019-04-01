@@ -128,7 +128,12 @@ pub enum Expression<'src> {
     /// x = y
     Copy(Address<'src>),
     /// x = call f (y, z)
-    Call(UserIdent<'src>, Vec<Address<'src>>, Type<'src>),
+    Call {
+        ident: UserIdent<'src>,
+        args: Vec<Address<'src>>,
+        ret_type: Type<'src>,
+        varargs: bool,
+    },
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset
     StructGep(Address<'src>, u32),
@@ -161,10 +166,16 @@ impl<'src> fmt::Display for Expression<'src> {
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
-            Call(f, args, _) => {
+            Call {
+                ident: f,
+                args,
+                varargs,
+                ..
+            } => {
                 let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
                 let args = args.join(", ");
-                format!("call {}({})", f, args)
+                let varargs = if *varargs { "varargs " } else { "" };
+                format!("{}call {}({})", varargs, f, args)
             }
         };
 
@@ -206,8 +217,9 @@ impl<'a> From<&Token<'a>> for Option<UnaryType> {
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum BinaryType {
     Ptr(PtrBinaryType),
-    I16(IntBinaryType),
-    I32(IntBinaryType),
+    I16(NumBinaryType),
+    I32(NumBinaryType),
+    F32(NumBinaryType),
 }
 
 impl fmt::Display for BinaryType {
@@ -215,7 +227,7 @@ impl fmt::Display for BinaryType {
         use BinaryType::*;
 
         let s = match self {
-            I16(bt) | I32(bt) => bt.to_string(),
+            I16(bt) | I32(bt) | F32(bt) => bt.to_string(),
             Ptr(bt) => bt.to_string(),
         };
 
@@ -255,7 +267,7 @@ impl<'a> From<&Token<'a>> for Option<PtrBinaryType> {
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
-pub enum IntBinaryType {
+pub enum NumBinaryType {
     Add,
     Sub,
     Mul,
@@ -268,9 +280,9 @@ pub enum IntBinaryType {
     GreaterEq,
 }
 
-impl<'a> From<&Token<'a>> for Option<IntBinaryType> {
+impl<'a> From<&Token<'a>> for Option<NumBinaryType> {
     fn from(value: &Token) -> Self {
-        use IntBinaryType::*;
+        use NumBinaryType::*;
 
         match value {
             Token::Plus => Some(Add),
@@ -288,9 +300,9 @@ impl<'a> From<&Token<'a>> for Option<IntBinaryType> {
     }
 }
 
-impl fmt::Display for IntBinaryType {
+impl fmt::Display for NumBinaryType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use IntBinaryType::*;
+        use NumBinaryType::*;
 
         let s = match self {
             Add => "+",

@@ -53,8 +53,16 @@ impl<'src> Type<'src> {
     }
 
     #[inline]
+    pub fn is_float(&self) -> bool {
+        match self {
+            Type::Simple(Simple::F32) => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
     pub fn is_num(&self) -> bool {
-        self.is_int()
+        self.is_int() || self.is_float()
     }
 
     #[inline]
@@ -81,6 +89,7 @@ impl<'src> Type<'src> {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Simple<'src> {
     I32,
+    F32,
     Bool,
     String,
     Void,
@@ -92,6 +101,7 @@ impl<'src> Simple<'src> {
     pub fn arithmetic(&self) -> bool {
         match self {
             Simple::I32 => true,
+            Simple::F32 => true,
             _ => false,
         }
     }
@@ -101,6 +111,7 @@ impl<'src> fmt::Display for Simple<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
             Simple::I32 => "i32",
+            Simple::F32 => "f32",
             Simple::String => "string",
             Simple::Bool => "bool",
             Simple::Void => "void",
