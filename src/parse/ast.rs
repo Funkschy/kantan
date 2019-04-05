@@ -157,7 +157,7 @@ pub enum ExprKind<'src> {
     DecLit(&'src str),
     FloatLit(&'src str),
     StringLit(&'src str),
-    Ref(Spanned<Token<'src>>, Spanned<&'src str>),
+    Ref(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Deref(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Negate(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Binary(
@@ -208,7 +208,7 @@ impl<'src> Expr<'src> {
             New(expr) => vec![expr],
             Negate(_, expr) => vec![expr],
             Deref(_, expr) => vec![expr],
-            Ref(..) => vec![],
+            Ref(_, expr) => vec![expr],
             Binary(l, _, r) => vec![l, r],
             BoolBinary(l, _, r) => vec![l, r],
             Ident(_) => vec![],
@@ -217,6 +217,21 @@ impl<'src> Expr<'src> {
             Access { left, .. } => vec![left],
             StructInit { fields, .. } => fields.0.iter().map(|(_, e)| e).collect(),
         }
+    }
+
+    pub fn is_r_value(&self) -> bool {
+        use self::ExprKind::*;
+
+        match self.kind() {
+            Ident(_) => false,
+            Access { .. } => false,
+            _ => true,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_l_value(&self) -> bool {
+        !self.is_r_value()
     }
 }
 
@@ -234,7 +249,7 @@ impl<'src> fmt::Display for Expr<'src> {
             New(expr) => write!(f, "new {}", expr.node),
             Negate(_, expr) => write!(f, "-{}", expr.node),
             Deref(_, expr) => write!(f, "*{}", expr.node),
-            Ref(_, ident) => write!(f, "&{}", ident.node),
+            Ref(_, expr) => write!(f, "&{}", expr.node),
             Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
             BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
             Ident(name) => write!(f, "{}", name),

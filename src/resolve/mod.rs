@@ -460,8 +460,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 ))
                 .transpose()
             }
-            ExprKind::Ref(_, ident) => {
-                let ty = self.handle_ident(ident.span, ident.node)?;
+            ExprKind::Ref(_, expr) => {
+                if expr.node.is_r_value() {
+                    unimplemented!("TODO: add error for &rvalue")
+                }
+
+                let ty = self.resolve_type(expr, None)?;
                 Ok(Some(match ty {
                     Type::Pointer(mut ptr) => {
                         ptr.number += 1;
@@ -604,8 +608,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     Some(self.compare_assignment(eq.span, span, ty, val_type)).transpose()
                 }
             }
-            ExprKind::Ident(name) => self.handle_ident(span, name).map(|ty| Some(ty)),
-
+            ExprKind::Ident(name) => self.handle_ident(span, name).map(Some),
             ExprKind::Call { callee, args } => {
                 let func_type = self.get_function(callee)?;
 

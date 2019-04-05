@@ -637,12 +637,13 @@ where
                 ))
             }
             Token::Ampersand => {
-                let ident = self.consume_ident()?;
+                // TODO: change false Precedence
+                let next = self.parse_expression(Precedence::Sum, no_struct)?;
 
                 Ok(Spanned::new(
                     token.span.start,
-                    ident.span.end,
-                    Expr::new(ExprKind::Ref(*token, ident)),
+                    next.span.end,
+                    Expr::new(ExprKind::Ref(*token, Box::new(next))),
                 ))
             }
             Token::Star => {

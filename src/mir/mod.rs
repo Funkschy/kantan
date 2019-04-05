@@ -368,8 +368,8 @@ impl<'src> Tac<'src> {
 
                 Expression::Unary(u_type, address)
             }
-            ExprKind::Ref(_, ident) => {
-                let address = self.handle_ident(ident.node);
+            ExprKind::Ref(_, expr) => {
+                let address = self.expr_instr(true, &expr.node, block);
                 let ref_address = Address::Ref(address.to_string());
                 Expression::Copy(ref_address)
             }
