@@ -416,6 +416,7 @@ impl<'src> KantanLLVMContext<'src> {
             Address::Empty => unreachable!(),
             Address::Null(ty) => LLVMConstNull(self.convert(*ty)),
             Address::Name(n) => LLVMBuildLoad(self.builder, self.name_table[n], self.cstring(&n)),
+            Address::Ref(r) => self.name_table[r],
             Address::Temp(t) => LLVMBuildLoad(
                 self.builder,
                 self.name_table[&t.to_string()],

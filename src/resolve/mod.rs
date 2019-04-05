@@ -460,6 +460,20 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 ))
                 .transpose()
             }
+            ExprKind::Ref(_, expr) => {
+                if expr.node.is_r_value() {
+                    unimplemented!("TODO: add error for &rvalue")
+                }
+
+                let ty = self.resolve_type(expr, None)?;
+                Ok(Some(match ty {
+                    Type::Pointer(mut ptr) => {
+                        ptr.number += 1;
+                        Type::Pointer(ptr)
+                    }
+                    Type::Simple(s) => Type::Pointer(Pointer::new(1, s)),
+                }))
+            }
             ExprKind::Deref(op, expr) => {
                 let ty = self.resolve_type(expr, None)?;
                 if let Type::Pointer(mut ptr) = ty {
@@ -594,12 +608,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     Some(self.compare_assignment(eq.span, span, ty, val_type)).transpose()
                 }
             }
-            ExprKind::Ident(name) => self
-                .sym_table
-                .lookup(name)
-                .ok_or_else(|| self.not_defined_error(span, span, name))
-                .map(|sym| Some(sym.node.ty)),
-
+            ExprKind::Ident(name) => self.handle_ident(span, name).map(Some),
             ExprKind::Call { callee, args } => {
                 let func_type = self.get_function(callee)?;
 
@@ -692,6 +701,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     fn current_source(&self) -> &'src Source {
         let (src, _) = self.programs[self.current_name];
         src
+    }
+
+    fn handle_ident(&self, span: Span, name: &'src str) -> Result<Type<'src>, ResolveError<'src>> {
+        self.sym_table
+            .lookup(name)
+            .ok_or_else(|| self.not_defined_error(span, span, name))
+            .map(|sym| sym.node.ty)
     }
 
     fn check_type_predicate<F>(first: Type<'src>, second: Type<'src>, pred: F) -> Option<Type<'src>>
