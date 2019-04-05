@@ -636,6 +636,15 @@ where
                     Expr::new(ExprKind::Negate(*token, Box::new(next))),
                 ))
             }
+            Token::Ampersand => {
+                let ident = self.consume_ident()?;
+
+                Ok(Spanned::new(
+                    token.span.start,
+                    ident.span.end,
+                    Expr::new(ExprKind::Ref(*token, ident)),
+                ))
+            }
             Token::Star => {
                 // TODO: change false Precedence
                 let next = self.parse_expression(Precedence::Sum, no_struct)?;

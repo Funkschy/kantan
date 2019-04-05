@@ -368,8 +368,13 @@ impl<'src> Tac<'src> {
 
                 Expression::Unary(u_type, address)
             }
-            ExprKind::Deref(op, expr) => {
-                let u_type = Option::from(&op.node).unwrap();
+            ExprKind::Ref(_, ident) => {
+                let address = self.handle_ident(ident.node);
+                let ref_address = Address::Ref(address.to_string());
+                Expression::Copy(ref_address)
+            }
+            ExprKind::Deref(_, expr) => {
+                let u_type = UnaryType::Deref;
                 let mut address = self.expr_instr(rhs, &expr.node, block);
 
                 // Expressions on the right side of an assignment have to be derefed twice
@@ -486,20 +491,22 @@ impl<'src> Tac<'src> {
         address
     }
 
+    fn handle_ident(&mut self, ident: &'src str) -> Address<'src> {
+        if let Some(arg) = self.find_param(ident) {
+            Address::Name(arg)
+        } else {
+            // Address::Name
+            self.names.lookup(ident).into()
+        }
+    }
+
     fn address_expr(&mut self, expr: &Expr<'src>) -> Option<Address<'src>> {
         Some(match expr.kind() {
             ExprKind::NullLit => Address::Null(expr.ty().unwrap()),
             ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
             ExprKind::FloatLit(lit) => Address::new_const(Type::Simple(Simple::F32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
-            ExprKind::Ident(ident) => {
-                if let Some(arg) = self.find_param(ident) {
-                    Address::Name(arg)
-                } else {
-                    // Address::Name
-                    self.names.lookup(ident).into()
-                }
-            }
+            ExprKind::Ident(ident) => self.handle_ident(ident),
             _ => return None,
         })
     }

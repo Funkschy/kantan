@@ -11,6 +11,7 @@ pub enum Address<'src> {
     Const(Constant<'src>),
     Temp(TempVar),
     Global(Label),
+    Ref(String),
 }
 
 impl<'src> fmt::Display for Address<'src> {
@@ -24,6 +25,7 @@ impl<'src> fmt::Display for Address<'src> {
             Const(c) => write!(f, "{}", c),
             Temp(t) => write!(f, "{}", t),
             Global(l) => write!(f, "{}", l),
+            Ref(n) => write!(f, "{}", n),
         }
     }
 }
