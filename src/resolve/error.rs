@@ -35,16 +35,17 @@ impl<'src> fmt::Display for ResolveError<'src> {
             )
         };
 
-        let s = match self.error {
+        let s = match &self.error {
             ResolveErrorType::IllegalAssignment(AssignmentError {
                 name,
                 definition_span,
                 ref bin_op_err,
             }) => {
                 let (line_nr, _) = find_line_index(self.source, definition_span.start);
+                let span = *definition_span;
                 let reason = format!(
                     "{} - '{}' was defined as '{}' here",
-                    err_to_string(self.source, definition_span, definition_span, line_nr, true),
+                    err_to_string(self.source, span, span, line_nr, true),
                     name,
                     bin_op_err.left_type
                 );

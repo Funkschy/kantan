@@ -1,12 +1,15 @@
-use std::{cell::Cell, fmt, hash};
+use std::{
+    cell::{Ref, RefCell},
+    fmt,
+};
 
 use super::{error::ParseError, token::Token, Spanned};
 use crate::types::{Type, UserIdent};
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Program<'src>(pub Vec<TopLvl<'src>>);
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum TopLvl<'src> {
     FuncDecl {
         name: Spanned<&'src str>,
@@ -31,7 +34,7 @@ pub enum TypeDef<'src> {
 }
 
 // TODO: refactor Spanned<&'src str> to identifier
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Stmt<'src> {
     VarDecl(Box<VarDecl<'src>>),
     If {
@@ -48,22 +51,22 @@ pub enum Stmt<'src> {
     Expr(Spanned<Expr<'src>>),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct VarDecl<'src> {
     pub name: Spanned<&'src str>,
     pub value: Spanned<Expr<'src>>,
     pub eq: Spanned<Token<'src>>,
     // is filled in by resolver if necessary
-    pub ty: Cell<Option<Spanned<Type<'src>>>>,
+    pub ty: RefCell<Option<Spanned<Type<'src>>>>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Else<'src> {
     IfStmt(Box<Stmt<'src>>),
     Block(Block<'src>),
 }
 
-#[derive(Default, Debug, Eq, PartialEq)]
+#[derive(Default, Debug, PartialEq)]
 pub struct Block<'src>(pub Vec<Stmt<'src>>);
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -81,7 +84,7 @@ impl<'src> Param<'src> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ArgList<'src>(pub Vec<Spanned<Expr<'src>>>);
 
 impl<'src> fmt::Display for ArgList<'src> {
@@ -96,17 +99,17 @@ impl<'src> fmt::Display for ArgList<'src> {
     }
 }
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct Expr<'src> {
     // is filled in by resolver if necessary
-    ty: Cell<Option<Type<'src>>>,
+    ty: RefCell<Option<Type<'src>>>,
     kind: ExprKind<'src>,
 }
 
 impl<'src> Expr<'src> {
     pub fn new(kind: ExprKind<'src>) -> Self {
         Expr {
-            ty: Cell::new(None),
+            ty: RefCell::new(None),
             kind,
         }
     }
@@ -119,25 +122,24 @@ impl<'src> Expr<'src> {
     }
 
     #[inline]
-    pub fn kind(&self) -> &ExprKind<'src> {
-        &self.kind
+    pub fn ty(&self) -> Ref<Option<Type<'src>>> {
+        self.ty.borrow()
     }
 
     #[inline]
-    pub fn ty(&self) -> Option<Type<'src>> {
-        self.ty.get()
+    pub fn clone_ty(&self) -> Option<Type<'src>> {
+        self.ty.borrow().clone()
+    }
+
+    #[inline]
+    pub fn kind(&self) -> &ExprKind<'src> {
+        &self.kind
     }
 
     /// This method is used by the resolver to insert type information into
     /// the Expression
     pub fn set_ty(&self, ty: Type<'src>) {
-        self.ty.set(Some(ty))
-    }
-}
-
-impl<'src> hash::Hash for Expr<'src> {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.kind.hash(state);
+        self.ty.replace(Some(ty));
     }
 }
 
@@ -147,10 +149,10 @@ impl<'src> PartialEq for Expr<'src> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct InitList<'src>(pub Vec<(Spanned<&'src str>, Spanned<Expr<'src>>)>);
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum ExprKind<'src> {
     Error(ParseError<'src>),
     NullLit,

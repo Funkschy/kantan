@@ -2,7 +2,7 @@ use super::token::Token;
 use crate::REPO_URL;
 use std::{error, fmt};
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum ParseError<'src> {
     LexError(LexError),
     PrefixError(String),

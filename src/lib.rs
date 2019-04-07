@@ -281,9 +281,9 @@ fn construct_tac<'src>(
                 let params = params
                     .params
                     .iter()
-                    .map(|Param(n, ty)| (n.node, ty.node))
+                    .map(|Param(n, ty)| (n.node, ty.node.clone()))
                     .collect();
-                let ret_type = ret_type.node;
+                let ret_type = ret_type.node.clone();
 
                 let ident = UserIdent::new(src_name, name.node);
 

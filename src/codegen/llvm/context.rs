@@ -86,7 +86,7 @@ impl<'src> KantanLLVMContext<'src> {
                 let mut llvm_funcs = HashMap::new();
 
                 for (_, function) in functions.iter() {
-                    let ret_type = ctx.convert(function.ret);
+                    let ret_type = ctx.convert(&function.ret);
 
                     let func_type = ctx.func_type(function.is_varargs, ret_type, &function.params);
                     let f = ctx.llvm_add_func(func_type, &function.name, function.is_extern);
@@ -128,7 +128,7 @@ impl<'src> KantanLLVMContext<'src> {
         let mut fields = vec![ptr::null_mut(); def.fields.len()];
 
         for (_, (i, ty)) in def.fields.iter() {
-            fields[*i as usize] = self.convert(ty.node);
+            fields[*i as usize] = self.convert(&ty.node);
         }
 
         let s = self.user_types[module][name];
@@ -182,7 +182,7 @@ impl<'src> KantanLLVMContext<'src> {
         self.user_types[user_ty.module()][user_ty.name()]
     }
 
-    unsafe fn convert(&self, ty: Type) -> LLVMTypeRef {
+    unsafe fn convert(&self, ty: &Type) -> LLVMTypeRef {
         match ty {
             Type::Simple(ty) => match ty {
                 Simple::I32 => LLVMInt32TypeInContext(self.context),
@@ -197,7 +197,7 @@ impl<'src> KantanLLVMContext<'src> {
                 Simple::Varargs => panic!("Varargs is not a real type"),
             },
             Type::Pointer(ptr) => {
-                let mut ty = self.convert(Type::Simple(ptr.ty));
+                let mut ty = self.convert(&Type::Simple(ptr.ty));
                 for _ in 0..ptr.number {
                     ty = LLVMPointerType(ty, ADDRESS_SPACE);
                 }
@@ -222,7 +222,7 @@ impl<'src> KantanLLVMContext<'src> {
         let iter = params.iter();
 
         let mut params: Vec<LLVMTypeRef> = if !varargs {
-            iter.map(|(_, t)| self.convert(*t)).collect()
+            iter.map(|(_, t)| self.convert(t)).collect()
         } else {
             Vec::new()
         };
@@ -268,7 +268,7 @@ impl<'src> KantanLLVMContext<'src> {
                     LLVMPositionBuilderAtEnd(self.builder, bbs[0]);
                     for (i, (name, ty)) in function.params.iter().enumerate() {
                         let n = self.cstring(name);
-                        let stack_arg = LLVMBuildAlloca(self.builder, self.convert(*ty), n);
+                        let stack_arg = LLVMBuildAlloca(self.builder, self.convert(ty), n);
                         LLVMBuildStore(self.builder, LLVMGetParam(f, i as u32), stack_arg);
                         self.name_table.insert(name.to_string(), stack_arg);
                     }
@@ -354,7 +354,7 @@ impl<'src> KantanLLVMContext<'src> {
                 LLVMBuildFree(self.builder, value);
             }
             Instruction::Decl(a, ty) => {
-                let ty = self.convert(*ty);
+                let ty = self.convert(ty);
                 let n = a.to_string();
 
                 let stack = LLVMBuildAlloca(self.builder, ty, self.cstring(&n));
@@ -414,7 +414,7 @@ impl<'src> KantanLLVMContext<'src> {
     unsafe fn translate_mir_address(&mut self, a: &Address) -> LLVMValueRef {
         match a {
             Address::Empty => unreachable!(),
-            Address::Null(ty) => LLVMConstNull(self.convert(*ty)),
+            Address::Null(ty) => LLVMConstNull(self.convert(ty)),
             Address::Name(n) => LLVMBuildLoad(self.builder, self.name_table[n], self.cstring(&n)),
             Address::Ref(r) => self.name_table[r],
             Address::Temp(t) => LLVMBuildLoad(
@@ -424,9 +424,9 @@ impl<'src> KantanLLVMContext<'src> {
             ),
             Address::Const(c) => {
                 if c.ty.is_int() {
-                    LLVMConstInt(self.convert(c.ty), c.literal.parse().unwrap(), true as i32)
+                    LLVMConstInt(self.convert(&c.ty), c.literal.parse().unwrap(), true as i32)
                 } else {
-                    LLVMConstRealOfString(self.convert(c.ty), self.cstring(c.literal))
+                    LLVMConstRealOfString(self.convert(&c.ty), self.cstring(c.literal))
                 }
             }
             Address::Global(g) => {
@@ -469,7 +469,7 @@ impl<'src> KantanLLVMContext<'src> {
     unsafe fn translate_mir_expr(&mut self, e: &Expression, name: &str) -> LLVMValueRef {
         match e {
             Expression::SizeOf(ty) => {
-                let ty = self.convert(*ty);
+                let ty = self.convert(ty);
                 // TODO: remove when i64 is supported
                 LLVMBuildIntCast(
                     self.builder,
@@ -479,7 +479,7 @@ impl<'src> KantanLLVMContext<'src> {
                 )
             }
             Expression::New(a, ty) => {
-                let ty = self.convert(*ty);
+                let ty = self.convert(ty);
                 let value = self.name_table[&a.to_string()];
                 let malloc = LLVMBuildMalloc(self.builder, ty, self.cstring(name));
                 self.build_memcpy(malloc, value, ty);

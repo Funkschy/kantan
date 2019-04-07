@@ -1,4 +1,4 @@
-use std::{cell::Cell, iter::Peekable};
+use std::{cell::RefCell, iter::Peekable};
 
 use super::{ast::*, error::LexError, token::*, *};
 use crate::{types::*, Source};
@@ -294,7 +294,7 @@ where
             None
         };
 
-        let ty = Cell::new(ty);
+        let ty = RefCell::new(ty);
 
         let eq = self.consume(Token::Equals)?;
 
@@ -426,7 +426,7 @@ where
                             span,
                         } => {
                             self.advance()?;
-                            Ok(Spanned::from_span(span, ty))
+                            Ok(Spanned::from_span(span, Type::Simple(ty)))
                         }
                         Spanned {
                             node: Token::Ident(_),
@@ -1114,7 +1114,7 @@ mod tests {
                     name: Spanned::new(23, 25, "var"),
                     value: Spanned::new(29, 29, Expr::new(ExprKind::DecLit("5"))),
                     eq: Spanned::new(27, 27, Token::Equals),
-                    ty: Cell::new(None)
+                    ty: RefCell::new(None)
                 }))])
             }]),
             prg

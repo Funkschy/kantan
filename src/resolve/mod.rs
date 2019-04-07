@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    borrow::Borrow,
+    collections::{HashMap, HashSet},
+};
 
 use crate::{
     parse::{
@@ -139,9 +142,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
                 let varargs = params.varargs;
 
-                let func_params = params.params.iter().map(|Param(_, ty)| *ty).collect();
+                let func_params = params
+                    .params
+                    .iter()
+                    .map(|Param(_, ty)| ty.clone())
+                    .collect();
+
                 let func_def = FunctionDefinition {
-                    ret_type: *ret_type,
+                    ret_type: ret_type.clone(),
                     params: func_params,
                     varargs,
                 };
@@ -179,7 +187,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 let fields = fields
                     .iter()
                     .enumerate()
-                    .map(|(i, (Spanned { node, .. }, ty))| (*node, (i as u32, *ty)))
+                    .map(|(i, (Spanned { node, .. }, ty))| (*node, (i as u32, ty.clone())))
                     .collect();
 
                 let def = UserTypeDefinition {
@@ -208,12 +216,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ..
         } = top_lvl
         {
-            self.current_func_ret_type = *ret_type;
+            self.current_func_ret_type = ret_type.clone();
             self.sym_table.scope_enter();
 
             for p in params.params.iter() {
                 // TODO: refactor
-                self.sym_table.bind(p.0.node, p.0.span, p.1.node, true);
+                self.sym_table
+                    .bind(p.0.node, p.0.span, p.1.node.clone(), true);
             }
 
             if !*is_extern {
@@ -233,11 +242,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     name,
                     ref value,
                     eq,
-                    ty: ref var_type,
+                    ty: var_type,
                 } = decl.as_ref();
 
-                let expected = if let Some(ty) = var_type.get() {
-                    Some(ty.node)
+                let var_type_clone = var_type.borrow().clone();
+                let expected = if let Some(ref ty) = var_type_clone {
+                    Some(&ty.node)
                 } else {
                     None
                 };
@@ -245,7 +255,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 match self.resolve_expr(value.span, &value.node, expected) {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => {
-                        if let Some(var_type) = var_type.get() {
+                        if let Some(var_type) = var_type_clone {
                             let expr_span = Span::new(name.span.start, value.span.end);
                             // If a type was provided, check if it's one of the builtin types
                             if let Err(err) = self
@@ -253,8 +263,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                                     eq.span,
                                     expr_span,
                                     eq.node,
-                                    var_type.borrow().node,
-                                    ty,
+                                    &var_type.borrow().node,
+                                    &ty,
                                 )
                                 .map(|_| self.sym_table.bind(name.node, name.span, ty, false))
                                 .map_err(
@@ -273,8 +283,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                                 errors.push(err);
                             }
                         } else {
-                            let insert_ty = Some(Spanned::new(0, 0, ty));
-                            var_type.set(insert_ty);
+                            let insert_ty = Some(Spanned::new(0, 0, ty.clone()));
+                            var_type.replace(insert_ty);
                             self.sym_table.bind(name.node, name.span, ty, false)
                         }
                     }
@@ -331,14 +341,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             }
             Stmt::Return(expr) => {
                 if let Some(expr) = expr {
-                    let return_type = self.current_func_ret_type.node;
+                    let return_type = self.current_func_ret_type.node.clone();
 
                     if return_type == Type::Simple(Simple::Void) {
                         // TODO Error for return in void
                         unimplemented!("Error for return in void");
                     }
 
-                    let resolved = self.resolve_expr(expr.span, &expr.node, Some(return_type));
+                    let resolved = self.resolve_expr(expr.span, &expr.node, Some(&return_type));
 
                     if let Err(msg) = resolved {
                         errors.push(msg);
@@ -346,8 +356,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         if let Err(err) = self.compare_types(
                             expr.span,
                             expr.span,
-                            self.current_func_ret_type.node,
-                            res,
+                            &self.current_func_ret_type.node,
+                            &res,
                             "return value",
                         ) {
                             errors.push(err);
@@ -393,7 +403,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &mut self,
         span: Span,
         expr: &Expr<'src>,
-        expected: Option<Type<'src>>,
+        expected: Option<&Type<'src>>,
     ) -> Result<Type<'src>, ResolveError<'src>> {
         let mut queue = expr.sub_exprs();
         let mut exprs = Vec::with_capacity(queue.len());
@@ -418,9 +428,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
         // check actual expression
         let opt_ty = self.check_expr(span, expr)?;
-        let ty = self.ty_unwrap(span, opt_ty, expected)?;
+        let ty = self.ty_unwrap(span, &opt_ty, expected)?;
         // Insert type information
-        expr.set_ty(ty);
+        expr.set_ty(ty.clone());
         Ok(ty)
     }
 
@@ -455,8 +465,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     op.span,
                     span,
                     op.node,
-                    ty,
-                    Type::Simple(Simple::I32),
+                    &ty,
+                    &Type::Simple(Simple::I32),
                 ))
                 .transpose()
             }
@@ -491,17 +501,20 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 let left = self.resolve_type(l, None)?;
                 let right = self.resolve_type(r, None)?;
 
-                let wrong_type = Self::check_type_predicate(left, right, Type::arithmetic);
+                let wrong_type = Self::check_type_predicate(&left, &right, Type::arithmetic);
 
                 if let Some(wrong) = wrong_type {
                     return Err(self.error(
                         op.span,
                         span,
-                        ResolveErrorType::NotArithmetic(ArithmeticError::new(wrong, op.node)),
+                        ResolveErrorType::NotArithmetic(ArithmeticError::new(
+                            wrong.clone(),
+                            op.node,
+                        )),
                     ));
                 }
 
-                Some(self.compare_binary_types(op.span, span, op.node, left, right)).transpose()
+                Some(self.compare_binary_types(op.span, span, op.node, &left, &right)).transpose()
             }
             ExprKind::BoolBinary(l, op, r) => {
                 let left = self.resolve_type(l, None);
@@ -515,7 +528,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // if left could not be resolved, but right could, try to resolve left again,
                     // but with the expected type of right
                     let right = right?;
-                    let left = self.resolve_type(l, Some(right))?;
+                    let left = self.resolve_type(l, Some(&right))?;
                     (left, right)
                 } else if let Err(ResolveError {
                     error: ResolveErrorType::Inference(TypeInferenceError),
@@ -524,13 +537,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 {
                     // the same as above, but inverted
                     let left = left?;
-                    let right = self.resolve_type(r, Some(left))?;
+                    let right = self.resolve_type(r, Some(&left))?;
                     (left, right)
                 } else {
                     (left?, right?)
                 };
 
-                self.compare_binary_types(op.span, span, op.node, left, right)?;
+                self.compare_binary_types(op.span, span, op.node, &left, &right)?;
                 Ok(Some(Type::Simple(Simple::Bool)))
             }
             // currently only field access
@@ -558,8 +571,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     let user_type = self.get_user_type(identifier)?;
                     let field_type = self.get_field(&user_type, name)?;
 
-                    let val_type = self.resolve_type(value, Some(field_type))?;
-                    self.compare_types(value.span, span, field_type, val_type, "struct literal")?
+                    let val_type = self.resolve_type(value, Some(&field_type))?;
+                    self.compare_types(value.span, span, &field_type, &val_type, "struct literal")?
                 }
                 Ok(Some(Type::Simple(Simple::UserType(identifier.node))))
             }
@@ -574,15 +587,15 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                             .sym_table
                             .lookup(name)
                             .ok_or_else(|| self.not_defined_error(span, span, name))?;
-                        (*ty, *span)
+                        (ty, *span)
                     };
 
                     // get type of right expression
-                    let val_type = self.resolve_type(value, Some(ty))?;
+                    let val_type = self.resolve_type(value, Some(&ty))?;
                     // check if type of right expression is the same as that of
                     // the declared variable
                     Some(
-                        self.compare_assignment(eq.span, span, ty, val_type)
+                        self.compare_assignment(eq.span, span, ty.clone(), val_type)
                             .map_err(
                                 // convert error into illegal assignment error
                                 |ResolveError {
@@ -603,7 +616,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
                     // get type of right expression
                     // the type of left is the expected type for the right expr
-                    let val_type = self.resolve_type(value, Some(ty))?;
+                    let val_type = self.resolve_type(value, Some(&ty))?;
 
                     Some(self.compare_assignment(eq.span, span, ty, val_type)).transpose()
                 }
@@ -666,7 +679,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 };
 
                 for (arg, param_type) in iter {
-                    let ty = self.resolve_type(arg, Some(param_type.node))?;
+                    let ty = self.resolve_type(arg, Some(&param_type.node))?;
                     arg_types.push((arg.span, ty));
                 }
 
@@ -677,7 +690,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .filter_map(|(p, (arg_span, a))| {
                         // compare arguments to expected parameters
                         if let Err(err) =
-                            self.compare_types(*arg_span, span, p.node, *a, "argument")
+                            self.compare_types(*arg_span, span, &p.node, a, "argument")
                         {
                             return Some(err);
                         }
@@ -690,7 +703,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 if let Some(err) = arg_error {
                     Err(err)
                 } else {
-                    Ok(Some(func_type.ret_type.node))
+                    Ok(Some(func_type.ret_type.node.clone()))
                 }
             }
         }
@@ -707,10 +720,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         self.sym_table
             .lookup(name)
             .ok_or_else(|| self.not_defined_error(span, span, name))
-            .map(|sym| sym.node.ty)
+            .map(|sym| sym.node.ty.clone())
     }
 
-    fn check_type_predicate<F>(first: Type<'src>, second: Type<'src>, pred: F) -> Option<Type<'src>>
+    fn check_type_predicate<'a, F>(
+        first: &'a Type<'src>,
+        second: &'a Type<'src>,
+        pred: F,
+    ) -> Option<&'a Type<'src>>
     where
         F: Fn(&Type<'src>) -> bool,
     {
@@ -726,15 +743,15 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     fn ty_unwrap(
         &self,
         span: Span,
-        ty: Option<Type<'src>>,
-        expected: Option<Type<'src>>,
+        ty: &Option<Type<'src>>,
+        expected: Option<&Type<'src>>,
     ) -> Result<Type<'src>, ResolveError<'src>> {
         if let Some(ty) = ty {
-            return Ok(ty);
+            return Ok(ty.clone());
         } else if let Some(expected) = expected {
             // the ty is null, but since a pointer is expected, we can "cast" it
             if let Type::Pointer(_) = expected {
-                return Ok(expected);
+                return Ok(expected.clone());
             }
         }
         Err(self.type_inference_error(span))
@@ -743,11 +760,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     fn resolve_type(
         &self,
         expr: &Spanned<Expr<'src>>,
-        expected: Option<Type<'src>>,
+        expected: Option<&Type<'src>>,
     ) -> Result<Type<'src>, ResolveError<'src>> {
-        let ty = self.ty_unwrap(expr.span, expr.node.ty(), expected);
-        if let Ok(ty) = ty {
-            expr.node.set_ty(ty);
+        let ty = self.ty_unwrap(expr.span, &expr.node.ty(), expected);
+        if let Ok(ref ty) = ty {
+            expr.node.set_ty(ty.clone());
         }
         ty
     }
@@ -797,7 +814,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             .fields
             .get(name.node)
             .ok_or_else(|| self.no_such_field_error(user_type, name))
-            .map(|ty| ty.1.node)
+            .map(|ty| ty.1.node.clone())
     }
 
     fn error(
@@ -888,21 +905,21 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        expected: Type<'src>,
-        actual: Type<'src>,
+        expected: &Type<'src>,
+        actual: &Type<'src>,
         name: &'static str,
     ) -> Result<(), ResolveError<'src>> {
         if expected != actual
             // varargs disables type checking
-            && expected != Type::Simple(Simple::Varargs)
-            && actual != Type::Simple(Simple::Varargs)
+            && *expected != Type::Simple(Simple::Varargs)
+            && *actual != Type::Simple(Simple::Varargs)
         {
             return Err(self.error(
                 err_span,
                 expr_span,
                 ResolveErrorType::IllegalType(IllegalTypeError {
-                    expected_type: expected,
-                    actual_type: actual,
+                    expected_type: expected.clone(),
+                    actual_type: actual.clone(),
                     name,
                 }),
             ));
@@ -932,11 +949,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
     }
 
-    fn allowed_binary(
+    fn allowed_binary<'a>(
         op: Token<'src>,
-        first: Type<'src>,
-        second: Type<'src>,
-    ) -> (bool, Type<'src>) {
+        first: &'a Type<'src>,
+        second: &'a Type<'src>,
+    ) -> (bool, &'a Type<'src>) {
         if first == second {
             let prec = op.precedence();
             // Hacky solution, because we want to allow ==, <, !=, ... for pointers,
@@ -966,13 +983,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         (false, first)
     }
 
-    fn compare_binary_types(
+    fn compare_binary_types<'a>(
         &self,
         err_span: Span,
         expr_span: Span,
         op: Token<'src>,
-        first: Type<'src>,
-        second: Type<'src>,
+        first: &'a Type<'src>,
+        second: &'a Type<'src>,
     ) -> Result<Type<'src>, ResolveError<'src>> {
         let (allowed, ty) = Self::allowed_binary(op, first, second);
 
@@ -981,12 +998,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 err_span,
                 expr_span,
                 ResolveErrorType::IllegalOperation(BinaryOperationError {
-                    left_type: first,
-                    right_type: second,
+                    left_type: first.clone(),
+                    right_type: second.clone(),
                 }),
             ))
         } else {
-            Ok(ty)
+            Ok(ty.clone())
         }
     }
 }
@@ -995,7 +1012,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 mod tests {
     use super::*;
     use crate::parse::token::Token;
-    use std::cell::Cell;
+    use std::cell::RefCell;
 
     #[test]
     fn test_resolve_should_find_imported_fn() {
@@ -1092,7 +1109,7 @@ mod tests {
                 name: Spanned::new(22, 22, "x"),
                 value: Spanned::new(26, 28, Expr::new(ExprKind::DecLit("10"))),
                 eq: Spanned::new(24, 24, Token::Equals),
-                ty: Cell::new(None),
+                ty: RefCell::new(None),
             }))]),
         }]);
 
@@ -1107,7 +1124,10 @@ mod tests {
 
         if let TopLvl::FuncDecl { body, .. } = &(&map["test"].1).0[0] {
             if let Stmt::VarDecl(decl) = &body.0[0] {
-                assert_eq!(decl.value.node.ty(), Some(Type::Simple(Simple::I32)));
+                assert_eq!(
+                    decl.value.node.ty().clone(),
+                    Some(Type::Simple(Simple::I32))
+                );
                 return;
             }
         }
@@ -1129,7 +1149,7 @@ mod tests {
                     name: Spanned::new(22, 22, "x"),
                     value: Spanned::new(26, 28, Expr::new(ExprKind::DecLit("10"))),
                     eq: Spanned::new(24, 24, Token::Equals),
-                    ty: Cell::new(None),
+                    ty: RefCell::new(None),
                 })),
                 Stmt::Expr(Spanned::new(
                     30,
