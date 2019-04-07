@@ -1,15 +1,15 @@
 use std::fmt;
 
-use crate::types::Type;
+use crate::types::Simple;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Token<'src> {
     NullLit,
     Ident(&'src str),
     DecLit(&'src str),
     FloatLit(&'src str),
     StringLit(&'src str),
-    TypeIdent(Type<'src>),
+    TypeIdent(Simple<'src>),
 
     // Keywords
     Let,

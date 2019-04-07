@@ -143,7 +143,10 @@ impl<'src> Tac<'src> {
                 }
                 Stmt::VarDecl(decl) => {
                     let VarDecl {
-                        name, value, ty, ..
+                        name,
+                        value,
+                        ref ty,
+                        ..
                     } = decl.as_ref();
 
                     let expr = if let Some(rval) = self.address_expr(&value.node) {
@@ -155,7 +158,7 @@ impl<'src> Tac<'src> {
                     self.names.bind(name.node);
                     let address: Address = self.names.lookup(name.node).into();
                     // Unwrapping is safe, because the typechecker inserted the type
-                    let ty = ty.get().unwrap().node;
+                    let ty = ty.borrow().clone().unwrap().node;
                     block.push(Instruction::Decl(address.clone(), ty));
 
                     self.assign(address, expr, &mut block);
@@ -289,8 +292,8 @@ impl<'src> Tac<'src> {
     ) -> Expression<'src> {
         match expr.kind() {
             ExprKind::Binary(l, op, r) => {
-                let lty = l.node.ty().unwrap();
-                let rty = r.node.ty().unwrap();
+                let lty = l.node.clone_ty().unwrap();
+                let rty = r.node.clone_ty().unwrap();
 
                 let left = self.expr_instr(true, &l.node, block);
                 let right = self.expr_instr(true, &r.node, block);
@@ -333,7 +336,7 @@ impl<'src> Tac<'src> {
 
                 let varargs = self.mod_funcs[callee.node.module()][callee.node.name()].varargs;
 
-                let ret_type = expr.ty().unwrap();
+                let ret_type = expr.clone_ty().unwrap();
                 Expression::Call {
                     ident: callee.node,
                     args,
@@ -386,7 +389,7 @@ impl<'src> Tac<'src> {
             ExprKind::Access { left, identifier } => {
                 use super::types::Simple::UserType;
 
-                let (ty_name, address) = match left.node.ty().unwrap() {
+                let (ty_name, address) = match left.node.clone_ty().unwrap() {
                     Type::Simple(UserType(ty_name)) => {
                         (ty_name, self.expr_instr(rhs, &left.node, block))
                     }
@@ -400,11 +403,11 @@ impl<'src> Tac<'src> {
                         }
                         (ty_name, address)
                     }
-                    _ => unreachable!("Invalid type: {}", left.node.ty().unwrap()),
+                    _ => unreachable!("Invalid type: {}", left.node.clone_ty().unwrap()),
                 };
 
                 // the index of the field inside the struct
-                let ty = self.types[ty_name.module()][ty_name.name()].fields[identifier.node];
+                let ty = &self.types[ty_name.module()][ty_name.name()].fields[identifier.node];
 
                 let idx = ty.0;
                 let address = self.temp_assign(Expression::StructGep(address, idx), block);
@@ -420,19 +423,19 @@ impl<'src> Tac<'src> {
                     .collect();
                 Expression::StructInit(identifier.node, values)
             }
-            ExprKind::SizeOf(ty) => Expression::SizeOf(*ty),
+            ExprKind::SizeOf(ty) => Expression::SizeOf(ty.clone()),
             ExprKind::New(expr) => {
-                let ty = expr.node.ty().unwrap();
+                let ty = expr.node.clone_ty().unwrap();
 
                 let address = if let ExprKind::Ident(name) = expr.node.kind() {
                     self.names.lookup(name).into()
                 } else if let Some(a) = self.address_expr(&expr.node) {
                     let temp = self.temp();
-                    block.push(Instruction::Decl(temp.clone(), ty));
+                    block.push(Instruction::Decl(temp.clone(), ty.clone()));
                     self.assign(temp, Expression::Copy(a), block)
                 } else {
                     let temp = self.temp();
-                    block.push(Instruction::Decl(temp.clone(), ty));
+                    block.push(Instruction::Decl(temp.clone(), ty.clone()));
 
                     let e = self.expr(true, &expr.node, block);
                     if let Expression::Copy(a) = &e {
@@ -475,7 +478,7 @@ impl<'src> Tac<'src> {
         }
 
         let temp = self.temp();
-        let ty = expr.ty().unwrap();
+        let ty = expr.clone_ty().unwrap();
         block.push(Instruction::Decl(temp.clone(), ty));
         self.assign(temp, e, block)
     }
@@ -502,7 +505,7 @@ impl<'src> Tac<'src> {
 
     fn address_expr(&mut self, expr: &Expr<'src>) -> Option<Address<'src>> {
         Some(match expr.kind() {
-            ExprKind::NullLit => Address::Null(expr.ty().unwrap()),
+            ExprKind::NullLit => Address::Null(expr.clone_ty().unwrap()),
             ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
             ExprKind::FloatLit(lit) => Address::new_const(Type::Simple(Simple::F32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),

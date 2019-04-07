@@ -28,7 +28,7 @@ impl<'src> fmt::Display for UserIdent<'src> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Type<'src> {
     Simple(Simple<'src>),
     Pointer(Pointer<'src>),
