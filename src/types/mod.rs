@@ -121,7 +121,7 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Closure(ps, res) => {
                 return write!(
                     f,
-                    "|{}| {}",
+                    "({}) -> {}",
                     ps.iter()
                         .map(|p| p.to_string())
                         .collect::<Vec<String>>()

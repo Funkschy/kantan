@@ -469,7 +469,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     }
 
                     // TODO: correct span
-                    // TODO: find non recusive way
                     let ret_ty = Box::new(self.resolve_expr(span, &e.node, None)?);
                     self.sym_table.scope_exit();
 
