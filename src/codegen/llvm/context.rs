@@ -193,11 +193,12 @@ impl<'src> KantanLLVMContext<'src> {
                     LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
                 }
                 Simple::UserType(user_ty) => self.get_user_type(&user_ty),
+                Simple::Closure(..) => unimplemented!("TODO: implement closure type conversion"),
                 // varargs is just handled as a type for convenience
                 Simple::Varargs => panic!("Varargs is not a real type"),
             },
             Type::Pointer(ptr) => {
-                let mut ty = self.convert(&Type::Simple(ptr.ty));
+                let mut ty = self.convert(&Type::Simple(ptr.ty.clone()));
                 for _ in 0..ptr.number {
                     ty = LLVMPointerType(ty, ADDRESS_SPACE);
                 }

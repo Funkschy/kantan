@@ -156,14 +156,13 @@ where
         }
         let mut varargs = false;
 
-        if self.peek_eq(rdelim) {
-            self.consume(rdelim)?;
+        if self.match_tok(rdelim.clone())? {
             return Ok(ParamList::default());
         }
 
         let mut params = vec![];
 
-        while !self.peek_eq(rdelim) {
+        while !self.peek_eq_ref(&rdelim) {
             if self.peek_eq(Token::TripleDot) {
                 if !is_extern {
                     // TODO: replace with custom error
@@ -188,7 +187,7 @@ where
             let ty = self.consume_type()?;
             params.push(Param::new(ident, ty));
 
-            if !self.peek_eq(rdelim) {
+            if !self.peek_eq_ref(&rdelim) {
                 self.consume(Token::Comma)?;
             }
         }
@@ -368,7 +367,7 @@ where
     }
 
     fn match_tok(&mut self, expected: Token<'src>) -> ParseResult<'src, bool> {
-        if self.peek_eq(expected) {
+        if self.peek_eq_ref(&expected) {
             self.consume(expected)?;
             return Ok(true);
         }
@@ -379,6 +378,13 @@ where
     fn peek_eq(&mut self, expected: Token<'src>) -> bool {
         self.scanner.peek().map_or(false, |peek| match peek {
             Ok(Spanned { node, .. }) => *node == expected,
+            _ => false,
+        })
+    }
+
+    fn peek_eq_ref(&mut self, expected: &Token<'src>) -> bool {
+        self.scanner.peek().map_or(false, |peek| match peek {
+            Ok(Spanned { node, .. }) => *node == *expected,
             _ => false,
         })
     }
@@ -537,7 +543,7 @@ where
         left: Spanned<Expr<'src>>,
         no_struct: bool,
     ) -> ExprResult<'src> {
-        let tok = token.node;
+        let tok = &token.node;
         match tok {
             Token::EqualsEquals
             | Token::BangEquals
@@ -560,11 +566,11 @@ where
                     | Token::Greater
                     | Token::SmallerEquals
                     | Token::Smaller => {
-                        ExprKind::BoolBinary(Box::new(left), *token, Box::new(right))
+                        ExprKind::BoolBinary(Box::new(left), token.clone(), Box::new(right))
                     }
                     _ => ExprKind::Binary(
                         Box::new(left),
-                        *token,
+                        token.clone(),
                         Box::new(Spanned::from_span(right.span, right.node)),
                     ),
                 };
@@ -652,7 +658,7 @@ where
                 Ok(Spanned::new(
                     token.span.start,
                     next.span.end,
-                    Expr::new(ExprKind::Negate(*token, Box::new(next))),
+                    Expr::new(ExprKind::Negate(token.clone(), Box::new(next))),
                 ))
             }
             Token::Ampersand => {
@@ -662,7 +668,7 @@ where
                 Ok(Spanned::new(
                     token.span.start,
                     next.span.end,
-                    Expr::new(ExprKind::Ref(*token, Box::new(next))),
+                    Expr::new(ExprKind::Ref(token.clone(), Box::new(next))),
                 ))
             }
             Token::Star => {
@@ -672,7 +678,7 @@ where
                 Ok(Spanned::new(
                     token.span.start,
                     next.span.end,
-                    Expr::new(ExprKind::Deref(*token, Box::new(next))),
+                    Expr::new(ExprKind::Deref(token.clone(), Box::new(next))),
                 ))
             }
             Token::Ident(ref name) => {
@@ -778,7 +784,7 @@ where
         Err(Spanned {
             span: actual.span,
             node: ParseError::ConsumeError {
-                actual: actual.node,
+                actual: actual.node.clone(),
                 expected,
             },
         })

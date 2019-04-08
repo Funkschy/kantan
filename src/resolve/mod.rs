@@ -207,6 +207,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
     }
 
+    fn bind_param(&mut self, p: &Param<'src>) {
+        // TODO: refactor
+        self.sym_table
+            .bind(p.0.node, p.0.span, p.1.node.clone(), true);
+    }
+
     fn resolve_top_lvl(&mut self, top_lvl: &TopLvl<'src>, errors: &mut Vec<ResolveError<'src>>) {
         if let TopLvl::FuncDecl {
             params,
@@ -220,9 +226,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             self.sym_table.scope_enter();
 
             for p in params.params.iter() {
-                // TODO: refactor
-                self.sym_table
-                    .bind(p.0.node, p.0.span, p.1.node.clone(), true);
+                self.bind_param(p);
             }
 
             if !*is_extern {
@@ -262,7 +266,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                                 .compare_binary_types(
                                     eq.span,
                                     expr_span,
-                                    eq.node,
+                                    &eq.node,
                                     &var_type.borrow().node,
                                     &ty,
                                 )
@@ -449,7 +453,30 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ExprKind::SizeOf(_) => Ok(Some(Type::Simple(Simple::I32))),
             ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
             ExprKind::Ident(name) => self.handle_ident(span, name).map(Some),
-            ExprKind::Closure(..) => unimplemented!("TODO: implement closure type res"),
+            ExprKind::Closure(params, body) => match body.as_ref() {
+                ClosureBody::Expr(e) => {
+                    let mut errors = vec![];
+                    let mut param_types = Vec::with_capacity(params.params.len());
+                    self.sym_table.scope_enter();
+
+                    for p in params.params.iter() {
+                        self.check_user_type_defined(&p.1, &mut errors);
+                        if !errors.is_empty() {
+                            return Err(errors.swap_remove(0));
+                        }
+                        self.bind_param(p);
+                        param_types.push(p.1.node.clone());
+                    }
+
+                    // TODO: correct span
+                    // TODO: find non recusive way
+                    let ret_ty = Box::new(self.resolve_expr(span, &e.node, None)?);
+                    self.sym_table.scope_exit();
+
+                    Ok(Some(Type::Simple(Simple::Closure(param_types, ret_ty))))
+                }
+                ClosureBody::Block(_) => unimplemented!("TODO: implement block closure type res"),
+            },
             ExprKind::New(expr) => {
                 let ty = self.resolve_type(expr, None)?;
 
@@ -466,7 +493,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 Some(self.compare_binary_types(
                     op.span,
                     span,
-                    op.node,
+                    &op.node,
                     &ty,
                     &Type::Simple(Simple::I32),
                 ))
@@ -511,12 +538,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         span,
                         ResolveErrorType::NotArithmetic(ArithmeticError::new(
                             wrong.clone(),
-                            op.node,
+                            op.node.clone(),
                         )),
                     ));
                 }
 
-                Some(self.compare_binary_types(op.span, span, op.node, &left, &right)).transpose()
+                Some(self.compare_binary_types(op.span, span, &op.node, &left, &right)).transpose()
             }
             ExprKind::BoolBinary(l, op, r) => {
                 let left = self.resolve_type(l, None);
@@ -545,7 +572,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     (left?, right?)
                 };
 
-                self.compare_binary_types(op.span, span, op.node, &left, &right)?;
+                self.compare_binary_types(op.span, span, &op.node, &left, &right)?;
                 Ok(Some(Type::Simple(Simple::Bool)))
             }
             // currently only field access
@@ -951,7 +978,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     }
 
     fn allowed_binary<'a>(
-        op: Token<'src>,
+        op: &Token<'src>,
         first: &'a Type<'src>,
         second: &'a Type<'src>,
     ) -> (bool, &'a Type<'src>) {
@@ -988,7 +1015,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &self,
         err_span: Span,
         expr_span: Span,
-        op: Token<'src>,
+        op: &Token<'src>,
         first: &'a Type<'src>,
         second: &'a Type<'src>,
     ) -> Result<Type<'src>, ResolveError<'src>> {

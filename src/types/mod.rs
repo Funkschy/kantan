@@ -86,7 +86,7 @@ impl<'src> Type<'src> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Simple<'src> {
     I32,
     F32,
@@ -95,6 +95,7 @@ pub enum Simple<'src> {
     Void,
     Varargs,
     UserType(UserIdent<'src>),
+    Closure(Vec<Type<'src>>, Box<Type<'src>>),
 }
 
 impl<'src> Simple<'src> {
@@ -117,12 +118,23 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Void => "void",
             Simple::Varargs => "...",
             Simple::UserType(name) => return write!(f, "{}", name),
+            Simple::Closure(ps, res) => {
+                return write!(
+                    f,
+                    "|{}| {}",
+                    ps.iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    res
+                );
+            }
         };
         write!(f, "{}", s)
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Pointer<'src> {
     /// the number of references: 1 = *, 2 = **
     pub number: usize,

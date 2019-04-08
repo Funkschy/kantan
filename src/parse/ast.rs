@@ -239,7 +239,7 @@ impl<'src> Expr<'src> {
             Access { left, .. } => vec![left],
             StructInit { fields, .. } => fields.0.iter().map(|(_, e)| e).collect(),
             Closure(_, body) => match body.as_ref() {
-                ClosureBody::Expr(e) => vec![e],
+                ClosureBody::Expr(_) => vec![], // the type resolving has to be recursive in this case
                 ClosureBody::Block(_) => unimplemented!("TODO: implement closure body sub_exprs"),
             },
         }
