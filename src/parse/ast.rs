@@ -75,7 +75,20 @@ pub struct ParamList<'src> {
     pub params: Vec<Param<'src>>,
 }
 
+impl<'src> fmt::Display for ParamList<'src> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let strings: Vec<String> = self
+            .params
+            .iter()
+            .map(|p| format!("{}: {}", p.0.node, p.1.node))
+            .collect();
+
+        write!(f, "{}", strings.join(", "))
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
+// TODO: refactor to struct with fields
 pub struct Param<'src>(pub Spanned<&'src str>, pub Spanned<Type<'src>>);
 
 impl<'src> Param<'src> {
@@ -97,6 +110,12 @@ impl<'src> fmt::Display for ArgList<'src> {
 
         write!(f, "{}", strings.join(", "))
     }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ClosureBody<'src> {
+    Expr(Spanned<Expr<'src>>),
+    Block(Block<'src>),
 }
 
 #[derive(Debug)]
@@ -149,10 +168,10 @@ impl<'src> PartialEq for Expr<'src> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct InitList<'src>(pub Vec<(Spanned<&'src str>, Spanned<Expr<'src>>)>);
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum ExprKind<'src> {
     Error(ParseError<'src>),
     NullLit,
@@ -193,6 +212,7 @@ pub enum ExprKind<'src> {
         fields: InitList<'src>,
     },
     SizeOf(Type<'src>),
+    Closure(ParamList<'src>, Box<ClosureBody<'src>>),
 }
 
 impl<'src> Expr<'src> {
@@ -218,6 +238,10 @@ impl<'src> Expr<'src> {
             Call { args, .. } => args.0.iter().collect(),
             Access { left, .. } => vec![left],
             StructInit { fields, .. } => fields.0.iter().map(|(_, e)| e).collect(),
+            Closure(_, body) => match body.as_ref() {
+                ClosureBody::Expr(e) => vec![e],
+                ClosureBody::Block(_) => unimplemented!("TODO: implement closure body sub_exprs"),
+            },
         }
     }
 
@@ -269,6 +293,14 @@ impl<'src> fmt::Display for Expr<'src> {
                     .collect::<Vec<String>>()
                     .join(",\n")
             ),
+            Closure(params, body) => {
+                let params = params.to_string();
+
+                match body.as_ref() {
+                    ClosureBody::Expr(e) => write!(f, "|{}| {}", params, e.node),
+                    ClosureBody::Block(_) => unimplemented!("TODO: implement closure body display"),
+                }
+            }
         }
     }
 }

@@ -44,6 +44,7 @@ pub enum Token<'src> {
     Dot,       // .
     Comma,     // ,
 
+    Pipe,   // |
     LParen, // (
     RParen, // )
     LBrace, // {
@@ -130,6 +131,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::Dot => write!(f, "."),
             Token::Comma => write!(f, ","),
 
+            Token::Pipe => write!(f, "|"),
             Token::LParen => write!(f, "("),
             Token::RParen => write!(f, ")"),
             Token::LBrace => write!(f, "{{"),

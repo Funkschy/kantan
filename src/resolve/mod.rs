@@ -444,6 +444,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 unreachable!("If errors occur during parsing, the program should not be resolved")
             }
             ExprKind::NullLit => Ok(None),
+            ExprKind::DecLit(_) => Ok(Some(Type::Simple(Simple::I32))),
+            ExprKind::FloatLit(_) => Ok(Some(Type::Simple(Simple::F32))),
+            ExprKind::SizeOf(_) => Ok(Some(Type::Simple(Simple::I32))),
+            ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
+            ExprKind::Ident(name) => self.handle_ident(span, name).map(Some),
+            ExprKind::Closure(..) => unimplemented!("TODO: implement closure type res"),
             ExprKind::New(expr) => {
                 let ty = self.resolve_type(expr, None)?;
 
@@ -454,10 +460,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     panic!("Implement proper error handling");
                 }
             }
-            ExprKind::DecLit(_) => Ok(Some(Type::Simple(Simple::I32))),
-            ExprKind::FloatLit(_) => Ok(Some(Type::Simple(Simple::F32))),
-            ExprKind::SizeOf(_) => Ok(Some(Type::Simple(Simple::I32))),
-            ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
             ExprKind::Negate(op, expr) => {
                 let ty = self.resolve_type(expr, None)?;
                 // TODO: unary operation error
@@ -621,7 +623,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     Some(self.compare_assignment(eq.span, span, ty, val_type)).transpose()
                 }
             }
-            ExprKind::Ident(name) => self.handle_ident(span, name).map(Some),
             ExprKind::Call { callee, args } => {
                 let func_type = self.get_function(callee)?;
 

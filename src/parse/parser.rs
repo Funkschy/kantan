@@ -80,13 +80,13 @@ where
 
         self.consume(Token::Def)?;
         let name = self.consume_ident()?;
-        let params = self.param_list(is_extern)?;
+        let params = self.def_param_list(is_extern)?;
 
         self.consume(Token::Colon)?;
         let ret_type = self.consume_type()?;
 
         let body = if !is_extern {
-            self.block()?
+            self.block()?.node
         } else {
             self.consume(Token::Semi)?;
             Block::default()
@@ -136,18 +136,34 @@ where
         Ok(TopLvl::Import { name })
     }
 
-    fn param_list(&mut self, is_extern: bool) -> ParseResult<'src, ParamList<'src>> {
-        self.consume(Token::LParen)?;
+    fn def_param_list(&mut self, is_extern: bool) -> ParseResult<'src, ParamList<'src>> {
+        self.delim_param_list(Token::LParen, Token::RParen, true, is_extern)
+    }
+
+    fn closure_param_list(&mut self) -> ParseResult<'src, ParamList<'src>> {
+        self.delim_param_list(Token::Pipe, Token::Pipe, false, false)
+    }
+
+    fn delim_param_list(
+        &mut self,
+        ldelim: Token<'src>,
+        rdelim: Token<'src>,
+        consume_start: bool,
+        is_extern: bool,
+    ) -> ParseResult<'src, ParamList<'src>> {
+        if consume_start {
+            self.consume(ldelim)?;
+        }
         let mut varargs = false;
 
-        if self.peek_eq(Token::RParen) {
-            self.consume(Token::RParen)?;
+        if self.peek_eq(rdelim) {
+            self.consume(rdelim)?;
             return Ok(ParamList::default());
         }
 
         let mut params = vec![];
 
-        while !self.peek_eq(Token::RParen) {
+        while !self.peek_eq(rdelim) {
             if self.peek_eq(Token::TripleDot) {
                 if !is_extern {
                     // TODO: replace with custom error
@@ -172,17 +188,17 @@ where
             let ty = self.consume_type()?;
             params.push(Param::new(ident, ty));
 
-            if !self.peek_eq(Token::RParen) {
+            if !self.peek_eq(rdelim) {
                 self.consume(Token::Comma)?;
             }
         }
 
-        self.consume(Token::RParen)?;
+        self.consume(rdelim)?;
         Ok(ParamList { varargs, params })
     }
 
-    fn block(&mut self) -> ParseResult<'src, Block<'src>> {
-        self.consume(Token::LBrace)?;
+    fn block(&mut self) -> ParseResult<'src, Spanned<Block<'src>>> {
+        let start = self.consume(Token::LBrace)?.span.start;
         let mut stmts = vec![];
 
         while !self.at_end() && !self.peek_eq(Token::RBrace) {
@@ -197,10 +213,13 @@ where
         }
 
         // Unexpected end of file
-        if !self.at_end() {
-            self.consume(Token::RBrace)?;
-        }
-        Ok(Block(stmts))
+        let end = if !self.at_end() {
+            self.consume(Token::RBrace)?.span.end
+        } else {
+            self.source.code.len()
+        };
+
+        Ok(Spanned::new(start, end, Block(stmts)))
     }
 
     fn statement(&mut self) -> StmtResult<'src> {
@@ -237,7 +256,7 @@ where
     fn while_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::While)?;
         let condition = self.expression(true)?;
-        let body = self.block()?;
+        let body = self.block()?.node;
 
         Ok(Stmt::While { condition, body })
     }
@@ -259,7 +278,7 @@ where
         self.consume(Token::If)?;
 
         let condition = self.expression(true)?;
-        let then_block = self.block()?;
+        let then_block = self.block()?.node;
 
         let else_branch = if self.peek_eq(Token::Else) {
             self.consume(Token::Else)?;
@@ -268,7 +287,7 @@ where
                 let else_if = Box::new(self.if_stmt()?);
                 Else::IfStmt(else_if)
             } else {
-                let block = self.block()?;
+                let block = self.block()?.node;
                 Else::Block(block)
             };
 
@@ -675,6 +694,22 @@ where
                     ok_spanned(ExprKind::Ident(name))
                 }
             }
+            Token::Pipe => {
+                let params = self.closure_param_list()?;
+
+                let (body, end) = if self.peek_eq(Token::LBrace) {
+                    let block = self.block()?;
+                    let end = block.span.end;
+                    (Box::new(ClosureBody::Block(block.node)), end)
+                } else {
+                    let expr = self.expression(false)?;
+                    let end = expr.span.end;
+                    (Box::new(ClosureBody::Expr(expr)), end)
+                };
+
+                let closure = Expr::new(ExprKind::Closure(params, body));
+                Ok(Spanned::new(token.span.start, end, closure))
+            }
             _ => self.make_prefix_err(token),
         }
     }
@@ -778,6 +813,67 @@ where
 mod tests {
     use super::lexer::Lexer;
     use super::*;
+
+    #[test]
+    fn test_parse_closure_one_param() {
+        let source = Source::new("main", "|x: i32| x + 1");
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let expr = parser.expression(false).unwrap();
+        assert_eq!(
+            Spanned::new(
+                0,
+                13,
+                Expr::new(ExprKind::Closure(
+                    ParamList {
+                        varargs: false,
+                        params: vec![Param::new(
+                            Spanned::new(1, 1, "x"),
+                            Spanned::new(4, 6, Type::Simple(Simple::I32))
+                        )]
+                    },
+                    Box::new(ClosureBody::Expr(Spanned::new(
+                        9,
+                        13,
+                        Expr::new(ExprKind::Binary(
+                            Box::new(Spanned::new(9, 9, Expr::new(ExprKind::Ident("x")))),
+                            Spanned::new(11, 11, Token::Plus),
+                            Box::new(Spanned::new(13, 13, Expr::new(ExprKind::DecLit("1")))),
+                        ))
+                    )))
+                ))
+            ),
+            expr
+        );
+    }
+
+    #[test]
+    fn test_parse_closure_no_params() {
+        let source = Source::new("main", "|| 1");
+        let lexer = Lexer::new(&source);
+        let mut parser = Parser::new(lexer);
+
+        let expr = parser.expression(false).unwrap();
+        assert_eq!(
+            Spanned::new(
+                0,
+                3,
+                Expr::new(ExprKind::Closure(
+                    ParamList {
+                        varargs: false,
+                        params: vec![]
+                    },
+                    Box::new(ClosureBody::Expr(Spanned::new(
+                        3,
+                        3,
+                        Expr::new(ExprKind::DecLit("1"))
+                    )))
+                ))
+            ),
+            expr
+        );
+    }
 
     #[test]
     fn test_consume_type_pointer_to_pointer() {

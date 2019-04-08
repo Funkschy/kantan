@@ -254,6 +254,7 @@ impl<'src> Lexer<'src> {
             }
             ':' => consume_single!(self, start, Token::Colon),
             ';' => consume_single!(self, start, Token::Semi),
+            '|' => consume_single!(self, start, Token::Pipe),
             '(' => consume_single!(self, start, Token::LParen),
             ')' => consume_single!(self, start, Token::RParen),
             '{' => consume_single!(self, start, Token::LBrace),
