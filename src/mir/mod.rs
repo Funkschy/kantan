@@ -1,7 +1,7 @@
 //! The middle intermediate representation.
 //! This IR is very similar to LLVM-IR, but can also be compiled to Assembly directly.
 
-use std::{collections::HashMap, mem};
+use std::collections::HashMap;
 
 use super::{
     parse::ast::*,
@@ -31,7 +31,6 @@ pub struct Tac<'src> {
     names: NameTable<'src>,
     temp_count: usize,
     label_count: usize,
-    current_params: Option<Vec<(&'src str, Type<'src>)>>,
 }
 
 impl<'src> Tac<'src> {
@@ -51,7 +50,6 @@ impl<'src> Tac<'src> {
             types: resolve_result.mod_user_types,
             temp_count: 0,
             label_count: 0,
-            current_params: None,
         }
     }
 }
@@ -68,10 +66,12 @@ impl<'src> Tac<'src> {
     ) {
         // reset scopes
         self.names = NameTable::new();
-        self.current_params = Some(params);
 
         let f = if !is_extern {
-            let mut block = self.create_block(&body.0);
+            let mut block = InstructionBlock::default();
+            self.fill_params(&mut block, &params);
+            block = self.fill_block(&body.0, block);
+
             let add_ret = match block.last() {
                 Some(Instruction::Return(_)) => false,
                 _ => true,
@@ -99,26 +99,18 @@ impl<'src> Tac<'src> {
                 ret_type
             };
 
-            // move params out of current_params and replace with None
-            let mut moved_params = None;
-            mem::swap(&mut self.current_params, &mut moved_params);
-
             Func::new(
                 ident.name(),
-                moved_params.unwrap(),
+                params,
                 ret_type,
                 BlockMap::from_instructions(block),
                 is_extern,
                 is_varargs,
             )
         } else {
-            // move params out of current_params and replace with None
-            let mut moved_params = None;
-            mem::swap(&mut self.current_params, &mut moved_params);
-
             Func::new(
                 ident.name(),
-                moved_params.unwrap(),
+                params,
                 ret_type,
                 BlockMap::default(),
                 is_extern,
@@ -132,8 +124,29 @@ impl<'src> Tac<'src> {
             .insert(ident.name(), f);
     }
 
+    fn fill_params(
+        &mut self,
+        block: &mut InstructionBlock<'src>,
+        params: &[(&'src str, Type<'src>)],
+    ) {
+        for (i, (n, t)) in params.iter().enumerate() {
+            self.names.bind(n);
+            let address: Address = self.names.lookup(n).into();
+            block.push(Instruction::Decl(address.clone(), t.clone()));
+            self.assign(address, Expression::GetParam(i as u32), block);
+        }
+    }
+
     fn create_block(&mut self, statements: &[Stmt<'src>]) -> InstructionBlock<'src> {
-        let mut block = InstructionBlock::default();
+        let block = InstructionBlock::default();
+        self.fill_block(statements, block)
+    }
+
+    fn fill_block(
+        &mut self,
+        statements: &[Stmt<'src>],
+        mut block: InstructionBlock<'src>,
+    ) -> InstructionBlock<'src> {
         self.names.scope_enter();
 
         for s in statements {
@@ -495,12 +508,7 @@ impl<'src> Tac<'src> {
     }
 
     fn handle_ident(&mut self, ident: &'src str) -> Address<'src> {
-        if let Some(arg) = self.find_param(ident) {
-            Address::Name(arg)
-        } else {
-            // Address::Name
-            self.names.lookup(ident).into()
-        }
+        self.names.lookup(ident).into()
     }
 
     fn address_expr(&mut self, expr: &Expr<'src>) -> Option<Address<'src>> {
@@ -511,17 +519,6 @@ impl<'src> Tac<'src> {
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
             ExprKind::Ident(ident) => self.handle_ident(ident),
             _ => return None,
-        })
-    }
-
-    fn find_param(&self, ident: &str) -> Option<String> {
-        self.current_params.as_ref().and_then(|params| {
-            params.iter().find_map(|(name, _)| {
-                if *name == ident {
-                    return Some(name.to_string());
-                }
-                None
-            })
         })
     }
 

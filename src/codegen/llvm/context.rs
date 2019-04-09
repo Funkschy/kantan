@@ -264,15 +264,6 @@ impl<'src> KantanLLVMContext<'src> {
                         }
                     }
 
-                    // allocate arguments on stack
-                    LLVMPositionBuilderAtEnd(self.builder, bbs[0]);
-                    for (i, (name, ty)) in function.params.iter().enumerate() {
-                        let n = self.cstring(name);
-                        let stack_arg = LLVMBuildAlloca(self.builder, self.convert(ty), n);
-                        LLVMBuildStore(self.builder, LLVMGetParam(f, i as u32), stack_arg);
-                        self.name_table.insert(name.to_string(), stack_arg);
-                    }
-
                     // generate actual instructions
                     for (i, b) in function.blocks.blocks.iter().enumerate() {
                         LLVMPositionBuilderAtEnd(self.builder, bbs[i]);
@@ -468,6 +459,7 @@ impl<'src> KantanLLVMContext<'src> {
 
     unsafe fn translate_mir_expr(&mut self, e: &Expression, name: &str) -> LLVMValueRef {
         match e {
+            Expression::GetParam(i) => LLVMGetParam(self.current_function.unwrap(), *i),
             Expression::SizeOf(ty) => {
                 let ty = self.convert(ty);
                 // TODO: remove when i64 is supported
