@@ -144,6 +144,8 @@ pub enum Expression<'src> {
     New(Address<'src>, Type<'src>),
     /// x = sizeof(ty)
     SizeOf(Type<'src>),
+    /// x = param #y
+    GetParam(u32),
 }
 
 impl<'src> fmt::Display for Expression<'src> {
@@ -157,6 +159,7 @@ impl<'src> fmt::Display for Expression<'src> {
             New(a, ty) => format!("new(sizeof({}), {})", ty, a),
             SizeOf(ty) => format!("sizeof({})", ty),
             StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
+            GetParam(i) => format!("param #{}", i),
             StructInit(ident, values) => format!(
                 "{} {{ {} }}",
                 ident,
