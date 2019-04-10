@@ -17,7 +17,7 @@ enum Intrinsic {
     MemCpy = 0,
 }
 
-pub struct KantanLLVMContext<'src> {
+pub struct KantanLLVMContext<'src, 'mir> {
     // TODO: we probably want separate Modules
     module: LLVMModuleRef,
     context: LLVMContextRef,
@@ -26,15 +26,15 @@ pub struct KantanLLVMContext<'src> {
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
     blocks: HashMap<Label, LLVMBasicBlockRef>,
-    functions: HashMap<&'src str, HashMap<&'src str, LLVMValueRef>>,
+    functions: HashMap<&'src str, HashMap<&'mir str, LLVMValueRef>>,
     user_types: HashMap<&'src str, HashMap<&'src str, LLVMTypeRef>>,
     // TODO: make hashmap to save memory
     strings: Vec<CString>,
     intrinsics: Vec<LLVMValueRef>,
 }
 
-impl<'src> KantanLLVMContext<'src> {
-    pub fn new(name: &str, mir: &Mir<'src>) -> Self {
+impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
+    pub fn new(name: &str, mir: &'mir Mir<'src>) -> Self {
         unsafe {
             let name = CString::new(name).unwrap().into_raw();
 
@@ -90,7 +90,7 @@ impl<'src> KantanLLVMContext<'src> {
 
                     let func_type = ctx.func_type(function.is_varargs, ret_type, &function.params);
                     let f = ctx.llvm_add_func(func_type, &function.name, function.is_extern);
-                    llvm_funcs.insert(function.name, f);
+                    llvm_funcs.insert(function.name.as_ref(), f);
                 }
 
                 ctx.functions.insert(file, llvm_funcs);
@@ -136,7 +136,7 @@ impl<'src> KantanLLVMContext<'src> {
     }
 }
 
-impl<'src> KantanLLVMContext<'src> {
+impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     pub fn verify_module(&self) -> Result<(), *mut i8> {
         unsafe {
             let mut error = ptr::null_mut();
@@ -207,7 +207,7 @@ impl<'src> KantanLLVMContext<'src> {
         }
     }
 }
-impl<'src> KantanLLVMContext<'src> {
+impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     unsafe fn cstring(&mut self, string: &str) -> *mut i8 {
         let cstr = CString::new(string).unwrap().into_raw();
         self.strings.push(CString::from_raw(cstr));
@@ -236,7 +236,7 @@ impl<'src> KantanLLVMContext<'src> {
         )
     }
 
-    pub fn generate(&mut self, mir: &Mir<'src>) {
+    pub fn generate(&mut self, mir: &'mir Mir<'src>) {
         unsafe {
             for (label, string) in &mir.global_strings {
                 self.add_global_string(label, string);
@@ -248,7 +248,8 @@ impl<'src> KantanLLVMContext<'src> {
                         continue;
                     }
 
-                    let f = self.functions[*file][&function.name];
+                    let name: &str = function.name.as_ref();
+                    let f = self.functions[*file][name];
                     self.current_function = Some(f);
 
                     let mut bbs = Vec::with_capacity(function.blocks.blocks.len());
@@ -645,7 +646,7 @@ impl<'src> KantanLLVMContext<'src> {
     }
 }
 
-impl<'src> Drop for KantanLLVMContext<'src> {
+impl<'src, 'mir> Drop for KantanLLVMContext<'src, 'mir> {
     fn drop(&mut self) {
         unsafe {
             LLVMDisposeBuilder(self.builder);

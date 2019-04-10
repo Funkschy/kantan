@@ -22,13 +22,17 @@ mod error;
 pub mod symbol;
 
 /// modname -> typename -> typedef
-pub type ModTypeMap<'src> = HashMap<&'src str, UserTypeMap<'src>>;
-pub type ModFuncMap<'src> = HashMap<&'src str, FunctionMap<'src>>;
+pub type ModMap<'src, T> = HashMap<&'src str, T>;
 
-pub struct ResolveResult<'src> {
+pub type ModTypeMap<'src> = ModMap<'src, UserTypeMap<'src>>;
+pub type ModFuncMap<'src> = ModMap<'src, FunctionMap<'src>>;
+pub type ModClosureMap<'src, 'ast> = ModMap<'src, ClosureDefinitions<'src, 'ast>>;
+
+pub struct ResolveResult<'src, 'ast> {
     pub symbols: SymbolTable<'src>,
     pub mod_user_types: ModTypeMap<'src>,
     pub mod_functions: ModFuncMap<'src>,
+    pub mod_closures: ModClosureMap<'src, 'ast>,
 }
 
 pub(crate) struct Resolver<'src, 'ast> {
@@ -39,7 +43,9 @@ pub(crate) struct Resolver<'src, 'ast> {
     // TODO: refactor into one map
     mod_functions: ModFuncMap<'src>,
     mod_user_types: ModTypeMap<'src>,
-    current_func_ret_type: Spanned<Type<'src>>,
+    mod_closures: ModClosureMap<'src, 'ast>,
+    current_func_def: FunctionDefinition<'src>,
+    curr_closure_count: usize,
 }
 
 impl<'src, 'ast> Resolver<'src, 'ast> {
@@ -54,15 +60,18 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             sym_table: SymbolTable::new(),
             mod_functions: HashMap::new(),
             mod_user_types: HashMap::new(),
-            current_func_ret_type: Spanned::new(0, 0, Type::Simple(Simple::Void)),
+            mod_closures: HashMap::new(),
+            current_func_def: FunctionDefinition::default(),
+            curr_closure_count: 0,
         }
     }
 
-    pub fn get_result(self) -> ResolveResult<'src> {
+    pub fn get_result(self) -> ResolveResult<'src, 'ast> {
         ResolveResult {
             symbols: self.sym_table,
             mod_user_types: self.mod_user_types,
             mod_functions: self.mod_functions,
+            mod_closures: self.mod_closures,
         }
     }
 }
@@ -149,6 +158,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .collect();
 
                 let func_def = FunctionDefinition {
+                    name: name.node,
                     ret_type: ret_type.clone(),
                     params: func_params,
                     varargs,
@@ -213,16 +223,21 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             .bind(p.0.node, p.0.span, p.1.node.clone(), true);
     }
 
-    fn resolve_top_lvl(&mut self, top_lvl: &TopLvl<'src>, errors: &mut Vec<ResolveError<'src>>) {
+    fn resolve_top_lvl(
+        &mut self,
+        top_lvl: &'ast TopLvl<'src>,
+        errors: &mut Vec<ResolveError<'src>>,
+    ) {
         if let TopLvl::FuncDecl {
+            name,
             params,
             ref body,
-            ret_type,
             is_extern,
             ..
         } = top_lvl
         {
-            self.current_func_ret_type = ret_type.clone();
+            self.current_func_def = self.mod_functions[self.current_name][name.node].clone();
+            self.curr_closure_count = 0;
             self.sym_table.scope_enter();
 
             for p in params.params.iter() {
@@ -239,7 +254,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
     }
 
-    fn resolve_stmt(&mut self, stmt: &Stmt<'src>, errors: &mut Vec<ResolveError<'src>>) {
+    fn resolve_stmt(&mut self, stmt: &'ast Stmt<'src>, errors: &mut Vec<ResolveError<'src>>) {
         match stmt {
             Stmt::VarDecl(decl) => {
                 let VarDecl {
@@ -344,9 +359,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 self.sym_table.scope_exit();
             }
             Stmt::Return(expr) => {
-                if let Some(expr) = expr {
-                    let return_type = self.current_func_ret_type.node.clone();
+                let return_type = self.current_func_def.ret_type.node.clone();
 
+                if let Some(expr) = expr {
                     if return_type == Type::Simple(Simple::Void) {
                         // TODO Error for return in void
                         unimplemented!("Error for return in void");
@@ -360,7 +375,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         if let Err(err) = self.compare_types(
                             expr.span,
                             expr.span,
-                            &self.current_func_ret_type.node,
+                            &return_type,
                             &res,
                             "return value",
                         ) {
@@ -372,7 +387,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         let err = self.type_inference_error(expr.span);
                         errors.push(err);
                     }
-                } else if self.current_func_ret_type.node != Type::Simple(Simple::Void) {
+                } else if return_type != Type::Simple(Simple::Void) {
                     // TODO Error for no return in non void
                     unimplemented!("Error for no return in non void")
                 }
@@ -406,7 +421,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     fn resolve_expr(
         &mut self,
         span: Span,
-        expr: &Expr<'src>,
+        expr: &'ast Expr<'src>,
         expected: Option<&Type<'src>>,
     ) -> Result<Type<'src>, ResolveError<'src>> {
         let mut queue = expr.sub_exprs();
@@ -441,7 +456,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     fn check_expr(
         &mut self,
         span: Span,
-        expr: &Expr<'src>,
+        expr: &'ast Expr<'src>,
     ) -> Result<Option<Type<'src>>, ResolveError<'src>> {
         match expr.kind() {
             ExprKind::Error(_) => {
@@ -465,14 +480,26 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                             return Err(errors.swap_remove(0));
                         }
                         self.bind_param(p);
-                        param_types.push(p.1.node.clone());
+                        param_types.push((p.0.node, p.1.node.clone()));
                     }
 
                     // TODO: correct span
                     let ret_ty = Box::new(self.resolve_expr(span, &e.node, None)?);
                     self.sym_table.scope_exit();
 
-                    Ok(Some(Type::Simple(Simple::Closure(param_types, ret_ty))))
+                    let cls_ty = ClosureType::new(param_types, ret_ty);
+                    let cls_def = ClosureDef::new(cls_ty.clone(), &body);
+
+                    let ty = Type::Simple(Simple::Closure(cls_ty));
+                    let key = ClosureKey::new(self.current_func_def.name, self.curr_closure_count);
+                    self.curr_closure_count += 1;
+
+                    self.mod_closures
+                        .entry(self.current_name)
+                        .or_insert_with(ClosureDefinitions::default)
+                        .insert(key, cls_def);
+
+                    Ok(Some(ty))
                 }
                 ClosureBody::Block(_) => unimplemented!("TODO: implement block closure type res"),
             },

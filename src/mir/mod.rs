@@ -21,20 +21,60 @@ pub(crate) mod func;
 mod names;
 pub(crate) mod tac;
 
+pub struct FunctionHead<'src> {
+    name: String,
+    params: Vec<(&'src str, Type<'src>)>,
+    ret_type: Type<'src>,
+    is_extern: bool,
+    is_varargs: bool,
+}
+
+impl<'src> FunctionHead<'src> {
+    pub fn new(
+        name: String,
+        params: Vec<(&'src str, Type<'src>)>,
+        ret_type: Type<'src>,
+        is_extern: bool,
+        is_varargs: bool,
+    ) -> Self {
+        FunctionHead {
+            name,
+            params,
+            ret_type,
+            is_extern,
+            is_varargs,
+        }
+    }
+}
+
+pub enum FunctionBody<'src, 'ast> {
+    Block(&'ast Block<'src>),
+    Expr(&'ast Expr<'src>),
+}
+
+impl<'src, 'ast> From<&'ast ClosureBody<'src>> for FunctionBody<'src, 'ast> {
+    fn from(value: &'ast ClosureBody<'src>) -> Self {
+        match value {
+            ClosureBody::Block(b) => FunctionBody::Block(b),
+            ClosureBody::Expr(e) => FunctionBody::Expr(&e.node),
+        }
+    }
+}
+
 #[derive(Debug)]
-pub struct Tac<'src> {
-    pub(crate) functions: HashMap<&'src str, HashMap<&'src str, Func<'src>>>,
+pub struct Tac<'src, 'ast> {
+    pub(crate) functions: HashMap<&'src str, HashMap<String, Func<'src>>>,
     pub(crate) literals: HashMap<Label, &'src str>,
-    pub(crate) types: ModTypeMap<'src>,
-    mod_funcs: ModFuncMap<'src>,
-    symbols: SymbolTable<'src>,
+    pub(crate) types: &'ast ModTypeMap<'src>,
+    mod_funcs: &'ast ModFuncMap<'src>,
+    symbols: &'ast SymbolTable<'src>,
     names: NameTable<'src>,
     temp_count: usize,
     label_count: usize,
 }
 
-impl<'src> Tac<'src> {
-    pub fn new(resolve_result: ResolveResult<'src>) -> Self {
+impl<'src, 'ast> Tac<'src, 'ast> {
+    pub fn new(resolve_result: &'ast ResolveResult<'src, 'ast>) -> Self {
         let functions = resolve_result
             .mod_functions
             .iter()
@@ -45,39 +85,38 @@ impl<'src> Tac<'src> {
             functions,
             literals: HashMap::new(),
             names: NameTable::new(),
-            mod_funcs: resolve_result.mod_functions,
-            symbols: resolve_result.symbols,
-            types: resolve_result.mod_user_types,
+            mod_funcs: &resolve_result.mod_functions,
+            symbols: &resolve_result.symbols,
+            types: &resolve_result.mod_user_types,
             temp_count: 0,
             label_count: 0,
         }
     }
 }
 
-impl<'src> Tac<'src> {
+impl<'src, 'ast> Tac<'src, 'ast> {
     pub fn add_function(
         &mut self,
-        ident: UserIdent<'src>,
-        params: Vec<(&'src str, Type<'src>)>,
-        body: &Block<'src>,
-        ret_type: Type<'src>,
-        is_extern: bool,
-        is_varargs: bool,
+        module: &'src str,
+        head: FunctionHead<'src>,
+        body: FunctionBody<'src, 'ast>,
     ) {
         // reset scopes
         self.names = NameTable::new();
 
-        let f = if !is_extern {
+        let f = if !head.is_extern {
             let mut block = InstructionBlock::default();
-            self.fill_params(&mut block, &params);
-            block = self.fill_block(&body.0, block);
+            self.fill_params(&mut block, &head.params);
+            if let FunctionBody::Block(b) = body {
+                block = self.fill_block(&b.0, block);
+            }
 
             let add_ret = match block.last() {
                 Some(Instruction::Return(_)) => false,
                 _ => true,
             };
 
-            let main_func = ident.name() == "main";
+            let main_func = head.name == "main";
 
             if add_ret {
                 let ret = if main_func {
@@ -96,32 +135,29 @@ impl<'src> Tac<'src> {
             let ret_type = if main_func {
                 Type::Simple(Simple::I32)
             } else {
-                ret_type
+                head.ret_type
             };
 
             Func::new(
-                ident.name(),
-                params,
+                head.name.clone(),
+                head.params,
                 ret_type,
                 BlockMap::from_instructions(block),
-                is_extern,
-                is_varargs,
+                head.is_extern,
+                head.is_varargs,
             )
         } else {
             Func::new(
-                ident.name(),
-                params,
-                ret_type,
+                head.name.clone(),
+                head.params,
+                head.ret_type,
                 BlockMap::default(),
-                is_extern,
-                is_varargs,
+                head.is_extern,
+                head.is_varargs,
             )
         };
 
-        self.functions
-            .get_mut(ident.module())
-            .unwrap()
-            .insert(ident.name(), f);
+        self.functions.get_mut(module).unwrap().insert(head.name, f);
     }
 
     fn fill_params(
@@ -634,8 +670,15 @@ mod tests {
         let mut expected_funcs = HashMap::new();
 
         expected_funcs.insert(
-            "main",
-            Func::new("main", vec![], Type::Simple(Simple::I32), bm, false, false),
+            "main".to_owned(),
+            Func::new(
+                "main".to_owned(),
+                vec![],
+                Type::Simple(Simple::I32),
+                bm,
+                false,
+                false,
+            ),
         );
         expected.insert("main", expected_funcs);
 
@@ -716,8 +759,15 @@ mod tests {
         let mut expected_funcs = HashMap::new();
 
         expected_funcs.insert(
-            "main",
-            Func::new("main", vec![], Type::Simple(Simple::I32), bm, false, false),
+            "main".to_owned(),
+            Func::new(
+                "main".to_owned(),
+                vec![],
+                Type::Simple(Simple::I32),
+                bm,
+                false,
+                false,
+            ),
         );
         expected.insert("main", expected_funcs);
 
@@ -814,8 +864,15 @@ mod tests {
         let mut expected_funcs = HashMap::new();
 
         expected_funcs.insert(
-            "main",
-            Func::new("main", vec![], Type::Simple(Simple::I32), bm, false, false),
+            "main".to_owned(),
+            Func::new(
+                "main".to_owned(),
+                vec![],
+                Type::Simple(Simple::I32),
+                bm,
+                false,
+                false,
+            ),
         );
         expected.insert("main", expected_funcs);
 
@@ -907,8 +964,15 @@ mod tests {
         let mut expected_funcs = HashMap::new();
 
         expected_funcs.insert(
-            "main",
-            Func::new("main", vec![], Type::Simple(Simple::I32), bm, false, false),
+            "main".to_owned(),
+            Func::new(
+                "main".to_owned(),
+                vec![],
+                Type::Simple(Simple::I32),
+                bm,
+                false,
+                false,
+            ),
         );
         expected.insert("main", expected_funcs);
 
@@ -960,9 +1024,9 @@ mod tests {
         let mut expected_funcs = HashMap::new();
 
         expected_funcs.insert(
-            "test",
+            "test".to_owned(),
             Func::new(
-                "test",
+                "test".to_owned(),
                 vec![],
                 Type::Simple(Simple::Void),
                 test_bm,
@@ -971,9 +1035,9 @@ mod tests {
             ),
         );
         expected_funcs.insert(
-            "main",
+            "main".to_owned(),
             Func::new(
-                "main",
+                "main".to_owned(),
                 vec![],
                 Type::Simple(Simple::I32),
                 main_bm,

@@ -95,7 +95,19 @@ pub enum Simple<'src> {
     Void,
     Varargs,
     UserType(UserIdent<'src>),
-    Closure(Vec<Type<'src>>, Box<Type<'src>>),
+    Closure(ClosureType<'src>),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ClosureType<'src> {
+    pub params: Vec<(&'src str, Type<'src>)>,
+    pub ret_ty: Box<Type<'src>>,
+}
+
+impl<'src> ClosureType<'src> {
+    pub fn new(params: Vec<(&'src str, Type<'src>)>, ret_ty: Box<Type<'src>>) -> Self {
+        ClosureType { params, ret_ty }
+    }
 }
 
 impl<'src> Simple<'src> {
@@ -118,15 +130,17 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Void => "void",
             Simple::Varargs => "...",
             Simple::UserType(name) => return write!(f, "{}", name),
-            Simple::Closure(ps, res) => {
+            Simple::Closure(ClosureType { params, ret_ty }) => {
                 return write!(
                     f,
                     "({}) -> {}",
-                    ps.iter()
+                    params
+                        .iter()
+                        .map(|(_, p)| p)
                         .map(|p| p.to_string())
                         .collect::<Vec<String>>()
                         .join(", "),
-                    res
+                    ret_ty
                 );
             }
         };
