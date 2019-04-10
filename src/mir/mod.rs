@@ -7,7 +7,6 @@ use super::{
     parse::ast::*,
     resolve::{symbol::SymbolTable, ModFuncMap, ModTypeMap, ResolveResult},
     types::*,
-    Spanned,
 };
 use address::{Address, Constant};
 use blockmap::BlockMap;
@@ -103,33 +102,21 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     ) {
         // reset scopes
         self.names = NameTable::new();
+        let main_func = head.name == "main";
 
         let f = if !head.is_extern {
             let mut block = InstructionBlock::default();
             self.fill_params(&mut block, &head.params);
-            if let FunctionBody::Block(b) = body {
-                block = self.fill_block(&b.0, block);
+            match body {
+                FunctionBody::Block(b) => {
+                    block = self.fill_block(&b.0, block);
+                }
+                FunctionBody::Expr(e) => {
+                    self.return_stmt(Some(e), &mut block);
+                }
             }
 
-            let add_ret = match block.last() {
-                Some(Instruction::Return(_)) => false,
-                _ => true,
-            };
-
-            let main_func = head.name == "main";
-
-            if add_ret {
-                let ret = if main_func {
-                    Some(Address::Const(Constant::new(
-                        Type::Simple(Simple::I32),
-                        "0",
-                    )))
-                } else {
-                    None
-                };
-
-                block.push(Instruction::Return(ret));
-            }
+            Self::add_ret(main_func, &mut block);
 
             // the main function has to return an int
             let ret_type = if main_func {
@@ -160,6 +147,26 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         self.functions.get_mut(module).unwrap().insert(head.name, f);
     }
 
+    fn add_ret(main_func: bool, block: &mut InstructionBlock<'src>) {
+        let add_ret = match block.last() {
+            Some(Instruction::Return(_)) => false,
+            _ => true,
+        };
+
+        if add_ret {
+            let ret = if main_func {
+                Some(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "0",
+                )))
+            } else {
+                None
+            };
+
+            block.push(Instruction::Return(ret));
+        }
+    }
+
     fn fill_params(
         &mut self,
         block: &mut InstructionBlock<'src>,
@@ -186,75 +193,82 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         self.names.scope_enter();
 
         for s in statements {
-            match s {
-                Stmt::Expr(e) => {
-                    self.expr_instr(true, &e.node, &mut block);
-                }
-                Stmt::VarDecl(decl) => {
-                    let VarDecl {
-                        name,
-                        value,
-                        ref ty,
-                        ..
-                    } = decl.as_ref();
-
-                    let expr = if let Some(rval) = self.address_expr(&value.node) {
-                        rval.into()
-                    } else {
-                        self.expr(true, &value.node, &mut block)
-                    };
-
-                    self.names.bind(name.node);
-                    let address: Address = self.names.lookup(name.node).into();
-                    // Unwrapping is safe, because the typechecker inserted the type
-                    let ty = ty.borrow().clone().unwrap().node;
-                    block.push(Instruction::Decl(address.clone(), ty));
-
-                    self.assign(address, expr, &mut block);
-                }
-                Stmt::Return(e) => {
-                    let ret = if let Some(Spanned { node, .. }) = e {
-                        // If the return value is a struct initilizer, we need to first declare it
-                        // as a variable, because the llvm codegenerator expects that the target of
-                        // the struct memcpy was already alloca'd
-                        let address = self.expr_instr(true, node, &mut block);
-                        Instruction::Return(Some(address))
-                    } else {
-                        Instruction::Return(None)
-                    };
-                    block.push(ret);
-                }
-                Stmt::Delete(expr) => {
-                    let address = self.expr_instr(true, &expr.node, &mut block);
-                    let address = self.temp_assign(Expression::Copy(address), &mut block);
-                    block.push(Instruction::Delete(address));
-                }
-                Stmt::While { condition, body } => {
-                    let end_label = self.label();
-                    self.while_loop(&condition.node, body, &mut block, end_label.clone());
-                    block.push(Instruction::Label(end_label));
-                }
-                Stmt::If {
-                    condition,
-                    then_block,
-                    else_branch,
-                } => {
-                    let end_label = self.label();
-                    self.if_branch(
-                        &condition.node,
-                        then_block,
-                        else_branch,
-                        &mut block,
-                        end_label.clone(),
-                    );
-                    block.push(Instruction::Label(end_label));
-                }
-            };
+            self.stmt(s, &mut block);
         }
 
         self.names.scope_exit();
 
         block
+    }
+
+    fn stmt(&mut self, stmt: &Stmt<'src>, block: &mut InstructionBlock<'src>) {
+        match stmt {
+            Stmt::Expr(e) => {
+                self.expr_instr(true, &e.node, block);
+            }
+            Stmt::VarDecl(decl) => {
+                let VarDecl {
+                    name,
+                    value,
+                    ref ty,
+                    ..
+                } = decl.as_ref();
+
+                let expr = if let Some(rval) = self.address_expr(&value.node) {
+                    rval.into()
+                } else {
+                    self.expr(true, &value.node, block)
+                };
+
+                self.names.bind(name.node);
+                let address: Address = self.names.lookup(name.node).into();
+                // Unwrapping is safe, because the typechecker inserted the type
+                let ty = ty.borrow().clone().unwrap().node;
+                block.push(Instruction::Decl(address.clone(), ty));
+
+                self.assign(address, expr, block);
+            }
+            Stmt::Return(Some(e)) => self.return_stmt(Some(&e.node), block),
+            Stmt::Return(None) => self.return_stmt(None, block),
+            Stmt::Delete(expr) => {
+                let address = self.expr_instr(true, &expr.node, block);
+                let address = self.temp_assign(Expression::Copy(address), block);
+                block.push(Instruction::Delete(address));
+            }
+            Stmt::While { condition, body } => {
+                let end_label = self.label();
+                self.while_loop(&condition.node, body, block, end_label.clone());
+                block.push(Instruction::Label(end_label));
+            }
+            Stmt::If {
+                condition,
+                then_block,
+                else_branch,
+            } => {
+                let end_label = self.label();
+                self.if_branch(
+                    &condition.node,
+                    then_block,
+                    else_branch,
+                    block,
+                    end_label.clone(),
+                );
+                block.push(Instruction::Label(end_label));
+            }
+        };
+    }
+
+    fn return_stmt(&mut self, e: Option<&Expr<'src>>, block: &mut InstructionBlock<'src>) {
+        let ret = if let Some(node) = e {
+            // If the return value is a struct initilizer, we need to first declare it
+            // as a variable, because the llvm codegenerator expects that the target of
+            // the struct memcpy was already alloca'd
+            let address = self.expr_instr(true, node, block);
+            Instruction::Return(Some(address))
+        } else {
+            Instruction::Return(None)
+        };
+        block.push(ret);
     }
 
     fn while_loop(
@@ -494,6 +508,10 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     }
                 };
                 Expression::New(address, ty)
+            }
+            ExprKind::Closure(..) => {
+                // TODO: return function pointer placeholder
+                Expression::Copy(Address::Empty)
             }
             _ => unimplemented!("{:?}", expr),
         }
