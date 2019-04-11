@@ -70,6 +70,7 @@ pub struct Tac<'src, 'ast> {
     names: NameTable<'src>,
     temp_count: usize,
     label_count: usize,
+    current: Option<(&'src str, String)>,
 }
 
 impl<'src, 'ast> Tac<'src, 'ast> {
@@ -89,11 +90,10 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             types: &resolve_result.mod_user_types,
             temp_count: 0,
             label_count: 0,
+            current: None,
         }
     }
-}
 
-impl<'src, 'ast> Tac<'src, 'ast> {
     pub fn add_function(
         &mut self,
         module: &'src str,
@@ -102,6 +102,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     ) {
         // reset scopes
         self.names = NameTable::new();
+        self.current = Some((module, head.name.clone()));
         let main_func = head.name == "main";
 
         let f = if !head.is_extern {
@@ -144,6 +145,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             )
         };
 
+        self.current = None;
         self.functions.get_mut(module).unwrap().insert(head.name, f);
     }
 
@@ -397,14 +399,25 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     .map(|a| self.expr_instr(true, &a.node, block))
                     .collect();
 
-                let varargs = self.mod_funcs[callee.node.module()][callee.node.name()].varargs;
-
                 let ret_type = expr.clone_ty().unwrap();
-                Expression::Call {
-                    ident: callee.node,
-                    args,
-                    ret_type,
-                    varargs,
+                let (cls, varargs) = self.mod_funcs[callee.node.module()]
+                    .get(callee.node.name())
+                    .map(|f| (false, f.varargs))
+                    .unwrap_or((true, false));
+
+                if cls {
+                    Expression::CallFuncPtr {
+                        ident: self.handle_ident(callee.node.name()),
+                        args,
+                        ret_type,
+                    }
+                } else {
+                    Expression::Call {
+                        ident: callee.node,
+                        args,
+                        ret_type,
+                        varargs,
+                    }
                 }
             }
             ExprKind::Assign { left, value, .. } => {
@@ -509,9 +522,15 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 };
                 Expression::New(address, ty)
             }
-            ExprKind::Closure(..) => {
-                // TODO: return function pointer placeholder
-                Expression::Copy(Address::Empty)
+            ExprKind::Closure(_, _, count) => {
+                if let Some((module, ref func)) = self.current {
+                    Expression::Copy(Address::FuncRef(
+                        module,
+                        format!("{}.{{closure}}.{}", func, count.get()),
+                    ))
+                } else {
+                    unreachable!("current should always be set")
+                }
             }
             _ => unimplemented!("{:?}", expr),
         }

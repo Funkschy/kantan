@@ -83,6 +83,10 @@ impl<'src> fmt::Display for ResolveError<'src> {
                 "Cannot use operator '{}' on expression of type '{}'",
                 err.op, err.ty
             )),
+            ResolveErrorType::CallNonFunction(ref err) => self.fmt_err(&format!(
+                "Trying to call variable of type '{}' however UFCS is not supported yet",
+                err.0
+            )),
         };
 
         write!(f, "{}", s)
@@ -101,6 +105,7 @@ pub enum ResolveErrorType<'src> {
     Deref(NonPtrError<'src>),
     Delete(NonPtrError<'src>),
     NotArithmetic(ArithmeticError<'src>),
+    CallNonFunction(NonFunctionError<'src>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -114,6 +119,9 @@ impl<'src> ArithmeticError<'src> {
         ArithmeticError { ty, op }
     }
 }
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct NonFunctionError<'src>(pub Type<'src>);
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TypeInferenceError;

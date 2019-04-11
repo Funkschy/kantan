@@ -468,7 +468,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ExprKind::SizeOf(_) => Ok(Some(Type::Simple(Simple::I32))),
             ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
             ExprKind::Ident(name) => self.handle_ident(span, name).map(Some),
-            ExprKind::Closure(params, body) => match body.as_ref() {
+            ExprKind::Closure(params, body, count) => match body.as_ref() {
                 ClosureBody::Expr(e) => {
                     let mut errors = vec![];
                     let mut param_types = Vec::with_capacity(params.params.len());
@@ -487,11 +487,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     let ret_ty = Box::new(self.resolve_expr(span, &e.node, None)?);
                     self.sym_table.scope_exit();
 
-                    let cls_ty = ClosureType::new(param_types, ret_ty);
+                    let cls_count = self.curr_closure_count;
+                    let cls_ty = ClosureType::new(param_types, ret_ty, cls_count);
                     let cls_def = ClosureDef::new(cls_ty.clone(), &body);
 
+                    count.set(cls_count);
                     let ty = Type::Simple(Simple::Closure(cls_ty));
-                    let key = ClosureKey::new(self.current_func_def.name, self.curr_closure_count);
+                    let key = ClosureKey::new(self.current_func_def.name, cls_count);
                     self.curr_closure_count += 1;
 
                     self.mod_closures
@@ -677,89 +679,143 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             ExprKind::Call { callee, args } => {
-                let func_type = self.get_function(callee)?;
-
-                let varargs = func_type.varargs;
-                let no_vararg_passed = func_type.params.len() == args.0.len() + 1;
-
-                // don't check number of arguments for variadic functions
-                if !varargs && func_type.params.len() != args.0.len() {
-                    // TODO: emit custom error
-                    panic!(
-                        "Expected {} arguments, but got {}!",
-                        func_type.params.len(),
-                        args.0.len()
-                    );
-                }
-
-                // resolve arguments
-                let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
-                let mut params: Vec<Spanned<Type<'src>>>;
-
-                let iter = if !varargs {
-                    args.0.iter().zip(func_type.params.iter())
-                } else if no_vararg_passed {
-                    // the function is varargs, but no value was passed for the variadic parameter,
-                    // therefore skip last param
-                    params = func_type
-                        .params
-                        .iter()
-                        .take(func_type.params.len() - 1)
-                        .cloned()
-                        .collect();
-
-                    args.0.iter().zip(params.iter())
+                if let Ok(func_type) = self.get_function(callee) {
+                    self.call_function(&func_type, args, span)
                 } else {
-                    // if the function is varargs, the number of arguments does not correspond to
-                    // the number of params, so simply zipping them would cut of some args.
-                    // Thats why the difference between params and args is filled with void
-                    // pointers
-                    let mut type_params = func_type.params.clone();
-                    params = Vec::with_capacity(args.0.len());
-                    let diff = args.0.len() - type_params.len();
-
-                    let varargs_span = func_type.params.last().unwrap().span;
-
-                    params.append(&mut type_params);
-                    for _ in 0..diff {
-                        // fill difference with void pointers
-                        params.push(Spanned::from_span(
-                            varargs_span,
-                            Type::Pointer(Pointer::new(1, Simple::Void)),
-                        ));
+                    let cls_ty = self.get_closure(callee)?;
+                    if let Type::Simple(Simple::Closure(ct)) = cls_ty {
+                        self.call_closure(ct, args, span)
+                    } else {
+                        Err(self.call_non_function_error(callee.span, span, cls_ty.clone()))
                     }
-
-                    args.0.iter().zip(params.iter())
-                };
-
-                for (arg, param_type) in iter {
-                    let ty = self.resolve_type(arg, Some(&param_type.node))?;
-                    arg_types.push((arg.span, ty));
-                }
-
-                let arg_error = func_type
-                    .params
-                    .iter()
-                    .zip(arg_types.iter())
-                    .filter_map(|(p, (arg_span, a))| {
-                        // compare arguments to expected parameters
-                        if let Err(err) =
-                            self.compare_types(*arg_span, span, &p.node, a, "argument")
-                        {
-                            return Some(err);
-                        }
-                        None
-                    })
-                    // only evaluate the first argument (this should probably be changed)
-                    .take(1)
-                    .next();
-
-                if let Some(err) = arg_error {
-                    Err(err)
-                } else {
-                    Ok(Some(func_type.ret_type.node.clone()))
                 }
             }
+        }
+    }
+}
+
+impl<'src, 'ast> Resolver<'src, 'ast> {
+    fn call_closure(
+        &self,
+        cls_type: &ClosureType<'src>,
+        args: &ArgList<'src>,
+        expr_span: Span,
+    ) -> Result<Option<Type<'src>>, ResolveError<'src>> {
+        // resolve arguments
+        let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
+
+        let iter = args.0.iter().zip(cls_type.params.iter());
+
+        for (arg, param_type) in iter {
+            let ty = self.resolve_type(arg, Some(&param_type.1))?;
+            arg_types.push((arg.span, ty));
+        }
+
+        let arg_error = cls_type
+            .params
+            .iter()
+            .zip(arg_types.iter())
+            .filter_map(|(p, (arg_span, a))| {
+                // compare arguments to expected parameters
+                if let Err(err) = self.compare_types(*arg_span, expr_span, &p.1, a, "argument") {
+                    return Some(err);
+                }
+                None
+            })
+            // only evaluate the first argument (this should probably be changed)
+            .take(1)
+            .next();
+
+        if let Some(err) = arg_error {
+            Err(err)
+        } else {
+            Ok(Some(cls_type.ret_ty.as_ref().clone()))
+        }
+    }
+
+    fn call_function(
+        &self,
+        func_type: &FunctionDefinition<'src>,
+        args: &ArgList<'src>,
+        expr_span: Span,
+    ) -> Result<Option<Type<'src>>, ResolveError<'src>> {
+        let varargs = func_type.varargs;
+        let no_vararg_passed = func_type.params.len() == args.0.len() + 1;
+
+        // don't check number of arguments for variadic functions
+        if !varargs && func_type.params.len() != args.0.len() {
+            // TODO: emit custom error
+            panic!(
+                "Expected {} arguments, but got {}!",
+                func_type.params.len(),
+                args.0.len()
+            );
+        }
+
+        // resolve arguments
+        let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
+        let mut params: Vec<Spanned<Type<'src>>>;
+
+        let iter = if !varargs {
+            args.0.iter().zip(func_type.params.iter())
+        } else if no_vararg_passed {
+            // the function is varargs, but no value was passed for the variadic parameter,
+            // therefore skip last param
+            params = func_type
+                .params
+                .iter()
+                .take(func_type.params.len() - 1)
+                .cloned()
+                .collect();
+
+            args.0.iter().zip(params.iter())
+        } else {
+            // if the function is varargs, the number of arguments does not correspond to
+            // the number of params, so simply zipping them would cut of some args.
+            // Thats why the difference between params and args is filled with void
+            // pointers
+            let mut type_params = func_type.params.clone();
+            params = Vec::with_capacity(args.0.len());
+            let diff = args.0.len() - type_params.len();
+
+            let varargs_span = func_type.params.last().unwrap().span;
+
+            params.append(&mut type_params);
+            for _ in 0..diff {
+                // fill difference with void pointers
+                params.push(Spanned::from_span(
+                    varargs_span,
+                    Type::Pointer(Pointer::new(1, Simple::Void)),
+                ));
+            }
+
+            args.0.iter().zip(params.iter())
+        };
+
+        for (arg, param_type) in iter {
+            let ty = self.resolve_type(arg, Some(&param_type.node))?;
+            arg_types.push((arg.span, ty));
+        }
+
+        let arg_error = func_type
+            .params
+            .iter()
+            .zip(arg_types.iter())
+            .filter_map(|(p, (arg_span, a))| {
+                // compare arguments to expected parameters
+                if let Err(err) = self.compare_types(*arg_span, expr_span, &p.node, a, "argument") {
+                    return Some(err);
+                }
+                None
+            })
+            // only evaluate the first argument (this should probably be changed)
+            .take(1)
+            .next();
+
+        if let Some(err) = arg_error {
+            Err(err)
+        } else {
+            Ok(Some(func_type.ret_type.node.clone()))
         }
     }
 }
@@ -837,6 +893,16 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         if ty != Type::Simple(Simple::Bool) {
             errors.push(self.type_error(span, span, name, Type::Simple(Simple::Bool), ty))
         }
+    }
+
+    fn get_closure(
+        &self,
+        ident: &Spanned<UserIdent<'src>>,
+    ) -> Result<&Type<'src>, ResolveError<'src>> {
+        self.sym_table
+            .lookup(ident.node.name())
+            .map(|sym| &sym.node.ty)
+            .ok_or_else(|| self.not_defined_error(ident.span, ident.span, ident.node.name()))
     }
 
     fn get_function(
@@ -921,6 +987,19 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         } else {
             panic!("Invalid Error Type");
         }
+    }
+
+    fn call_non_function_error(
+        &self,
+        err_span: Span,
+        expr_span: Span,
+        actual_type: Type<'src>,
+    ) -> ResolveError<'src> {
+        self.error(
+            err_span,
+            expr_span,
+            ResolveErrorType::CallNonFunction(NonFunctionError(actual_type)),
+        )
     }
 
     fn type_error(

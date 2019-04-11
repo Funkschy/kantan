@@ -134,6 +134,11 @@ pub enum Expression<'src> {
         ret_type: Type<'src>,
         varargs: bool,
     },
+    CallFuncPtr {
+        ident: Address<'src>,
+        args: Vec<Address<'src>>,
+        ret_type: Type<'src>,
+    },
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset
     StructGep(Address<'src>, u32),
@@ -179,6 +184,11 @@ impl<'src> fmt::Display for Expression<'src> {
                 let args = args.join(", ");
                 let varargs = if *varargs { "varargs " } else { "" };
                 format!("{}call {}({})", varargs, f, args)
+            }
+            CallFuncPtr { ident, args, .. } => {
+                let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
+                let args = args.join(", ");
+                format!("call_ptr {}({})", ident, args)
             }
         };
 

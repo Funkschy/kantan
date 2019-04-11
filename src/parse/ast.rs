@@ -1,5 +1,5 @@
 use std::{
-    cell::{Ref, RefCell},
+    cell::{Cell, Ref, RefCell},
     fmt,
 };
 
@@ -212,7 +212,7 @@ pub enum ExprKind<'src> {
         fields: InitList<'src>,
     },
     SizeOf(Type<'src>),
-    Closure(ParamList<'src>, Box<ClosureBody<'src>>),
+    Closure(ParamList<'src>, Box<ClosureBody<'src>>, Cell<usize>),
 }
 
 impl<'src> Expr<'src> {
@@ -238,7 +238,7 @@ impl<'src> Expr<'src> {
             Call { args, .. } => args.0.iter().collect(),
             Access { left, .. } => vec![left],
             StructInit { fields, .. } => fields.0.iter().map(|(_, e)| e).collect(),
-            Closure(_, body) => match body.as_ref() {
+            Closure(_, body, _) => match body.as_ref() {
                 ClosureBody::Expr(_) => vec![], // the type resolving has to be recursive in this case
                 ClosureBody::Block(_) => unimplemented!("TODO: implement closure body sub_exprs"),
             },
@@ -293,7 +293,7 @@ impl<'src> fmt::Display for Expr<'src> {
                     .collect::<Vec<String>>()
                     .join(",\n")
             ),
-            Closure(params, body) => {
+            Closure(params, body, _) => {
                 let params = params.to_string();
 
                 match body.as_ref() {

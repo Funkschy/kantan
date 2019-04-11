@@ -98,15 +98,30 @@ pub enum Simple<'src> {
     Closure(ClosureType<'src>),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq)]
 pub struct ClosureType<'src> {
     pub params: Vec<(&'src str, Type<'src>)>,
     pub ret_ty: Box<Type<'src>>,
+    pub index: usize,
 }
 
 impl<'src> ClosureType<'src> {
-    pub fn new(params: Vec<(&'src str, Type<'src>)>, ret_ty: Box<Type<'src>>) -> Self {
-        ClosureType { params, ret_ty }
+    pub fn new(
+        params: Vec<(&'src str, Type<'src>)>,
+        ret_ty: Box<Type<'src>>,
+        index: usize,
+    ) -> Self {
+        ClosureType {
+            params,
+            ret_ty,
+            index,
+        }
+    }
+}
+
+impl<'src> PartialEq for ClosureType<'src> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ret_ty == other.ret_ty && self.params == other.params
     }
 }
 
@@ -130,7 +145,7 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Void => "void",
             Simple::Varargs => "...",
             Simple::UserType(name) => return write!(f, "{}", name),
-            Simple::Closure(ClosureType { params, ret_ty }) => {
+            Simple::Closure(ClosureType { params, ret_ty, .. }) => {
                 return write!(
                     f,
                     "({}) -> {}",

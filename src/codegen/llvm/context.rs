@@ -182,7 +182,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         self.user_types[user_ty.module()][user_ty.name()]
     }
 
-    unsafe fn convert(&self, ty: &Type) -> LLVMTypeRef {
+    unsafe fn convert(&mut self, ty: &Type) -> LLVMTypeRef {
         match ty {
             Type::Simple(ty) => match ty {
                 Simple::I32 => LLVMInt32TypeInContext(self.context),
@@ -193,7 +193,10 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
                 }
                 Simple::UserType(user_ty) => self.get_user_type(&user_ty),
-                Simple::Closure(..) => unimplemented!("TODO: implement closure type conversion"),
+                Simple::Closure(ClosureType { params, ret_ty, .. }) => {
+                    let ret_ty = self.convert(ret_ty);
+                    LLVMPointerType(self.func_type(false, ret_ty, params), ADDRESS_SPACE)
+                }
                 // varargs is just handled as a type for convenience
                 Simple::Varargs => panic!("Varargs is not a real type"),
             },
@@ -334,7 +337,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         LLVMAppendBasicBlockInContext(self.context, f, name)
     }
 
-    unsafe fn translate_mir_instr(&mut self, instr: &Instruction) {
+    unsafe fn translate_mir_instr(&mut self, instr: &Instruction<'src>) {
         match instr {
             Instruction::Return(Some(a)) => {
                 LLVMBuildRet(self.builder, self.translate_mir_address(a));
@@ -404,12 +407,13 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         }
     }
 
-    unsafe fn translate_mir_address(&mut self, a: &Address) -> LLVMValueRef {
+    unsafe fn translate_mir_address(&mut self, a: &Address<'src>) -> LLVMValueRef {
         match a {
             Address::Empty => unreachable!(),
+            Address::Ref(r) => self.name_table[r],
+            Address::FuncRef(module, n) => self.functions[module][n.as_str()],
             Address::Null(ty) => LLVMConstNull(self.convert(ty)),
             Address::Name(n) => LLVMBuildLoad(self.builder, self.name_table[n], self.cstring(&n)),
-            Address::Ref(r) => self.name_table[r],
             Address::Temp(t) => LLVMBuildLoad(
                 self.builder,
                 self.name_table[&t.to_string()],
@@ -459,7 +463,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         );
     }
 
-    unsafe fn translate_mir_expr(&mut self, e: &Expression, name: &str) -> LLVMValueRef {
+    unsafe fn translate_mir_expr(&mut self, e: &Expression<'src>, name: &str) -> LLVMValueRef {
         match e {
             Expression::GetParam(i) => LLVMGetParam(self.current_function.unwrap(), *i),
             Expression::SizeOf(ty) => {
@@ -516,6 +520,26 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     UnaryType::BoolNegate => LLVMBuildNot(self.builder, a, n),
                     UnaryType::Deref => a,
                 }
+            }
+            Expression::CallFuncPtr {
+                ident,
+                args,
+                ret_type,
+            } => {
+                let n = self.cstring(name);
+                let num_args = args.len() as u32;
+
+                let mut args: Vec<LLVMValueRef> =
+                    args.iter().map(|a| self.translate_mir_address(a)).collect();
+
+                let f = self.translate_mir_address(ident);
+                let name = if *ret_type != Type::Simple(Simple::Void) {
+                    n
+                } else {
+                    // void functions can't have a name
+                    self.cstring("")
+                };
+                LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, name)
             }
             Expression::Call {
                 ident,

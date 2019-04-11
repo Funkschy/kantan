@@ -12,6 +12,7 @@ pub enum Address<'src> {
     Temp(TempVar),
     Global(Label),
     Ref(String),
+    FuncRef(&'src str, String),
 }
 
 impl<'src> fmt::Display for Address<'src> {
@@ -25,7 +26,8 @@ impl<'src> fmt::Display for Address<'src> {
             Const(c) => write!(f, "{}", c),
             Temp(t) => write!(f, "{}", t),
             Global(l) => write!(f, "{}", l),
-            Ref(n) => write!(f, "{}", n),
+            Ref(n) => write!(f, "&{}", n),
+            FuncRef(m, n) => write!(f, "&{}.{}", m, n),
         }
     }
 }
