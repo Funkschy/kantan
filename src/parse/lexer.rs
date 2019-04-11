@@ -60,7 +60,7 @@ impl<'src> Lexer<'src> {
     }
 
     fn spanned<T>(&self, start: CharPos, t: T) -> Spanned<T> {
-        Spanned::new(start, self.pos() - self.prev.map_or(0, |p| p.len_utf8()), t)
+        Spanned::new(start, self.pos() - self.prev.map_or(0, char::len_utf8), t)
     }
 }
 
@@ -138,7 +138,7 @@ impl<'src> Lexer<'src> {
     }
 
     fn skip_whitespace(&mut self) {
-        self.read_while(|c| c.is_whitespace());
+        self.read_while(char::is_whitespace);
     }
 
     fn scan_ident(&mut self) -> Scanned<'src> {

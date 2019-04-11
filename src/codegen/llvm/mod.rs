@@ -1,4 +1,4 @@
-use std::{ffi::CString, io::Write};
+use std::{convert::TryFrom, ffi::CString, io::Write};
 
 use crate::{print_error, Mir};
 
@@ -80,7 +80,7 @@ pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: CodeGenArgs<'a, W>) {
     // TODO: remove
     ctx.dump_module();
 
-    let target = Target::new(TargetTriple::new(arch, vendor, os)).unwrap();
+    let target = Target::try_from(TargetTriple::new(arch, vendor, os)).unwrap();
     let tm = TargetMachine::new(target, CpuType::Generic, args.opt_lvl);
 
     let asm = args.output == OutputType::Asm;

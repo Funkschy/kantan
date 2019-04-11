@@ -137,7 +137,7 @@ impl<'src> fmt::Display for Simple<'src> {
                     params
                         .iter()
                         .map(|(_, p)| p)
-                        .map(|p| p.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect::<Vec<String>>()
                         .join(", "),
                     ret_ty

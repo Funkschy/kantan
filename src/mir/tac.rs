@@ -165,7 +165,7 @@ impl<'src> fmt::Display for Expression<'src> {
                 ident,
                 values
                     .iter()
-                    .map(|v| v.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
@@ -175,7 +175,7 @@ impl<'src> fmt::Display for Expression<'src> {
                 varargs,
                 ..
             } => {
-                let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+                let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
                 let args = args.join(", ");
                 let varargs = if *varargs { "varargs " } else { "" };
                 format!("{}call {}({})", varargs, f, args)

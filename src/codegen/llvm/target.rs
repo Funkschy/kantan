@@ -1,4 +1,4 @@
-use std::{ffi::CString, ptr};
+use std::{convert::TryFrom, ffi::CString, ptr};
 
 use llvm_sys::{core::LLVMDisposeMessage, prelude::*, target::*, target_machine::*};
 
@@ -145,8 +145,10 @@ pub struct Target {
     triple: *mut i8,
 }
 
-impl Target {
-    pub fn new(triple: TargetTriple) -> Result<Self, *mut i8> {
+impl TryFrom<TargetTriple> for Target {
+    type Error = *mut i8;
+
+    fn try_from(triple: TargetTriple) -> Result<Self, *mut i8> {
         unsafe {
             let mut target = ptr::null_mut();
             let mut error = ptr::null_mut();
