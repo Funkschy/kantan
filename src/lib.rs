@@ -198,7 +198,7 @@ fn type_check<'src, W: Write>(
     let errors: Vec<String> = resolver
         .resolve()
         .iter()
-        .map(|err| err.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     if !errors.is_empty() {
