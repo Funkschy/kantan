@@ -331,10 +331,12 @@ fn construct_tac<'src, 'ast>(
                     varargs,
                 );
 
-                tac.add_function(src_name, head, FunctionBody::Block(body));
+                tac.add_function(src_name, head, FunctionBody::Block(body), None);
             }
         }
     }
+
+    dbg!(&tac.compiler_types);
 
     Mir {
         global_strings: tac.literals,

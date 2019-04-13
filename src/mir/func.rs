@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::{blockmap::BlockMap, tac::*};
+use super::{blockmap::BlockMap, tac::*, MirType};
 use crate::types::*;
 
 #[derive(PartialEq, Debug)]
@@ -11,6 +11,7 @@ pub struct Func<'src> {
     pub(crate) blocks: BlockMap<'src>,
     pub(crate) is_extern: bool,
     pub(crate) is_varargs: bool,
+    pub(crate) environment: Option<MirType<'src>>,
 }
 
 impl<'src> Func<'src> {
@@ -21,6 +22,7 @@ impl<'src> Func<'src> {
         blocks: BlockMap<'src>,
         is_extern: bool,
         is_varargs: bool,
+        environment: Option<MirType<'src>>,
     ) -> Self {
         let mut params = params;
 
@@ -43,6 +45,7 @@ impl<'src> Func<'src> {
             blocks,
             is_extern,
             is_varargs,
+            environment,
         }
     }
 }

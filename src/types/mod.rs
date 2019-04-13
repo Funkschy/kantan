@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, hash};
 
 #[derive(Debug, Eq, Copy, Clone, PartialEq, Hash)]
 pub struct UserIdent<'src> {
@@ -28,7 +28,7 @@ impl<'src> fmt::Display for UserIdent<'src> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Type<'src> {
     Simple(Simple<'src>),
     Pointer(Pointer<'src>),
@@ -86,7 +86,7 @@ impl<'src> Type<'src> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Simple<'src> {
     I32,
     F32,
@@ -122,6 +122,13 @@ impl<'src> ClosureType<'src> {
 impl<'src> PartialEq for ClosureType<'src> {
     fn eq(&self, other: &Self) -> bool {
         self.ret_ty == other.ret_ty && self.params == other.params
+    }
+}
+
+impl<'src> hash::Hash for ClosureType<'src> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.ret_ty.hash(state);
+        self.params.hash(state);
     }
 }
 
@@ -163,7 +170,7 @@ impl<'src> fmt::Display for Simple<'src> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Pointer<'src> {
     /// the number of references: 1 = *, 2 = **
     pub number: usize,

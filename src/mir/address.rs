@@ -3,7 +3,7 @@ use std::fmt;
 use super::tac::{Expression, Label};
 use crate::types::Type;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub enum Address<'src> {
     Empty,
     Null(Type<'src>),
@@ -12,6 +12,7 @@ pub enum Address<'src> {
     Temp(TempVar),
     Global(Label),
     Ref(String),
+    // (module, func_name)
     FuncRef(&'src str, String),
 }
 
@@ -58,7 +59,7 @@ impl<'src> Address<'src> {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct TempVar(usize);
 
 impl From<usize> for TempVar {
@@ -73,7 +74,7 @@ impl fmt::Display for TempVar {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct Constant<'src> {
     pub ty: Type<'src>,
     pub literal: &'src str,

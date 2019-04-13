@@ -1,11 +1,14 @@
 //! The middle intermediate representation.
 //! This IR is very similar to LLVM-IR, but can also be compiled to Assembly directly.
 
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    hash,
+};
 
 use super::{
     parse::ast::*,
-    resolve::{symbol::SymbolTable, ModFuncMap, ModTypeMap, ResolveResult},
+    resolve::{symbol::SymbolTable, ModFuncMap, ModMap, ModTypeMap, ResolveResult},
     types::*,
 };
 use address::{Address, Constant};
@@ -60,17 +63,66 @@ impl<'src, 'ast> From<&'ast ClosureBody<'src>> for FunctionBody<'src, 'ast> {
     }
 }
 
+#[derive(Debug, Eq, Clone)]
+pub struct FreeVar<'src> {
+    address: Address<'src>,
+    ty: Type<'src>,
+}
+
+impl<'src> FreeVar<'src> {
+    pub fn new(address: Address<'src>, ty: Type<'src>) -> Self {
+        FreeVar { address, ty }
+    }
+}
+
+impl<'src> hash::Hash for FreeVar<'src> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.address.hash(state);
+    }
+}
+
+impl<'src> PartialEq for FreeVar<'src> {
+    fn eq(&self, other: &Self) -> bool {
+        self.address == other.address
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ClosureCtx<'src> {
+    scope_start: usize,
+    free_vars: HashSet<FreeVar<'src>>,
+}
+
+impl<'src> ClosureCtx<'src> {
+    pub fn new(scope_start: usize) -> Self {
+        ClosureCtx {
+            scope_start,
+            free_vars: HashSet::new(),
+        }
+    }
+}
+
+/// Types constructed by the compiler
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct MirType<'src> {
+    id: usize,
+    fields: Vec<FreeVar<'src>>,
+}
+
 #[derive(Debug)]
 pub struct Tac<'src, 'ast> {
     pub(crate) functions: HashMap<&'src str, HashMap<String, Func<'src>>>,
     pub(crate) literals: HashMap<Label, &'src str>,
     pub(crate) types: &'ast ModTypeMap<'src>,
+    pub(crate) compiler_types: ModMap<'src, Vec<MirType<'src>>>,
     mod_funcs: &'ast ModFuncMap<'src>,
     symbols: &'ast SymbolTable<'src>,
     names: NameTable<'src>,
     temp_count: usize,
     label_count: usize,
     current: Option<(&'src str, String)>,
+    // if some -> currently in closure
+    closure_ctx: Option<ClosureCtx<'src>>,
 }
 
 impl<'src, 'ast> Tac<'src, 'ast> {
@@ -88,9 +140,11 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             mod_funcs: &resolve_result.mod_functions,
             symbols: &resolve_result.symbols,
             types: &resolve_result.mod_user_types,
+            compiler_types: HashMap::new(),
             temp_count: 0,
             label_count: 0,
             current: None,
+            closure_ctx: None,
         }
     }
 
@@ -99,10 +153,12 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         module: &'src str,
         head: FunctionHead<'src>,
         body: FunctionBody<'src, 'ast>,
+        closure_ctx: Option<ClosureCtx<'src>>,
     ) {
+        self.compiler_types.entry(module).or_insert(Vec::new());
         // reset scopes
         self.names = NameTable::new();
-        self.inner_add_function(module, head, body);
+        self.inner_add_function(module, head, body, closure_ctx);
     }
 
     fn inner_add_function(
@@ -110,11 +166,19 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         module: &'src str,
         head: FunctionHead<'src>,
         body: FunctionBody<'src, 'ast>,
+        closure_ctx: Option<ClosureCtx<'src>>,
     ) {
         self.current = Some((module, head.name.clone()));
         let main_func = head.name == "main";
 
-        let f = if !head.is_extern {
+        let old_cls_ctx = if let Some(ctx) = closure_ctx {
+            // replace old context with new one
+            Some(self.closure_ctx.replace(ctx))
+        } else {
+            None
+        };
+
+        let (ret_type, block_map) = if !head.is_extern {
             let mut block = InstructionBlock::default();
             self.fill_params(&mut block, &head.params);
             match body {
@@ -137,26 +201,48 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 head.ret_type
             };
 
-            Func::new(
-                head.name.clone(),
-                head.params,
-                ret_type,
-                BlockMap::from_instructions(block),
-                head.is_extern,
-                head.is_varargs,
-            )
+            (ret_type, BlockMap::from_instructions(block))
         } else {
-            Func::new(
-                head.name.clone(),
-                head.params,
-                head.ret_type,
-                BlockMap::default(),
-                head.is_extern,
-                head.is_varargs,
-            )
+            (head.ret_type, BlockMap::default())
         };
 
+        let f = Func::new(
+            head.name.clone(),
+            head.params,
+            ret_type,
+            block_map,
+            head.is_extern,
+            head.is_varargs,
+            self.get_environment(module, old_cls_ctx),
+        );
+
         self.functions.get_mut(module).unwrap().insert(head.name, f);
+    }
+
+    fn get_environment(
+        &mut self,
+        module: &'src str,
+        old_ctx: Option<Option<ClosureCtx<'src>>>,
+    ) -> Option<MirType<'src>> {
+        // restore old context
+        let closure_ctx = if let Some(old_ctx) = old_ctx {
+            std::mem::replace(&mut self.closure_ctx, old_ctx)
+        } else {
+            None
+        };
+
+        if let Some(ctx) = closure_ctx {
+            let env_struct = self.make_struct_from_set(module, ctx.free_vars);
+
+            self.compiler_types
+                .entry(module)
+                .or_insert(Vec::new())
+                .push(env_struct.clone());
+
+            Some(env_struct)
+        } else {
+            None
+        }
     }
 
     fn add_ret(main_func: bool, block: &mut InstructionBlock<'src>) {
@@ -186,8 +272,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     ) {
         for (i, (n, t)) in params.iter().enumerate() {
             self.names.bind(n);
-            let address: Address = self.names.lookup(n).into();
-            block.push(Instruction::Decl(address.clone(), t.clone()));
+            let address = self.lookup_ident(n, t);
+            block.push(Instruction::Decl(address.clone(), (*t).clone()));
             self.assign(address, Expression::GetParam(i as u32), block);
         }
     }
@@ -232,12 +318,13 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     self.expr(true, &value.node, block)
                 };
 
-                self.names.bind(name.node);
-                let address: Address = self.names.lookup(name.node).into();
                 // Unwrapping is safe, because the typechecker inserted the type
                 let ty = ty.borrow().clone().unwrap().node;
-                block.push(Instruction::Decl(address.clone(), ty));
 
+                self.names.bind(name.node);
+                let address: Address = self.lookup_ident(name.node, &ty);
+
+                block.push(Instruction::Decl(address.clone(), ty));
                 self.assign(address, expr, block);
             }
             Stmt::Return(Some(e)) => self.return_stmt(Some(&e.node), block),
@@ -416,9 +503,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     .unwrap_or((true, false));
 
                 if cls {
-                    dbg!(&self.names);
                     Expression::CallFuncPtr {
-                        ident: self.handle_ident(callee.node.name()),
+                        // TODO: refactor when callee is an Expr
+                        ident: self.lookup_ident(callee.node.name(), &Type::Simple(Simple::Void)),
                         args,
                         ret_type,
                     }
@@ -439,7 +526,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 };
 
                 let address = if let ExprKind::Ident(name) = left.node.kind() {
-                    self.names.lookup(name).into()
+                    // TODO: duplicate clone
+                    self.lookup_ident(name, &left.node.clone_ty().unwrap())
                 } else {
                     let e = self.expr(false, &left.node, block);
                     // remove the deref/copy, so that the value can be assigned
@@ -515,7 +603,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let ty = expr.node.clone_ty().unwrap();
 
                 let address = if let ExprKind::Ident(name) = expr.node.kind() {
-                    self.names.lookup(name).into()
+                    self.lookup_ident(name, &ty)
                 } else if let Some(a) = self.address_expr(&expr.node) {
                     let temp = self.temp();
                     block.push(Instruction::Decl(temp.clone(), ty.clone()));
@@ -545,8 +633,12 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                         .map(|p| (p.0.node, p.1.node.clone()))
                         .collect();
 
+                    let ctx = Some(ClosureCtx::new(self.names.num_scopes()));
                     let head = FunctionHead::new(key.clone(), params, ret_ty, false, false);
-                    self.inner_add_function(module, head, body.as_ref().into());
+
+                    self.names.scope_enter();
+                    self.inner_add_function(module, head, body.as_ref().into(), ctx);
+                    self.names.scope_exit();
 
                     Expression::Copy(Address::FuncRef(module, key))
                 } else {
@@ -590,28 +682,14 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         self.assign(temp, e, block)
     }
 
-    fn assign(
-        &mut self,
-        address: Address<'src>,
-        expression: Expression<'src>,
-        block: &mut InstructionBlock<'src>,
-    ) -> Address<'src> {
-        let assign = Instruction::Assignment(address.clone(), Box::new(expression));
-        block.push(assign);
-        address
-    }
-
-    fn handle_ident(&mut self, ident: &'src str) -> Address<'src> {
-        self.names.lookup(ident).into()
-    }
-
     fn address_expr(&mut self, expr: &Expr<'src>) -> Option<Address<'src>> {
         Some(match expr.kind() {
             ExprKind::NullLit => Address::Null(expr.clone_ty().unwrap()),
             ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
             ExprKind::FloatLit(lit) => Address::new_const(Type::Simple(Simple::F32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
-            ExprKind::Ident(ident) => self.handle_ident(ident),
+            // TODO: duplicate clone
+            ExprKind::Ident(ident) => self.lookup_ident(ident, &expr.clone_ty().unwrap()),
             _ => return None,
         })
     }
@@ -623,6 +701,50 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         label
     }
 
+    fn make_struct_from_set(
+        &self,
+        module: &'src str,
+        free_vars: HashSet<FreeVar<'src>>,
+    ) -> MirType<'src> {
+        let id = self
+            .compiler_types
+            .get(module)
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        let mut fields = Vec::with_capacity(free_vars.len());
+        for fv in free_vars {
+            fields.push(fv);
+        }
+
+        MirType { id, fields }
+    }
+
+    #[inline]
+    fn assign(
+        &mut self,
+        address: Address<'src>,
+        expression: Expression<'src>,
+        block: &mut InstructionBlock<'src>,
+    ) -> Address<'src> {
+        let assign = Instruction::Assignment(address.clone(), Box::new(expression));
+        block.push(assign);
+        address
+    }
+
+    fn lookup_ident(&mut self, ident: &'src str, ty: &Type<'src>) -> Address<'src> {
+        let (n, i) = self.names.lookup(ident);
+        let address: Address = n.into();
+        if let Some(ref mut ctx) = self.closure_ctx {
+            if i < ctx.scope_start {
+                let free_var = FreeVar::new(address.clone(), ty.clone());
+                ctx.free_vars.insert(free_var);
+            }
+        }
+        address
+    }
+
+    #[inline(always)]
     fn temp_assign(
         &mut self,
         expression: Expression<'src>,
@@ -632,6 +754,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         self.assign(temp, expression, block)
     }
 
+    #[inline(always)]
     fn temp(&mut self) -> Address<'src> {
         let temp = self.temp_count.into();
         self.temp_count += 1;
@@ -639,6 +762,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         Address::Temp(temp)
     }
 
+    #[inline(always)]
     fn label(&mut self) -> Label {
         let label = Label::new(self.label_count);
         self.label_count += 1;
@@ -677,20 +801,20 @@ mod tests {
         let mut bb = BasicBlock::default();
         bb.instructions = vec![
             Label::from(".entry0".to_string()).into(),
-            Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
-            Instruction::Decl(Address::Name("y0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Name("x".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Name("y".to_string()), Type::Simple(Simple::I32)),
             Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::I32)),
-            Instruction::Decl(Address::Name("z0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Name("z".to_string()), Type::Simple(Simple::I32)),
             Instruction::Nop,
             Instruction::Assignment(
-                Address::Name("x0".to_string()),
+                Address::Name("x".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
                     Type::Simple(Simple::I32),
                     "0",
                 )))),
             ),
             Instruction::Assignment(
-                Address::Name("y0".to_string()),
+                Address::Name("y".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
                     Type::Simple(Simple::I32),
                     "2",
@@ -699,13 +823,13 @@ mod tests {
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
-                    Address::Name("x0".to_string()),
+                    Address::Name("x".to_string()),
                     BinaryType::I32(NumBinaryType::Mul),
-                    Address::Name("y0".to_string()),
+                    Address::Name("y".to_string()),
                 )),
             ),
             Instruction::Assignment(
-                Address::Name("z0".to_string()),
+                Address::Name("z".to_string()),
                 Box::new(Expression::Binary(
                     Address::Temp(TempVar::from(0)),
                     BinaryType::I32(NumBinaryType::Add),
@@ -713,8 +837,8 @@ mod tests {
                 )),
             ),
             Instruction::Assignment(
-                Address::Name("x0".to_string()),
-                Box::new(Expression::Copy(Address::Name("z0".to_string()))),
+                Address::Name("x".to_string()),
+                Box::new(Expression::Copy(Address::Name("z".to_string()))),
             ),
         ];
 
@@ -736,6 +860,7 @@ mod tests {
                 bm,
                 false,
                 false,
+                None,
             ),
         );
         expected.insert("main", expected_funcs);
@@ -769,11 +894,11 @@ mod tests {
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
             Label::from(".entry0".to_string()).into(),
-            Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Name("x".to_string()), Type::Simple(Simple::I32)),
             Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
             Instruction::Nop,
             Instruction::Assignment(
-                Address::Name("x0".to_string()),
+                Address::Name("x".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
                     Type::Simple(Simple::I32),
                     "0",
@@ -782,7 +907,7 @@ mod tests {
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
-                    Address::Name("x0".to_string()),
+                    Address::Name("x".to_string()),
                     BinaryType::I32(NumBinaryType::Eq),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 )),
@@ -798,7 +923,7 @@ mod tests {
         bb2.instructions = vec![
             Instruction::Label(Label::new(1)),
             Instruction::Assignment(
-                Address::Name("x0".to_string()),
+                Address::Name("x".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
                     Type::Simple(Simple::I32),
                     "2",
@@ -809,7 +934,7 @@ mod tests {
 
         let mut bb3 = BasicBlock::default();
         bb3.instructions = vec![Instruction::Label(Label::new(0))];
-        bb3.terminator = Instruction::Return(Some(Address::Name("x0".to_string())));
+        bb3.terminator = Instruction::Return(Some(Address::Name("x".to_string())));
 
         bm.blocks = vec![bb1, bb2, bb3];
 
@@ -825,6 +950,7 @@ mod tests {
                 bm,
                 false,
                 false,
+                None,
             ),
         );
         expected.insert("main", expected_funcs);
@@ -861,11 +987,11 @@ mod tests {
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
             Label::from(".entry0".to_string()).into(),
-            Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Name("x".to_string()), Type::Simple(Simple::I32)),
             Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
             Instruction::Nop,
             Instruction::Assignment(
-                Address::Name("x0".to_string()),
+                Address::Name("x".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
                     Type::Simple(Simple::I32),
                     "0",
@@ -874,7 +1000,7 @@ mod tests {
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
-                    Address::Name("x0".to_string()),
+                    Address::Name("x".to_string()),
                     BinaryType::I32(NumBinaryType::Eq),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 )),
@@ -890,7 +1016,7 @@ mod tests {
         bb2.instructions = vec![
             Instruction::Label(Label::new(1)),
             Instruction::Assignment(
-                Address::Name("x0".to_string()),
+                Address::Name("x".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
                     Type::Simple(Simple::I32),
                     "2",
@@ -903,7 +1029,7 @@ mod tests {
         bb3.instructions = vec![
             Instruction::Label(Label::new(2)),
             Instruction::Assignment(
-                Address::Name("x0".to_string()),
+                Address::Name("x".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
                     Type::Simple(Simple::I32),
                     "3",
@@ -914,7 +1040,7 @@ mod tests {
 
         let mut bb4 = BasicBlock::default();
         bb4.instructions = vec![Instruction::Label(Label::new(0))];
-        bb4.terminator = Instruction::Return(Some(Address::Name("x0".to_string())));
+        bb4.terminator = Instruction::Return(Some(Address::Name("x".to_string())));
 
         bm.blocks = vec![bb1, bb2, bb3, bb4];
 
@@ -930,6 +1056,7 @@ mod tests {
                 bm,
                 false,
                 false,
+                None,
             ),
         );
         expected.insert("main", expected_funcs);
@@ -964,11 +1091,11 @@ mod tests {
         let mut bb1 = BasicBlock::default();
         bb1.instructions = vec![
             Label::from(".entry0".to_string()).into(),
-            Instruction::Decl(Address::Name("x0".to_string()), Type::Simple(Simple::I32)),
+            Instruction::Decl(Address::Name("x".to_string()), Type::Simple(Simple::I32)),
             Instruction::Decl(Address::Temp(TempVar::from(0)), Type::Simple(Simple::Bool)),
             Instruction::Nop,
             Instruction::Assignment(
-                Address::Name("x0".to_string()),
+                Address::Name("x".to_string()),
                 Box::new(Expression::Copy(Address::Const(Constant::new(
                     Type::Simple(Simple::I32),
                     "0",
@@ -983,7 +1110,7 @@ mod tests {
             Instruction::Assignment(
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
-                    Address::Name("x0".to_string()),
+                    Address::Name("x".to_string()),
                     BinaryType::I32(NumBinaryType::Smaller),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "10")),
                 )),
@@ -999,9 +1126,9 @@ mod tests {
         bb3.instructions = vec![
             Instruction::Label(Label::new(2)),
             Instruction::Assignment(
-                Address::Name("x0".to_string()),
+                Address::Name("x".to_string()),
                 Box::new(Expression::Binary(
-                    Address::Name("x0".to_string()),
+                    Address::Name("x".to_string()),
                     BinaryType::I32(NumBinaryType::Add),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "1")),
                 )),
@@ -1030,6 +1157,7 @@ mod tests {
                 bm,
                 false,
                 false,
+                None,
             ),
         );
         expected.insert("main", expected_funcs);
@@ -1090,6 +1218,7 @@ mod tests {
                 test_bm,
                 false,
                 false,
+                None,
             ),
         );
         expected_funcs.insert(
@@ -1101,6 +1230,7 @@ mod tests {
                 main_bm,
                 false,
                 false,
+                None,
             ),
         );
         expected.insert("main", expected_funcs);

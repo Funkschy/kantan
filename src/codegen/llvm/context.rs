@@ -28,6 +28,7 @@ pub struct KantanLLVMContext<'src, 'mir> {
     blocks: HashMap<Label, LLVMBasicBlockRef>,
     functions: HashMap<&'src str, HashMap<&'mir str, LLVMValueRef>>,
     user_types: HashMap<&'src str, HashMap<&'src str, LLVMTypeRef>>,
+    compiler_types: HashMap<&'src str, Vec<LLVMTypeRef>>,
     // TODO: make hashmap to save memory
     strings: Vec<CString>,
     intrinsics: Vec<LLVMValueRef>,
@@ -48,6 +49,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             let blocks = HashMap::new();
 
             let user_types = HashMap::new();
+            let compiler_types = HashMap::new();
 
             let mut ctx = KantanLLVMContext {
                 context,
@@ -59,6 +61,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 globals,
                 blocks,
                 user_types,
+                compiler_types,
                 strings: vec![CString::from_raw(name)],
                 intrinsics: Vec::new(),
             };
@@ -210,6 +213,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         }
     }
 }
+
 impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     unsafe fn cstring(&mut self, string: &str) -> *mut i8 {
         let cstr = CString::new(string).unwrap().into_raw();
