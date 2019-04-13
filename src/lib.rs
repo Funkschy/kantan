@@ -1,4 +1,10 @@
-use std::{borrow::Borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
+use std::{
+    borrow::Borrow,
+    cmp,
+    collections::{HashMap, HashSet},
+    error, fmt, hash, io,
+    io::Write,
+};
 
 mod cli;
 pub mod codegen;
@@ -80,18 +86,7 @@ impl<'src> ClosureKey<'src> {
     }
 }
 
-pub struct ClosureDef<'src, 'ast> {
-    ty: ClosureType<'src>,
-    body: &'ast ClosureBody<'src>,
-}
-
-impl<'src, 'ast> ClosureDef<'src, 'ast> {
-    pub fn new(ty: ClosureType<'src>, body: &'ast ClosureBody<'src>) -> Self {
-        ClosureDef { ty, body }
-    }
-}
-
-pub type ClosureDefinitions<'src, 'ast> = HashMap<ClosureKey<'src>, ClosureDef<'src, 'ast>>;
+pub type ClosureDefinitions<'src> = HashSet<ClosureKey<'src>>;
 
 pub type UserTypeMap<'src> = HashMap<&'src str, UserTypeDefinition<'src>>;
 pub type FunctionMap<'src> = HashMap<&'src str, FunctionDefinition<'src>>;
@@ -236,7 +231,7 @@ fn type_check<'src, 'ast, W: Write>(
     main: &'src str,
     ast_sources: &'ast PrgMap<'src>,
     writer: &mut W,
-) -> Result<ResolveResult<'src, 'ast>, CompilationError> {
+) -> Result<ResolveResult<'src>, CompilationError> {
     let mut resolver = Resolver::new(main, ast_sources);
     let errors: Vec<String> = resolver
         .resolve()
@@ -299,7 +294,7 @@ impl<'src> fmt::Display for Mir<'src> {
 
 fn construct_tac<'src, 'ast>(
     ast_sources: &'ast PrgMap<'src>,
-    resolve_result: ResolveResult<'src, 'ast>,
+    resolve_result: ResolveResult<'src>,
 ) -> Mir<'src> {
     let mut tac = Tac::new(&resolve_result);
     for (src_name, (_, prg)) in ast_sources.iter() {
@@ -337,20 +332,6 @@ fn construct_tac<'src, 'ast>(
                 );
 
                 tac.add_function(src_name, head, FunctionBody::Block(body));
-            }
-        }
-
-        if let Some(closures) = resolve_result.mod_closures.get(src_name) {
-            for (key, def) in closures.iter() {
-                let head = FunctionHead::new(
-                    key.to_string(),
-                    (&def.ty.params).clone(),
-                    def.ty.ret_ty.as_ref().clone(),
-                    false,
-                    false,
-                );
-
-                tac.add_function(src_name, head, def.body.into());
             }
         }
     }

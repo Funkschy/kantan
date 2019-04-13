@@ -709,7 +709,10 @@ where
                 let (body, end) = if self.peek_eq(Token::LBrace) {
                     let block = self.block()?;
                     let end = block.span.end;
-                    (Box::new(ClosureBody::Block(block.node)), end)
+                    (
+                        Box::new(ClosureBody::Block(block.node, RefCell::new(None))),
+                        end,
+                    )
                 } else {
                     let expr = self.expression(false)?;
                     let end = expr.span.end;

@@ -115,7 +115,17 @@ impl<'src> fmt::Display for ArgList<'src> {
 #[derive(Debug, PartialEq)]
 pub enum ClosureBody<'src> {
     Expr(Spanned<Expr<'src>>),
-    Block(Block<'src>),
+    Block(Block<'src>, RefCell<Option<Type<'src>>>),
+}
+
+impl<'src> ClosureBody<'src> {
+    #[inline]
+    pub fn ty(&self) -> Ref<Option<Type<'src>>> {
+        match self {
+            ClosureBody::Expr(e) => e.node.ty(),
+            ClosureBody::Block(_, ty) => ty.borrow(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -240,7 +250,7 @@ impl<'src> Expr<'src> {
             StructInit { fields, .. } => fields.0.iter().map(|(_, e)| e).collect(),
             Closure(_, body, _) => match body.as_ref() {
                 ClosureBody::Expr(_) => vec![], // the type resolving has to be recursive in this case
-                ClosureBody::Block(_) => unimplemented!("TODO: implement closure body sub_exprs"),
+                ClosureBody::Block(..) => unimplemented!("TODO: implement closure body sub_exprs"),
             },
         }
     }
@@ -298,7 +308,9 @@ impl<'src> fmt::Display for Expr<'src> {
 
                 match body.as_ref() {
                     ClosureBody::Expr(e) => write!(f, "|{}| {}", params, e.node),
-                    ClosureBody::Block(_) => unimplemented!("TODO: implement closure body display"),
+                    ClosureBody::Block(..) => {
+                        unimplemented!("TODO: implement closure body display")
+                    }
                 }
             }
         }

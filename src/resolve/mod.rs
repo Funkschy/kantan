@@ -26,13 +26,13 @@ pub type ModMap<'src, T> = HashMap<&'src str, T>;
 
 pub type ModTypeMap<'src> = ModMap<'src, UserTypeMap<'src>>;
 pub type ModFuncMap<'src> = ModMap<'src, FunctionMap<'src>>;
-pub type ModClosureMap<'src, 'ast> = ModMap<'src, ClosureDefinitions<'src, 'ast>>;
+pub type ModClosureMap<'src> = ModMap<'src, ClosureDefinitions<'src>>;
 
-pub struct ResolveResult<'src, 'ast> {
+pub struct ResolveResult<'src> {
     pub symbols: SymbolTable<'src>,
     pub mod_user_types: ModTypeMap<'src>,
     pub mod_functions: ModFuncMap<'src>,
-    pub mod_closures: ModClosureMap<'src, 'ast>,
+    pub mod_closures: ModClosureMap<'src>,
 }
 
 pub(crate) struct Resolver<'src, 'ast> {
@@ -43,7 +43,7 @@ pub(crate) struct Resolver<'src, 'ast> {
     // TODO: refactor into one map
     mod_functions: ModFuncMap<'src>,
     mod_user_types: ModTypeMap<'src>,
-    mod_closures: ModClosureMap<'src, 'ast>,
+    mod_closures: ModClosureMap<'src>,
     current_func_def: FunctionDefinition<'src>,
     curr_closure_count: usize,
 }
@@ -66,7 +66,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
     }
 
-    pub fn get_result(self) -> ResolveResult<'src, 'ast> {
+    pub fn get_result(self) -> ResolveResult<'src> {
         ResolveResult {
             symbols: self.sym_table,
             mod_user_types: self.mod_user_types,
@@ -489,7 +489,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
                     let cls_count = self.curr_closure_count;
                     let cls_ty = ClosureType::new(param_types, ret_ty, cls_count);
-                    let cls_def = ClosureDef::new(cls_ty.clone(), &body);
 
                     count.set(cls_count);
                     let ty = Type::Simple(Simple::Closure(cls_ty));
@@ -499,11 +498,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     self.mod_closures
                         .entry(self.current_name)
                         .or_insert_with(ClosureDefinitions::default)
-                        .insert(key, cls_def);
+                        .insert(key);
 
                     Ok(Some(ty))
                 }
-                ClosureBody::Block(_) => unimplemented!("TODO: implement block closure type res"),
+                ClosureBody::Block(..) => {
+                    unimplemented!("TODO: implement block closure type res (remember to set type)")
+                }
             },
             ExprKind::New(expr) => {
                 let ty = self.resolve_type(expr, None)?;

@@ -54,7 +54,7 @@ pub enum FunctionBody<'src, 'ast> {
 impl<'src, 'ast> From<&'ast ClosureBody<'src>> for FunctionBody<'src, 'ast> {
     fn from(value: &'ast ClosureBody<'src>) -> Self {
         match value {
-            ClosureBody::Block(b) => FunctionBody::Block(b),
+            ClosureBody::Block(b, _) => FunctionBody::Block(b),
             ClosureBody::Expr(e) => FunctionBody::Expr(&e.node),
         }
     }
@@ -74,7 +74,7 @@ pub struct Tac<'src, 'ast> {
 }
 
 impl<'src, 'ast> Tac<'src, 'ast> {
-    pub fn new(resolve_result: &'ast ResolveResult<'src, 'ast>) -> Self {
+    pub fn new(resolve_result: &'ast ResolveResult<'src>) -> Self {
         let functions = resolve_result
             .mod_functions
             .iter()
@@ -102,6 +102,15 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     ) {
         // reset scopes
         self.names = NameTable::new();
+        self.inner_add_function(module, head, body);
+    }
+
+    fn inner_add_function(
+        &mut self,
+        module: &'src str,
+        head: FunctionHead<'src>,
+        body: FunctionBody<'src, 'ast>,
+    ) {
         self.current = Some((module, head.name.clone()));
         let main_func = head.name == "main";
 
@@ -113,7 +122,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     block = self.fill_block(&b.0, block);
                 }
                 FunctionBody::Expr(e) => {
+                    self.names.scope_enter();
                     self.return_stmt(Some(e), &mut block);
+                    self.names.scope_exit();
                 }
             }
 
@@ -145,7 +156,6 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             )
         };
 
-        self.current = None;
         self.functions.get_mut(module).unwrap().insert(head.name, f);
     }
 
@@ -182,14 +192,14 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         }
     }
 
-    fn create_block(&mut self, statements: &[Stmt<'src>]) -> InstructionBlock<'src> {
+    fn create_block(&mut self, statements: &'ast [Stmt<'src>]) -> InstructionBlock<'src> {
         let block = InstructionBlock::default();
         self.fill_block(statements, block)
     }
 
     fn fill_block(
         &mut self,
-        statements: &[Stmt<'src>],
+        statements: &'ast [Stmt<'src>],
         mut block: InstructionBlock<'src>,
     ) -> InstructionBlock<'src> {
         self.names.scope_enter();
@@ -203,7 +213,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         block
     }
 
-    fn stmt(&mut self, stmt: &Stmt<'src>, block: &mut InstructionBlock<'src>) {
+    fn stmt(&mut self, stmt: &'ast Stmt<'src>, block: &mut InstructionBlock<'src>) {
         match stmt {
             Stmt::Expr(e) => {
                 self.expr_instr(true, &e.node, block);
@@ -260,7 +270,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         };
     }
 
-    fn return_stmt(&mut self, e: Option<&Expr<'src>>, block: &mut InstructionBlock<'src>) {
+    fn return_stmt(&mut self, e: Option<&'ast Expr<'src>>, block: &mut InstructionBlock<'src>) {
         let ret = if let Some(node) = e {
             // If the return value is a struct initilizer, we need to first declare it
             // as a variable, because the llvm codegenerator expects that the target of
@@ -275,8 +285,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
     fn while_loop(
         &mut self,
-        condition: &Expr<'src>,
-        body: &Block<'src>,
+        condition: &'ast Expr<'src>,
+        body: &'ast Block<'src>,
         block: &mut InstructionBlock<'src>,
         end_label: Label,
     ) {
@@ -296,9 +306,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
     fn if_branch(
         &mut self,
-        condition: &Expr<'src>,
-        then_block: &Block<'src>,
-        else_branch: &Option<Box<Else<'src>>>,
+        condition: &'ast Expr<'src>,
+        then_block: &'ast Block<'src>,
+        else_branch: &'ast Option<Box<Else<'src>>>,
         block: &mut InstructionBlock<'src>,
         end_label: Label,
     ) {
@@ -352,7 +362,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     fn expr(
         &mut self,
         rhs: bool,
-        expr: &Expr<'src>,
+        expr: &'ast Expr<'src>,
         block: &mut InstructionBlock<'src>,
     ) -> Expression<'src> {
         match expr.kind() {
@@ -406,6 +416,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     .unwrap_or((true, false));
 
                 if cls {
+                    dbg!(&self.names);
                     Expression::CallFuncPtr {
                         ident: self.handle_ident(callee.node.name()),
                         args,
@@ -522,12 +533,22 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 };
                 Expression::New(address, ty)
             }
-            ExprKind::Closure(_, _, count) => {
+            ExprKind::Closure(params, body, count) => {
+                // TODO: find free variables and add them as env struct
+
                 if let Some((module, ref func)) = self.current {
-                    Expression::Copy(Address::FuncRef(
-                        module,
-                        format!("{}.{{closure}}.{}", func, count.get()),
-                    ))
+                    let key = format!("{}.{{closure}}.{}", func, count.get());
+                    let ret_ty = body.ty().clone().unwrap();
+                    let params = params
+                        .params
+                        .iter()
+                        .map(|p| (p.0.node, p.1.node.clone()))
+                        .collect();
+
+                    let head = FunctionHead::new(key.clone(), params, ret_ty, false, false);
+                    self.inner_add_function(module, head, body.as_ref().into());
+
+                    Expression::Copy(Address::FuncRef(module, key))
                 } else {
                     unreachable!("current should always be set")
                 }
@@ -540,7 +561,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     fn expr_instr(
         &mut self,
         rhs: bool,
-        expr: &Expr<'src>,
+        expr: &'ast Expr<'src>,
         block: &mut InstructionBlock<'src>,
     ) -> Address<'src> {
         let rval = self.address_expr(&expr);
