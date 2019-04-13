@@ -747,7 +747,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 match func {
                     // normal function call
                     Some(Ok(func_type)) => self.call_function(func_type, args, span),
-                    None => panic!("not an ident, get the type Poggers"),
                     Some(_) => {
                         let cls_ty = self.get_closure(callee, closure_ctx)?;
                         if let Type::Simple(Simple::Closure(ref ct)) = cls_ty.node {
@@ -759,6 +758,15 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                                 span,
                                 cls_ty.node.clone(),
                             ))
+                        }
+                    }
+                    None => {
+                        let cls_ty = self.resolve_type(callee, None)?;
+                        if let Type::Simple(Simple::Closure(ref ct)) = cls_ty {
+                            callee.node.set_ty(cls_ty.clone());
+                            self.call_closure(ct, args, span)
+                        } else {
+                            Err(self.call_non_function_error(callee.span, span, cls_ty.clone()))
                         }
                     }
                 }
