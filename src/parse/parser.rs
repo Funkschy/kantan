@@ -418,7 +418,7 @@ where
     }
 
     /// Parses a user ident of type name or package.name
-    fn user_ident(&mut self, expr: &Spanned<Expr<'src>>) -> ParseResult<'src, UserIdent<'src>> {
+    fn user_ident(&self, expr: &Spanned<Expr<'src>>) -> ParseResult<'src, UserIdent<'src>> {
         Ok(match expr.node.kind() {
             ExprKind::Ident(n) => UserIdent::new(&self.source.name, n),
             ExprKind::Access { left, identifier } => {
@@ -610,22 +610,38 @@ where
                 ))
             }
             Token::LParen => {
-                let ident = self.user_ident(&left)?;
-
                 let arg_list = self.arg_list()?;
                 let end = self.consume(Token::RParen)?.span.end;
                 let span = Span::new(left.span.start, end);
 
+                let (module, callee) = self.get_callee_info(left);
+
                 Ok(Spanned::from_span(
                     span,
                     Expr::new(ExprKind::Call {
-                        callee: Spanned::from_span(left.span, ident),
+                        module,
+                        callee: Box::new(callee),
                         args: arg_list,
                     }),
                 ))
             }
             _ => self.make_infix_err(token),
         }
+    }
+
+    fn get_callee_info(&self, expr: Spanned<Expr<'src>>) -> (&'src str, Spanned<Expr<'src>>) {
+        if let ExprKind::Access { left, identifier } = expr.node.kind() {
+            if let ExprKind::Ident(module) = left.node.kind() {
+                return (
+                    module,
+                    Spanned::from_span(
+                        identifier.span,
+                        Expr::new(ExprKind::Ident(identifier.node)),
+                    ),
+                );
+            }
+        }
+        (self.source.name.as_str(), expr)
     }
 
     fn prefix(&mut self, token: &Spanned<Token<'src>>, no_struct: bool) -> ExprResult<'src> {
@@ -1061,7 +1077,12 @@ mod tests {
                         34,
                         39,
                         Expr::new(ExprKind::Call {
-                            callee: Spanned::new(34, 37, UserIdent::new("main", "test")),
+                            module: "main",
+                            callee: Box::new(Spanned::new(
+                                34,
+                                37,
+                                Expr::new(ExprKind::Ident("test"))
+                            )),
                             args: ArgList(vec![])
                         })
                     ))])
@@ -1088,7 +1109,8 @@ mod tests {
                     19,
                     29,
                     Expr::new(ExprKind::Call {
-                        callee: Spanned::new(19, 27, UserIdent::new("test", "func")),
+                        module: "test",
+                        callee: Box::new(Spanned::new(24, 27, Expr::new(ExprKind::Ident("func")))),
                         args: ArgList(vec![])
                     })
                 ))])
@@ -1138,7 +1160,8 @@ mod tests {
                     19,
                     28,
                     Expr::new(ExprKind::Call {
-                        callee: Spanned::new(19, 26, UserIdent::new("test", "fun")),
+                        module: "test",
+                        callee: Box::new(Spanned::new(24, 26, Expr::new(ExprKind::Ident("fun")))),
                         args: ArgList(vec![])
                     })
                 ))])
@@ -1164,7 +1187,8 @@ mod tests {
                     19,
                     24,
                     Expr::new(ExprKind::Call {
-                        callee: Spanned::new(19, 22, UserIdent::new("main", "test")),
+                        module: "main",
+                        callee: Box::new(Spanned::new(19, 22, Expr::new(ExprKind::Ident("test")))),
                         args: ArgList(vec![])
                     })
                 ))])

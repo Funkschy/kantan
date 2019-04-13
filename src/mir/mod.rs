@@ -489,7 +489,11 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
                 Expression::Binary(left, bin_type, right)
             }
-            ExprKind::Call { callee, args } => {
+            ExprKind::Call {
+                callee,
+                args,
+                module,
+            } => {
                 let args: Vec<Address> = args
                     .0
                     .iter()
@@ -497,25 +501,29 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     .collect();
 
                 let ret_type = expr.clone_ty().unwrap();
-                let (cls, varargs) = self.mod_funcs[callee.node.module()]
-                    .get(callee.node.name())
-                    .map(|f| (false, f.varargs))
-                    .unwrap_or((true, false));
 
-                if cls {
+                if let Some(Type::Simple(Simple::Closure(_))) = callee.node.ty().as_ref() {
+                    // Closure Call
+                    let ident = self.expr_instr(rhs, &callee.node, block);
                     Expression::CallFuncPtr {
-                        // TODO: refactor when callee is an Expr
-                        ident: self.lookup_ident(callee.node.name(), &Type::Simple(Simple::Void)),
+                        ident,
                         args,
                         ret_type,
                     }
-                } else {
+                } else if let ExprKind::Ident(ident) = callee.node.kind() {
+                    let varargs = self.mod_funcs[module]
+                        .get(ident)
+                        .map(|f| f.varargs)
+                        .unwrap_or(false);
+
                     Expression::Call {
-                        ident: callee.node,
+                        ident: UserIdent::new(module, ident),
                         args,
                         ret_type,
                         varargs,
                     }
+                } else {
+                    unreachable!()
                 }
             }
             ExprKind::Assign { left, value, .. } => {

@@ -1,4 +1,5 @@
-use std::{fmt, hash};
+use crate::resolve::FreeVar;
+use std::{collections::HashSet, fmt, hash};
 
 #[derive(Debug, Eq, Copy, Clone, PartialEq, Hash)]
 pub struct UserIdent<'src> {
@@ -103,18 +104,21 @@ pub struct ClosureType<'src> {
     pub params: Vec<(&'src str, Type<'src>)>,
     pub ret_ty: Box<Type<'src>>,
     pub index: usize,
+    pub free_vars: HashSet<FreeVar<'src>>,
 }
 
 impl<'src> ClosureType<'src> {
     pub fn new(
+        index: usize,
         params: Vec<(&'src str, Type<'src>)>,
         ret_ty: Box<Type<'src>>,
-        index: usize,
+        free_vars: HashSet<FreeVar<'src>>,
     ) -> Self {
         ClosureType {
             params,
             ret_ty,
             index,
+            free_vars,
         }
     }
 }

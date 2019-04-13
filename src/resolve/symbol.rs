@@ -70,15 +70,20 @@ impl<'src> SymbolTable<'src> {
         self.scopes.len() <= 1
     }
 
-    pub fn lookup(&self, name: &'src str) -> Option<&Spanned<Symbol<'src>>> {
-        for scope in self.scopes.iter().rev() {
+    pub fn lookup(&self, name: &'src str) -> Option<(&Spanned<Symbol<'src>>, usize)> {
+        for (i, scope) in self.scopes.iter().enumerate().rev() {
             let symbol = scope.get(name);
-            if symbol.is_some() {
-                return symbol;
+            if let Some(symbol) = symbol {
+                return Some((symbol, i));
             }
         }
 
         None
+    }
+
+    #[inline]
+    pub fn num_scopes(&self) -> usize {
+        self.scopes.len()
     }
 }
 
@@ -102,21 +107,41 @@ mod tests {
         sym_table.scope_enter();
 
         assert_eq!(
-            Some(&Spanned::new(
-                1,
-                1,
-                Symbol::new("x", Type::Simple(Simple::I32), SymbolKind::Global),
+            Some((
+                &Spanned::new(
+                    1,
+                    1,
+                    Symbol::new("x", Type::Simple(Simple::I32), SymbolKind::Global),
+                ),
+                0
             )),
             sym_table.lookup("x")
         );
         assert_eq!(None, sym_table.lookup_current("x"));
 
+        sym_table.bind("x", Span::new(1, 1), Type::Simple(Simple::I32), false);
+
+        assert_eq!(
+            Some((
+                &Spanned::new(
+                    1,
+                    1,
+                    Symbol::new("x", Type::Simple(Simple::I32), SymbolKind::Local),
+                ),
+                1
+            )),
+            sym_table.lookup("x")
+        );
+
         sym_table.scope_exit();
         assert_eq!(
-            Some(&Spanned::new(
-                1,
-                1,
-                Symbol::new("x", Type::Simple(Simple::I32), SymbolKind::Global),
+            Some((
+                &Spanned::new(
+                    1,
+                    1,
+                    Symbol::new("x", Type::Simple(Simple::I32), SymbolKind::Global),
+                ),
+                0
             )),
             sym_table.lookup("x")
         );
@@ -125,7 +150,7 @@ mod tests {
                 1,
                 1,
                 Symbol::new("x", Type::Simple(Simple::I32), SymbolKind::Global),
-            )),
+            ),),
             sym_table.lookup_current("x")
         );
     }

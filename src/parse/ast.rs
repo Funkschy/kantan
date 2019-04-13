@@ -209,8 +209,8 @@ pub enum ExprKind<'src> {
         value: Box<Spanned<Expr<'src>>>,
     },
     Call {
-        // TODO: handle function pointers
-        callee: Spanned<UserIdent<'src>>,
+        module: &'src str,
+        callee: Box<Spanned<Expr<'src>>>,
         args: ArgList<'src>,
     },
     Access {
@@ -245,7 +245,20 @@ impl<'src> Expr<'src> {
             BoolBinary(l, _, r) => vec![l, r],
             Ident(_) => vec![],
             Assign { left, value, .. } => vec![left, value],
-            Call { args, .. } => args.0.iter().collect(),
+            Call { args, callee, .. } => {
+                if let ExprKind::Ident(_) = callee.node.kind() {
+                    args.0.iter().collect()
+                } else {
+                    let mut vec = Vec::with_capacity(args.0.len() + 1);
+
+                    vec.push(callee.as_ref());
+                    for a in args.0.iter() {
+                        vec.push(a);
+                    }
+
+                    vec
+                }
+            }
             Access { left, .. } => vec![left],
             StructInit { fields, .. } => fields.0.iter().map(|(_, e)| e).collect(),
             Closure(_, body, _) => match body.as_ref() {
@@ -290,7 +303,7 @@ impl<'src> fmt::Display for Expr<'src> {
             BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
             Ident(name) => write!(f, "{}", name),
             Assign { left, value, .. } => write!(f, "{} = {}", left.node, value.node),
-            Call { callee, args } => write!(f, "{}({})", callee.node, args),
+            Call { callee, args, .. } => write!(f, "{}({})", callee.node, args),
             Access { left, identifier } => write!(f, "{}.{}", left.node, identifier.node),
             StructInit { identifier, fields } => write!(
                 f,

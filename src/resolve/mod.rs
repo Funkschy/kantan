@@ -28,6 +28,23 @@ pub type ModTypeMap<'src> = ModMap<'src, UserTypeMap<'src>>;
 pub type ModFuncMap<'src> = ModMap<'src, FunctionMap<'src>>;
 pub type ModClosureMap<'src> = ModMap<'src, ClosureDefinitions<'src>>;
 
+pub type FreeVar<'src> = (&'src str, Type<'src>);
+
+#[derive(Debug)]
+struct ResolveClosureCtx<'src> {
+    scope_start: usize,
+    free_vars: HashSet<FreeVar<'src>>,
+}
+
+impl<'src> ResolveClosureCtx<'src> {
+    pub fn new(scope_start: usize) -> Self {
+        ResolveClosureCtx {
+            scope_start,
+            free_vars: HashSet::new(),
+        }
+    }
+}
+
 pub struct ResolveResult<'src> {
     pub symbols: SymbolTable<'src>,
     pub mod_user_types: ModTypeMap<'src>,
@@ -418,6 +435,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         };
     }
 
+    // TODO: find way to remove duplicate code
     fn resolve_expr(
         &mut self,
         span: Span,
@@ -438,7 +456,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
         // check child expressions
         for Spanned { node: expr, span } in exprs.iter().rev() {
-            let opt_ty = self.check_expr(*span, expr)?;
+            let opt_ty = self.check_expr(*span, expr, None)?;
             // if the type is there already, fill it in
             if let Some(ty) = opt_ty {
                 expr.set_ty(ty);
@@ -446,7 +464,43 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
 
         // check actual expression
-        let opt_ty = self.check_expr(span, expr)?;
+        let opt_ty = self.check_expr(span, expr, None)?;
+        let ty = self.ty_unwrap(span, &opt_ty, expected)?;
+        // Insert type information
+        expr.set_ty(ty.clone());
+        Ok(ty)
+    }
+
+    fn cls_resolve_expr(
+        &mut self,
+        span: Span,
+        expr: &'ast Expr<'src>,
+        expected: Option<&Type<'src>>,
+        closure_ctx: &mut ResolveClosureCtx<'src>,
+    ) -> Result<Type<'src>, ResolveError<'src>> {
+        let mut queue = expr.sub_exprs();
+        let mut exprs = Vec::with_capacity(queue.len());
+
+        // fill with all sub-sub... expressions
+        // basically a BFS
+        while !queue.is_empty() {
+            let e = queue.pop().unwrap();
+            let mut subs = e.node.sub_exprs();
+            exprs.push(e);
+            queue.append(&mut subs);
+        }
+
+        // check child expressions
+        for Spanned { node: expr, span } in exprs.iter().rev() {
+            let opt_ty = self.check_expr(*span, expr, Some(closure_ctx))?;
+            // if the type is there already, fill it in
+            if let Some(ty) = opt_ty {
+                expr.set_ty(ty);
+            }
+        }
+
+        // check actual expression
+        let opt_ty = self.check_expr(span, expr, Some(closure_ctx))?;
         let ty = self.ty_unwrap(span, &opt_ty, expected)?;
         // Insert type information
         expr.set_ty(ty.clone());
@@ -457,6 +511,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &mut self,
         span: Span,
         expr: &'ast Expr<'src>,
+        closure_ctx: Option<&mut ResolveClosureCtx<'src>>,
     ) -> Result<Option<Type<'src>>, ResolveError<'src>> {
         match expr.kind() {
             ExprKind::Error(_) => {
@@ -467,7 +522,10 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ExprKind::FloatLit(_) => Ok(Some(Type::Simple(Simple::F32))),
             ExprKind::SizeOf(_) => Ok(Some(Type::Simple(Simple::I32))),
             ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
-            ExprKind::Ident(name) => self.handle_ident(span, name).map(Some),
+            ExprKind::Ident(name) => self
+                .handle_ident(span, name, closure_ctx)
+                .map(|t| Some(t.node.clone())),
+
             ExprKind::Closure(params, body, count) => match body.as_ref() {
                 ClosureBody::Expr(e) => {
                     let mut errors = vec![];
@@ -483,12 +541,18 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         param_types.push((p.0.node, p.1.node.clone()));
                     }
 
-                    // TODO: correct span
-                    let ret_ty = Box::new(self.resolve_expr(span, &e.node, None)?);
+                    let mut cls_ctx = ResolveClosureCtx::new(self.sym_table.num_scopes() - 1);
+                    let ret_ty = self.cls_resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
+
                     self.sym_table.scope_exit();
 
                     let cls_count = self.curr_closure_count;
-                    let cls_ty = ClosureType::new(param_types, ret_ty, cls_count);
+                    let cls_ty = ClosureType::new(
+                        cls_count,
+                        param_types,
+                        Box::new(ret_ty),
+                        cls_ctx.free_vars,
+                    );
 
                     count.set(cls_count);
                     let ty = Type::Simple(Simple::Closure(cls_ty));
@@ -637,16 +701,10 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ExprKind::Assign { left, eq, value } => {
                 if let ExprKind::Ident(name) = left.node.kind() {
                     // Lookup variable in defined scopes
-                    let (ty, sym_span) = {
-                        let Spanned {
-                            span,
-                            node: Symbol { ty, .. },
-                        } = self
-                            .sym_table
-                            .lookup(name)
-                            .ok_or_else(|| self.not_defined_error(span, span, name))?;
-                        (ty, *span)
-                    };
+                    let Spanned {
+                        span: sym_span,
+                        node: ty,
+                    } = self.handle_ident(span, name, closure_ctx)?;
 
                     // get type of right expression
                     let val_type = self.resolve_type(value, Some(&ty))?;
@@ -679,15 +737,29 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     Some(self.compare_assignment(eq.span, span, ty, val_type)).transpose()
                 }
             }
-            ExprKind::Call { callee, args } => {
-                if let Ok(func_type) = self.get_function(callee) {
-                    self.call_function(&func_type, args, span)
-                } else {
-                    let cls_ty = self.get_closure(callee)?;
-                    if let Type::Simple(Simple::Closure(ct)) = cls_ty {
-                        self.call_closure(ct, args, span)
-                    } else {
-                        Err(self.call_non_function_error(callee.span, span, cls_ty.clone()))
+            ExprKind::Call {
+                callee, // can never be ExprKind::Access
+                args,
+                module,
+            } => {
+                let func = self.get_function(module, callee);
+
+                match func {
+                    // normal function call
+                    Some(Ok(func_type)) => self.call_function(func_type, args, span),
+                    None => panic!("not an ident, get the type Poggers"),
+                    Some(_) => {
+                        let cls_ty = self.get_closure(callee, closure_ctx)?;
+                        if let Type::Simple(Simple::Closure(ref ct)) = cls_ty.node {
+                            callee.node.set_ty(cls_ty.node.clone());
+                            self.call_closure(ct, args, span)
+                        } else {
+                            Err(self.call_non_function_error(
+                                callee.span,
+                                span,
+                                cls_ty.node.clone(),
+                            ))
+                        }
                     }
                 }
             }
@@ -827,11 +899,26 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         src
     }
 
-    fn handle_ident(&self, span: Span, name: &'src str) -> Result<Type<'src>, ResolveError<'src>> {
+    fn handle_ident(
+        &self,
+        span: Span,
+        name: &'src str,
+        closure_ctx: Option<&mut ResolveClosureCtx<'src>>,
+    ) -> Result<Spanned<&Type<'src>>, ResolveError<'src>> {
         self.sym_table
             .lookup(name)
+            .map(|(sym, i)| {
+                if let Some(ctx) = closure_ctx {
+                    if i < ctx.scope_start {
+                        let free_var = (name, sym.node.ty.clone());
+                        ctx.free_vars.insert(free_var);
+                    }
+                }
+
+                sym
+            })
             .ok_or_else(|| self.not_defined_error(span, span, name))
-            .map(|sym| sym.node.ty.clone())
+            .map(|sym| Spanned::from_span(sym.span, &sym.node.ty))
     }
 
     fn check_type_predicate<'a, F>(
@@ -898,22 +985,31 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
     fn get_closure(
         &self,
-        ident: &Spanned<UserIdent<'src>>,
-    ) -> Result<&Type<'src>, ResolveError<'src>> {
-        self.sym_table
-            .lookup(ident.node.name())
-            .map(|sym| &sym.node.ty)
-            .ok_or_else(|| self.not_defined_error(ident.span, ident.span, ident.node.name()))
+        callee: &Spanned<Expr<'src>>,
+        closure_ctx: Option<&mut ResolveClosureCtx<'src>>,
+    ) -> Result<Spanned<&Type<'src>>, ResolveError<'src>> {
+        if let ExprKind::Ident(ident) = callee.node.kind() {
+            return self.handle_ident(callee.span, ident, closure_ctx);
+        }
+
+        unreachable!("callee should always be an ident if this is called")
     }
 
     fn get_function(
         &self,
-        ident: &Spanned<UserIdent<'src>>,
-    ) -> Result<&FunctionDefinition<'src>, ResolveError<'src>> {
-        self.mod_functions
-            .get(ident.node.module())
-            .and_then(|funcs| funcs.get(ident.node.name()))
-            .ok_or_else(|| self.not_defined_error(ident.span, ident.span, ident.node.name()))
+        module: &'src str,
+        ident: &Spanned<Expr<'src>>,
+    ) -> Option<Result<&FunctionDefinition<'src>, ResolveError<'src>>> {
+        if let ExprKind::Ident(name) = ident.node.kind() {
+            let res = self
+                .mod_functions
+                .get(module)
+                .and_then(|funcs| funcs.get(name))
+                .ok_or_else(|| self.not_defined_error(ident.span, ident.span, name));
+            Some(res)
+        } else {
+            None
+        }
     }
 
     fn get_user_type(
@@ -1166,7 +1262,8 @@ mod tests {
                     32,
                     34,
                     Expr::new(ExprKind::Call {
-                        callee: Spanned::new(29, 37, UserIdent::new("test", "func")),
+                        module: "test",
+                        callee: Box::new(Spanned::new(29, 37, Expr::new(ExprKind::Ident("func")))),
                         args: ArgList(vec![]),
                     }),
                 ))]),
@@ -1206,7 +1303,8 @@ mod tests {
                     18,
                     23,
                     Expr::new(ExprKind::Call {
-                        callee: Spanned::new(18, 21, UserIdent::new("test", "test")),
+                        module: "test",
+                        callee: Box::new(Spanned::new(18, 21, Expr::new(ExprKind::Ident("test")))),
                         args: ArgList(vec![]),
                     }),
                 ))]),
