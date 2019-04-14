@@ -1,5 +1,4 @@
-use crate::resolve::FreeVar;
-use std::{collections::HashSet, fmt, hash};
+use std::{fmt, hash};
 
 #[derive(Debug, Eq, Copy, Clone, PartialEq, Hash)]
 pub struct UserIdent<'src> {
@@ -103,22 +102,24 @@ pub enum Simple<'src> {
 pub struct ClosureType<'src> {
     pub params: Vec<(&'src str, Type<'src>)>,
     pub ret_ty: Box<Type<'src>>,
-    pub index: usize,
-    pub free_vars: HashSet<FreeVar<'src>>,
+    // the index inside the function the closure is declared in
+    pub func_index: usize,
+    // the index inside the list of compiler types
+    pub type_index: usize,
 }
 
 impl<'src> ClosureType<'src> {
     pub fn new(
-        index: usize,
+        type_index: usize,
+        func_index: usize,
         params: Vec<(&'src str, Type<'src>)>,
         ret_ty: Box<Type<'src>>,
-        free_vars: HashSet<FreeVar<'src>>,
     ) -> Self {
         ClosureType {
+            type_index,
+            func_index,
             params,
             ret_ty,
-            index,
-            free_vars,
         }
     }
 }

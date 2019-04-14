@@ -1,7 +1,4 @@
-use std::{
-    cell::{Cell, RefCell},
-    iter::Peekable,
-};
+use std::{cell::RefCell, iter::Peekable};
 
 use super::{ast::*, error::LexError, token::*, *};
 use crate::{types::*, Source};
@@ -735,7 +732,7 @@ where
                     (Box::new(ClosureBody::Expr(expr)), end)
                 };
 
-                let closure = Expr::new(ExprKind::Closure(params, body, Cell::new(0)));
+                let closure = Expr::new(ExprKind::Closure(params, body));
                 Ok(Spanned::new(token.span.start, end, closure))
             }
             _ => self.make_prefix_err(token),
@@ -870,7 +867,6 @@ mod tests {
                             Box::new(Spanned::new(13, 13, Expr::new(ExprKind::DecLit("1")))),
                         ))
                     ))),
-                    Cell::new(0)
                 ),)
             ),
             expr
@@ -898,7 +894,6 @@ mod tests {
                         3,
                         Expr::new(ExprKind::DecLit("1"))
                     ))),
-                    Cell::new(0)
                 ))
             ),
             expr

@@ -27,6 +27,19 @@ pub type ModMap<'src, T> = HashMap<&'src str, T>;
 pub type ModTypeMap<'src> = ModMap<'src, UserTypeMap<'src>>;
 pub type ModFuncMap<'src> = ModMap<'src, FunctionMap<'src>>;
 pub type ModClosureMap<'src> = ModMap<'src, ClosureDefinitions<'src>>;
+pub type ModCompilerTypeMap<'src> = ModMap<'src, Vec<CompilerType<'src>>>;
+
+/// Types constructed by the compiler
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CompilerType<'src> {
+    fields: HashSet<FreeVar<'src>>,
+}
+
+impl<'src> CompilerType<'src> {
+    pub fn new(fields: HashSet<FreeVar<'src>>) -> Self {
+        CompilerType { fields }
+    }
+}
 
 pub type FreeVar<'src> = (&'src str, Type<'src>);
 
@@ -50,6 +63,7 @@ pub struct ResolveResult<'src> {
     pub mod_user_types: ModTypeMap<'src>,
     pub mod_functions: ModFuncMap<'src>,
     pub mod_closures: ModClosureMap<'src>,
+    pub mod_compiler_types: ModCompilerTypeMap<'src>,
 }
 
 pub(crate) struct Resolver<'src, 'ast> {
@@ -61,6 +75,7 @@ pub(crate) struct Resolver<'src, 'ast> {
     mod_functions: ModFuncMap<'src>,
     mod_user_types: ModTypeMap<'src>,
     mod_closures: ModClosureMap<'src>,
+    mod_compiler_types: ModCompilerTypeMap<'src>,
     current_func_def: FunctionDefinition<'src>,
     curr_closure_count: usize,
 }
@@ -78,6 +93,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             mod_functions: HashMap::new(),
             mod_user_types: HashMap::new(),
             mod_closures: HashMap::new(),
+            mod_compiler_types: HashMap::new(),
             current_func_def: FunctionDefinition::default(),
             curr_closure_count: 0,
         }
@@ -89,6 +105,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             mod_user_types: self.mod_user_types,
             mod_functions: self.mod_functions,
             mod_closures: self.mod_closures,
+            mod_compiler_types: self.mod_compiler_types,
         }
     }
 }
@@ -526,50 +543,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 .handle_ident(span, name, closure_ctx)
                 .map(|t| Some(t.node.clone())),
 
-            ExprKind::Closure(params, body, count) => match body.as_ref() {
-                ClosureBody::Expr(e) => {
-                    let mut errors = vec![];
-                    let mut param_types = Vec::with_capacity(params.params.len());
-                    self.sym_table.scope_enter();
-
-                    for p in params.params.iter() {
-                        self.check_user_type_defined(&p.1, &mut errors);
-                        if !errors.is_empty() {
-                            return Err(errors.swap_remove(0));
-                        }
-                        self.bind_param(p);
-                        param_types.push((p.0.node, p.1.node.clone()));
-                    }
-
-                    let mut cls_ctx = ResolveClosureCtx::new(self.sym_table.num_scopes() - 1);
-                    let ret_ty = self.cls_resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
-
-                    self.sym_table.scope_exit();
-
-                    let cls_count = self.curr_closure_count;
-                    let cls_ty = ClosureType::new(
-                        cls_count,
-                        param_types,
-                        Box::new(ret_ty),
-                        cls_ctx.free_vars,
-                    );
-
-                    count.set(cls_count);
-                    let ty = Type::Simple(Simple::Closure(cls_ty));
-                    let key = ClosureKey::new(self.current_func_def.name, cls_count);
-                    self.curr_closure_count += 1;
-
-                    self.mod_closures
-                        .entry(self.current_name)
-                        .or_insert_with(ClosureDefinitions::default)
-                        .insert(key);
-
-                    Ok(Some(ty))
-                }
-                ClosureBody::Block(..) => {
-                    unimplemented!("TODO: implement block closure type res (remember to set type)")
-                }
-            },
             ExprKind::New(expr) => {
                 let ty = self.resolve_type(expr, None)?;
 
@@ -771,6 +744,53 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     }
                 }
             }
+            ExprKind::Closure(params, body) => match body.as_ref() {
+                ClosureBody::Expr(e) => {
+                    let mut errors = Vec::new();
+                    let mut param_types = Vec::with_capacity(params.params.len());
+                    self.sym_table.scope_enter();
+
+                    for p in params.params.iter() {
+                        self.check_user_type_defined(&p.1, &mut errors);
+                        if !errors.is_empty() {
+                            return Err(errors.swap_remove(0));
+                        }
+                        self.bind_param(p);
+                        param_types.push((p.0.node, p.1.node.clone()));
+                    }
+
+                    let mut cls_ctx = ResolveClosureCtx::new(self.sym_table.num_scopes() - 1);
+                    let ret_ty = self.cls_resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
+
+                    self.sym_table.scope_exit();
+
+                    let cls_count = self.curr_closure_count;
+                    let free_vars = cls_ctx.free_vars;
+
+                    let comp_types = self
+                        .mod_compiler_types
+                        .entry(self.current_name)
+                        .or_insert_with(Vec::new);
+                    let index = comp_types.len();
+                    comp_types.push(CompilerType::new(free_vars));
+
+                    let cls_ty = ClosureType::new(index, cls_count, param_types, Box::new(ret_ty));
+
+                    let ty = Type::Simple(Simple::Closure(cls_ty));
+                    let key = ClosureKey::new(self.current_func_def.name, cls_count);
+                    self.curr_closure_count += 1;
+
+                    self.mod_closures
+                        .entry(self.current_name)
+                        .or_insert_with(ClosureDefinitions::default)
+                        .insert(key);
+
+                    Ok(Some(ty))
+                }
+                ClosureBody::Block(..) => {
+                    unimplemented!("TODO: implement block closure type res (remember to set type)")
+                }
+            },
         }
     }
 }

@@ -76,7 +76,7 @@ pub struct ClosureKey<'src> {
 
 impl<'src> fmt::Display for ClosureKey<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}.{{closure}}.{}", self.surrounding, self.index)
+        write!(f, "{}._closure_.{}", self.surrounding, self.index)
     }
 }
 
@@ -331,7 +331,7 @@ fn construct_tac<'src, 'ast>(
                     varargs,
                 );
 
-                tac.add_function(src_name, head, FunctionBody::Block(body), None);
+                tac.add_function(src_name, head, FunctionBody::Block(body));
             }
         }
     }

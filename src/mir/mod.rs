@@ -1,14 +1,11 @@
 //! The middle intermediate representation.
 //! This IR is very similar to LLVM-IR, but can also be compiled to Assembly directly.
 
-use std::{
-    collections::{HashMap, HashSet},
-    hash,
-};
+use std::collections::HashMap;
 
 use super::{
     parse::ast::*,
-    resolve::{symbol::SymbolTable, ModFuncMap, ModMap, ModTypeMap, ResolveResult},
+    resolve::{symbol::SymbolTable, ModCompilerTypeMap, ModFuncMap, ModTypeMap, ResolveResult},
     types::*,
 };
 use address::{Address, Constant};
@@ -63,66 +60,18 @@ impl<'src, 'ast> From<&'ast ClosureBody<'src>> for FunctionBody<'src, 'ast> {
     }
 }
 
-#[derive(Debug, Eq, Clone)]
-pub struct FreeVar<'src> {
-    address: Address<'src>,
-    ty: Type<'src>,
-}
-
-impl<'src> FreeVar<'src> {
-    pub fn new(address: Address<'src>, ty: Type<'src>) -> Self {
-        FreeVar { address, ty }
-    }
-}
-
-impl<'src> hash::Hash for FreeVar<'src> {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.address.hash(state);
-    }
-}
-
-impl<'src> PartialEq for FreeVar<'src> {
-    fn eq(&self, other: &Self) -> bool {
-        self.address == other.address
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct ClosureCtx<'src> {
-    scope_start: usize,
-    free_vars: HashSet<FreeVar<'src>>,
-}
-
-impl<'src> ClosureCtx<'src> {
-    pub fn new(scope_start: usize) -> Self {
-        ClosureCtx {
-            scope_start,
-            free_vars: HashSet::new(),
-        }
-    }
-}
-
-/// Types constructed by the compiler
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct MirType<'src> {
-    id: usize,
-    fields: Vec<FreeVar<'src>>,
-}
-
 #[derive(Debug)]
 pub struct Tac<'src, 'ast> {
     pub(crate) functions: HashMap<&'src str, HashMap<String, Func<'src>>>,
     pub(crate) literals: HashMap<Label, &'src str>,
     pub(crate) types: &'ast ModTypeMap<'src>,
-    pub(crate) compiler_types: ModMap<'src, Vec<MirType<'src>>>,
+    pub(crate) compiler_types: &'ast ModCompilerTypeMap<'src>,
     mod_funcs: &'ast ModFuncMap<'src>,
     symbols: &'ast SymbolTable<'src>,
     names: NameTable<'src>,
     temp_count: usize,
     label_count: usize,
     current: Option<(&'src str, String)>,
-    // if some -> currently in closure
-    closure_ctx: Option<ClosureCtx<'src>>,
 }
 
 impl<'src, 'ast> Tac<'src, 'ast> {
@@ -140,11 +89,10 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             mod_funcs: &resolve_result.mod_functions,
             symbols: &resolve_result.symbols,
             types: &resolve_result.mod_user_types,
-            compiler_types: HashMap::new(),
+            compiler_types: &resolve_result.mod_compiler_types,
             temp_count: 0,
             label_count: 0,
             current: None,
-            closure_ctx: None,
         }
     }
 
@@ -153,12 +101,10 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         module: &'src str,
         head: FunctionHead<'src>,
         body: FunctionBody<'src, 'ast>,
-        closure_ctx: Option<ClosureCtx<'src>>,
     ) {
-        self.compiler_types.entry(module).or_insert(Vec::new());
         // reset scopes
         self.names = NameTable::new();
-        self.inner_add_function(module, head, body, closure_ctx);
+        self.inner_add_function(module, head, body);
     }
 
     fn inner_add_function(
@@ -166,17 +112,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         module: &'src str,
         head: FunctionHead<'src>,
         body: FunctionBody<'src, 'ast>,
-        closure_ctx: Option<ClosureCtx<'src>>,
     ) {
         self.current = Some((module, head.name.clone()));
         let main_func = head.name == "main";
-
-        let old_cls_ctx = if let Some(ctx) = closure_ctx {
-            // replace old context with new one
-            Some(self.closure_ctx.replace(ctx))
-        } else {
-            None
-        };
 
         let (ret_type, block_map) = if !head.is_extern {
             let mut block = InstructionBlock::default();
@@ -213,36 +151,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             block_map,
             head.is_extern,
             head.is_varargs,
-            self.get_environment(module, old_cls_ctx),
         );
 
         self.functions.get_mut(module).unwrap().insert(head.name, f);
-    }
-
-    fn get_environment(
-        &mut self,
-        module: &'src str,
-        old_ctx: Option<Option<ClosureCtx<'src>>>,
-    ) -> Option<MirType<'src>> {
-        // restore old context
-        let closure_ctx = if let Some(old_ctx) = old_ctx {
-            std::mem::replace(&mut self.closure_ctx, old_ctx)
-        } else {
-            None
-        };
-
-        if let Some(ctx) = closure_ctx {
-            let env_struct = self.make_struct_from_set(module, ctx.free_vars);
-
-            self.compiler_types
-                .entry(module)
-                .or_insert(Vec::new())
-                .push(env_struct.clone());
-
-            Some(env_struct)
-        } else {
-            None
-        }
     }
 
     fn add_ret(main_func: bool, block: &mut InstructionBlock<'src>) {
@@ -272,8 +183,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     ) {
         for (i, (n, t)) in params.iter().enumerate() {
             self.names.bind(n);
-            let address = self.lookup_ident(n, t);
-            block.push(Instruction::Decl(address.clone(), (*t).clone()));
+            let address = self.lookup_ident(n);
+            block.push(Instruction::Decl(address.clone(), t.clone()));
             self.assign(address, Expression::GetParam(i as u32), block);
         }
     }
@@ -322,7 +233,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let ty = ty.borrow().clone().unwrap().node;
 
                 self.names.bind(name.node);
-                let address: Address = self.lookup_ident(name.node, &ty);
+                let address: Address = self.lookup_ident(name.node);
 
                 block.push(Instruction::Decl(address.clone(), ty));
                 self.assign(address, expr, block);
@@ -534,8 +445,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 };
 
                 let address = if let ExprKind::Ident(name) = left.node.kind() {
-                    // TODO: duplicate clone
-                    self.lookup_ident(name, &left.node.clone_ty().unwrap())
+                    self.lookup_ident(name)
                 } else {
                     let e = self.expr(false, &left.node, block);
                     // remove the deref/copy, so that the value can be assigned
@@ -611,7 +521,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let ty = expr.node.clone_ty().unwrap();
 
                 let address = if let ExprKind::Ident(name) = expr.node.kind() {
-                    self.lookup_ident(name, &ty)
+                    self.lookup_ident(name)
                 } else if let Some(a) = self.address_expr(&expr.node) {
                     let temp = self.temp();
                     block.push(Instruction::Decl(temp.clone(), ty.clone()));
@@ -629,29 +539,30 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 };
                 Expression::New(address, ty)
             }
-            ExprKind::Closure(params, body, count) => {
+            ExprKind::Closure(params, body) => {
                 // TODO: find free variables and add them as env struct
 
                 if let Some((module, ref func)) = self.current {
-                    let key = format!("{}.{{closure}}.{}", func, count.get());
-                    let ret_ty = body.ty().clone().unwrap();
-                    let params = params
-                        .params
-                        .iter()
-                        .map(|p| (p.0.node, p.1.node.clone()))
-                        .collect();
+                    if let Type::Simple(Simple::Closure(cls_ty)) = expr.ty().clone().unwrap() {
+                        let key = format!("{}._closure_.{}", func, cls_ty.func_index);
+                        let ret_ty = body.ty().clone().unwrap();
+                        let params = params
+                            .params
+                            .iter()
+                            .map(|p| (p.0.node, p.1.node.clone()))
+                            .collect();
 
-                    let ctx = Some(ClosureCtx::new(self.names.num_scopes()));
-                    let head = FunctionHead::new(key.clone(), params, ret_ty, false, false);
+                        let head = FunctionHead::new(key.clone(), params, ret_ty, false, false);
 
-                    self.names.scope_enter();
-                    self.inner_add_function(module, head, body.as_ref().into(), ctx);
-                    self.names.scope_exit();
+                        self.names.scope_enter();
+                        self.inner_add_function(module, head, body.as_ref().into());
+                        self.names.scope_exit();
 
-                    Expression::Copy(Address::FuncRef(module, key))
-                } else {
-                    unreachable!("current should always be set")
+                        return Expression::Copy(Address::FuncRef(module, key));
+                    }
                 }
+
+                unreachable!("current should always be set")
             }
             _ => unimplemented!("{:?}", expr),
         }
@@ -697,7 +608,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             ExprKind::FloatLit(lit) => Address::new_const(Type::Simple(Simple::F32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
             // TODO: duplicate clone
-            ExprKind::Ident(ident) => self.lookup_ident(ident, &expr.clone_ty().unwrap()),
+            ExprKind::Ident(ident) => self.lookup_ident(ident),
             _ => return None,
         })
     }
@@ -707,25 +618,6 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         self.label_count += 1;
         self.literals.insert(label.clone(), lit);
         label
-    }
-
-    fn make_struct_from_set(
-        &self,
-        module: &'src str,
-        free_vars: HashSet<FreeVar<'src>>,
-    ) -> MirType<'src> {
-        let id = self
-            .compiler_types
-            .get(module)
-            .map(|m| m.len())
-            .unwrap_or(0);
-
-        let mut fields = Vec::with_capacity(free_vars.len());
-        for fv in free_vars {
-            fields.push(fv);
-        }
-
-        MirType { id, fields }
     }
 
     #[inline]
@@ -740,16 +632,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         address
     }
 
-    fn lookup_ident(&mut self, ident: &'src str, ty: &Type<'src>) -> Address<'src> {
-        let (n, i) = self.names.lookup(ident);
-        let address: Address = n.into();
-        if let Some(ref mut ctx) = self.closure_ctx {
-            if i < ctx.scope_start {
-                let free_var = FreeVar::new(address.clone(), ty.clone());
-                ctx.free_vars.insert(free_var);
-            }
-        }
-        address
+    fn lookup_ident(&mut self, ident: &'src str) -> Address<'src> {
+        let (n, _) = self.names.lookup(ident);
+        n.into()
     }
 
     #[inline(always)]
@@ -868,7 +753,6 @@ mod tests {
                 bm,
                 false,
                 false,
-                None,
             ),
         );
         expected.insert("main", expected_funcs);
@@ -958,7 +842,6 @@ mod tests {
                 bm,
                 false,
                 false,
-                None,
             ),
         );
         expected.insert("main", expected_funcs);
@@ -1064,7 +947,6 @@ mod tests {
                 bm,
                 false,
                 false,
-                None,
             ),
         );
         expected.insert("main", expected_funcs);
@@ -1165,7 +1047,6 @@ mod tests {
                 bm,
                 false,
                 false,
-                None,
             ),
         );
         expected.insert("main", expected_funcs);
@@ -1226,7 +1107,6 @@ mod tests {
                 test_bm,
                 false,
                 false,
-                None,
             ),
         );
         expected_funcs.insert(
@@ -1238,7 +1118,6 @@ mod tests {
                 main_bm,
                 false,
                 false,
-                None,
             ),
         );
         expected.insert("main", expected_funcs);
