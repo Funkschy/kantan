@@ -13,7 +13,7 @@ pub struct Func<'src> {
     pub(crate) is_varargs: bool,
 }
 
-impl<'src> Func<'src> {
+impl<'src, 'ast> Func<'src> {
     pub fn new(
         name: String,
         params: Vec<(&'src str, Type<'src>)>,
@@ -47,7 +47,7 @@ impl<'src> Func<'src> {
     }
 }
 
-impl<'src> fmt::Display for Func<'src> {
+impl<'src, 'ast> fmt::Display for Func<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let params = self
             .params

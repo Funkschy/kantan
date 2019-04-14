@@ -295,11 +295,11 @@ where
             None
         };
 
-        Ok(Stmt::If {
+        Ok(Stmt::If(Box::new(IfStmt {
             condition,
             then_block,
             else_branch,
-        })
+        })))
     }
 
     fn let_decl(&mut self) -> StmtResult<'src> {

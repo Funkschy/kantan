@@ -2,7 +2,24 @@ use std::{borrow::Borrow, fmt};
 
 use crate::{parse::token::Token, types::*};
 
-use super::address::Address;
+use super::{address::Address, CompilerType};
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct CompilerIdent<'src> {
+    pub index: usize,
+    pub module: &'src str,
+    pub values: Vec<Address<'src>>,
+}
+
+impl<'src> CompilerIdent<'src> {
+    pub fn new(index: usize, module: &'src str, values: Vec<Address<'src>>) -> Self {
+        CompilerIdent {
+            index,
+            module,
+            values,
+        }
+    }
+}
 
 #[derive(PartialEq, Debug)]
 pub struct BasicBlock<'src> {
@@ -20,9 +37,12 @@ impl<'src> Default for BasicBlock<'src> {
 }
 
 #[derive(Debug, Default)]
-pub struct InstructionBlock<'src>(pub Vec<Instruction<'src>>);
+pub struct InstructionBlock<'src, 'ast>(
+    pub Vec<Instruction<'src>>,
+    pub Option<&'ast CompilerType<'src>>,
+);
 
-impl<'src> InstructionBlock<'src> {
+impl<'src, 'ast> InstructionBlock<'src, 'ast> {
     pub fn push(&mut self, instr: Instruction<'src>) {
         self.0.push(instr);
     }
@@ -138,6 +158,7 @@ pub enum Expression<'src> {
         ident: Address<'src>,
         args: Vec<Address<'src>>,
         ret_type: Type<'src>,
+        env: Option<CompilerIdent<'src>>,
     },
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset

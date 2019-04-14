@@ -16,7 +16,7 @@ mod types;
 use self::{
     mir::{func::Func, tac::Label, FunctionBody, FunctionHead, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
-    resolve::{ModTypeMap, ResolveResult, Resolver},
+    resolve::{ModCompilerTypeMap, ModTypeMap, ResolveResult, Resolver},
     types::*,
 };
 
@@ -253,6 +253,7 @@ pub struct Mir<'src> {
     pub global_strings: HashMap<Label, &'src str>,
     pub functions: HashMap<&'src str, MirFuncMap<'src>>,
     pub types: ModTypeMap<'src>,
+    pub compiler_types: ModCompilerTypeMap<'src>,
 }
 
 impl<'src> fmt::Display for Mir<'src> {
@@ -264,6 +265,30 @@ impl<'src> fmt::Display for Mir<'src> {
                 types
                     .iter()
                     .map(|(_, v)| format!("{}.{}", m, v))
+                    .collect::<Vec<String>>()
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        let compiler_types = self
+            .compiler_types
+            .iter()
+            .enumerate()
+            .flat_map(|(i, (m, types))| {
+                types
+                    .iter()
+                    .map(|ct| {
+                        format!(
+                            "{}._internal_.{}{{ {} }}",
+                            m,
+                            i,
+                            ct.free_vars
+                                .iter()
+                                .map(std::string::ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(",\n")
+                        )
+                    })
                     .collect::<Vec<String>>()
             })
             .collect::<Vec<String>>()
@@ -288,7 +313,11 @@ impl<'src> fmt::Display for Mir<'src> {
             .collect::<Vec<String>>()
             .join("\n\n");
 
-        write!(f, "{}\n{}\n{}", types, global_strings, funcs)
+        write!(
+            f,
+            "{}\n\n{}\n\n{}\n{}",
+            types, compiler_types, global_strings, funcs
+        )
     }
 }
 
@@ -336,12 +365,11 @@ fn construct_tac<'src, 'ast>(
         }
     }
 
-    dbg!(&tac.compiler_types);
-
     Mir {
         global_strings: tac.literals,
         functions: tac.functions,
         types: resolve_result.mod_user_types,
+        compiler_types: resolve_result.mod_compiler_types,
     }
 }
 

@@ -55,11 +55,11 @@ impl<'src> NameTable<'src> {
         self.num_scopes() <= 1
     }
 
-    pub fn lookup(&self, name: &'src str) -> (&String, usize) {
-        for (i, scope) in self.scopes.iter().enumerate().rev() {
+    pub fn lookup(&self, name: &'src str) -> &String {
+        for scope in self.scopes.iter().rev() {
             let n = scope.get(name);
             if let Some(n) = n {
-                return (n, i);
+                return n;
             }
         }
 

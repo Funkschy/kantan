@@ -1,0 +1,7 @@
+import io
+
+def main(): void {
+    let i = 2;
+    let f = |x: i32| i + x;
+    io.printf("%d\n", f(4));
+}

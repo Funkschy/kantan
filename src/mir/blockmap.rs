@@ -8,8 +8,8 @@ pub struct BlockMap<'src> {
     pub blocks: Vec<BasicBlock<'src>>,
 }
 
-impl<'src> BlockMap<'src> {
-    pub fn from_instructions(block: InstructionBlock<'src>) -> Self {
+impl<'src, 'ast> BlockMap<'src> {
+    pub fn from_instructions(block: InstructionBlock<'src, 'ast>) -> Self {
         let mut mappings = HashMap::new();
         let mut blocks = vec![];
         let mut vardecls = vec![];
@@ -124,7 +124,7 @@ mod tests {
             Instruction::Return(None),
         ];
 
-        let result = BlockMap::from_instructions(InstructionBlock(instructions));
+        let result = BlockMap::from_instructions(InstructionBlock(instructions, None));
         let mut expected = HashMap::new();
         expected.insert(Label::from(".entry0".to_string()), 0);
 
@@ -214,7 +214,7 @@ mod tests {
             Instruction::Return(Some(Address::Name("x".to_string()))),
         ];
 
-        let result = BlockMap::from_instructions(InstructionBlock(instructions));
+        let result = BlockMap::from_instructions(InstructionBlock(instructions, None));
         let mut expected = HashMap::new();
         expected.insert(Label::from(".entry0".to_string()), 0);
         expected.insert(Label::from(".L1".to_string()), 1);
@@ -325,7 +325,7 @@ mod tests {
             Instruction::Return(Some(Address::Name("x".to_string()))),
         ];
 
-        let result = BlockMap::from_instructions(InstructionBlock(instructions));
+        let result = BlockMap::from_instructions(InstructionBlock(instructions, None));
         let mut expected = HashMap::new();
         expected.insert(Label::from(".entry0".to_string()), 0);
         expected.insert(Label::from(".L1".to_string()), 1);

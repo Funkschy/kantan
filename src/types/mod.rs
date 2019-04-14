@@ -94,6 +94,8 @@ pub enum Simple<'src> {
     String,
     Void,
     Varargs,
+    // (module, type index)
+    Env(&'src str, usize),
     UserType(UserIdent<'src>),
     Closure(ClosureType<'src>),
 }
@@ -106,6 +108,7 @@ pub struct ClosureType<'src> {
     pub func_index: usize,
     // the index inside the list of compiler types
     pub type_index: usize,
+    pub module: &'src str,
 }
 
 impl<'src> ClosureType<'src> {
@@ -114,12 +117,14 @@ impl<'src> ClosureType<'src> {
         func_index: usize,
         params: Vec<(&'src str, Type<'src>)>,
         ret_ty: Box<Type<'src>>,
+        module: &'src str,
     ) -> Self {
         ClosureType {
             type_index,
             func_index,
             params,
             ret_ty,
+            module,
         }
     }
 }
@@ -156,6 +161,7 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Bool => "bool",
             Simple::Void => "void",
             Simple::Varargs => "...",
+            Simple::Env(m, i) => return write!(f, "{}._env_.{}", m, i),
             Simple::UserType(name) => return write!(f, "{}", name),
             Simple::Closure(ClosureType { params, ret_ty, .. }) => {
                 return write!(

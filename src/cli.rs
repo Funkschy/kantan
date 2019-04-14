@@ -61,15 +61,16 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     find_errors_rec(s, errors);
                 }
             }
-            Stmt::If {
-                condition:
-                    Spanned {
-                        node: condition,
-                        span,
-                    },
-                then_block,
-                else_branch,
-            } => {
+            Stmt::If(if_stmt) => {
+                let IfStmt {
+                    condition:
+                        Spanned {
+                            node: condition,
+                            span,
+                        },
+                    then_block,
+                    else_branch,
+                } = if_stmt.as_ref();
                 if condition.is_err() {
                     errors.push((*span, condition.to_string()));
                 }

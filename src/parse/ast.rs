@@ -37,11 +37,7 @@ pub enum TypeDef<'src> {
 #[derive(Debug, PartialEq)]
 pub enum Stmt<'src> {
     VarDecl(Box<VarDecl<'src>>),
-    If {
-        condition: Spanned<Expr<'src>>,
-        then_block: Block<'src>,
-        else_branch: Option<Box<Else<'src>>>,
-    },
+    If(Box<IfStmt<'src>>),
     While {
         condition: Spanned<Expr<'src>>,
         body: Block<'src>,
@@ -49,6 +45,13 @@ pub enum Stmt<'src> {
     Return(Option<Spanned<Expr<'src>>>),
     Delete(Box<Spanned<Expr<'src>>>),
     Expr(Spanned<Expr<'src>>),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IfStmt<'src> {
+    pub condition: Spanned<Expr<'src>>,
+    pub then_block: Block<'src>,
+    pub else_branch: Option<Box<Else<'src>>>,
 }
 
 #[derive(Debug, PartialEq)]

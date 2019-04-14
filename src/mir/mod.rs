@@ -5,7 +5,10 @@ use std::collections::HashMap;
 
 use super::{
     parse::ast::*,
-    resolve::{symbol::SymbolTable, ModCompilerTypeMap, ModFuncMap, ModTypeMap, ResolveResult},
+    resolve::{
+        symbol::SymbolTable, CompilerType, ModCompilerTypeMap, ModFuncMap, ModTypeMap,
+        ResolveResult,
+    },
     types::*,
 };
 use address::{Address, Constant};
@@ -65,7 +68,7 @@ pub struct Tac<'src, 'ast> {
     pub(crate) functions: HashMap<&'src str, HashMap<String, Func<'src>>>,
     pub(crate) literals: HashMap<Label, &'src str>,
     pub(crate) types: &'ast ModTypeMap<'src>,
-    pub(crate) compiler_types: &'ast ModCompilerTypeMap<'src>,
+    compiler_types: &'ast ModCompilerTypeMap<'src>,
     mod_funcs: &'ast ModFuncMap<'src>,
     symbols: &'ast SymbolTable<'src>,
     names: NameTable<'src>,
@@ -104,21 +107,50 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     ) {
         // reset scopes
         self.names = NameTable::new();
-        self.inner_add_function(module, head, body);
+        self.inner_add_function(module, head, body, None);
     }
 
     fn inner_add_function(
         &mut self,
         module: &'src str,
-        head: FunctionHead<'src>,
+        mut head: FunctionHead<'src>,
         body: FunctionBody<'src, 'ast>,
+        env: Option<&'ast CompilerType<'src>>,
     ) {
         self.current = Some((module, head.name.clone()));
         let main_func = head.name == "main";
 
         let (ret_type, block_map) = if !head.is_extern {
             let mut block = InstructionBlock::default();
-            self.fill_params(&mut block, &head.params);
+            block.1 = env;
+
+            if let Some(env) = env {
+                if !env.free_vars.is_empty() {
+                    let env_ty = Simple::Env(module, env.index);
+                    let env_ptr_ty = Type::Pointer(Pointer::new(1, env_ty.clone()));
+                    head.params.insert(0, ("_p_env", env_ptr_ty));
+                    self.fill_params(&mut block, &head.params);
+
+                    let env_address = Address::Name("_env".to_owned());
+                    block.push(Instruction::Decl(env_address.clone(), Type::Simple(env_ty)));
+
+                    let address = self.temp_assign(
+                        Expression::Unary(UnaryType::Deref, Address::Name("_p_env".to_owned())),
+                        &mut block,
+                    );
+
+                    self.assign(
+                        env_address.clone(),
+                        Expression::Unary(UnaryType::Deref, address),
+                        &mut block,
+                    );
+                } else {
+                    self.fill_params(&mut block, &head.params);
+                }
+            } else {
+                self.fill_params(&mut block, &head.params);
+            }
+
             match body {
                 FunctionBody::Block(b) => {
                     block = self.fill_block(&b.0, block);
@@ -156,7 +188,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         self.functions.get_mut(module).unwrap().insert(head.name, f);
     }
 
-    fn add_ret(main_func: bool, block: &mut InstructionBlock<'src>) {
+    fn add_ret(main_func: bool, block: &mut InstructionBlock<'src, 'ast>) {
         let add_ret = match block.last() {
             Some(Instruction::Return(_)) => false,
             _ => true,
@@ -178,18 +210,29 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
     fn fill_params(
         &mut self,
-        block: &mut InstructionBlock<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
         params: &[(&'src str, Type<'src>)],
     ) {
         for (i, (n, t)) in params.iter().enumerate() {
-            self.names.bind(n);
-            let address = self.lookup_ident(n);
-            block.push(Instruction::Decl(address.clone(), t.clone()));
-            self.assign(address, Expression::GetParam(i as u32), block);
+            self.bind_param(i as u32, n, t, block);
         }
     }
 
-    fn create_block(&mut self, statements: &'ast [Stmt<'src>]) -> InstructionBlock<'src> {
+    #[inline(always)]
+    fn bind_param(
+        &mut self,
+        index: u32,
+        name: &'src str,
+        ty: &Type<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
+    ) {
+        self.names.bind(name);
+        let address = self.handle_ident(name, block);
+        block.push(Instruction::Decl(address.clone(), ty.clone()));
+        self.assign(address, Expression::GetParam(index), block);
+    }
+
+    fn create_block(&mut self, statements: &'ast [Stmt<'src>]) -> InstructionBlock<'src, 'ast> {
         let block = InstructionBlock::default();
         self.fill_block(statements, block)
     }
@@ -197,8 +240,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     fn fill_block(
         &mut self,
         statements: &'ast [Stmt<'src>],
-        mut block: InstructionBlock<'src>,
-    ) -> InstructionBlock<'src> {
+        mut block: InstructionBlock<'src, 'ast>,
+    ) -> InstructionBlock<'src, 'ast> {
         self.names.scope_enter();
 
         for s in statements {
@@ -210,7 +253,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         block
     }
 
-    fn stmt(&mut self, stmt: &'ast Stmt<'src>, block: &mut InstructionBlock<'src>) {
+    fn stmt(&mut self, stmt: &'ast Stmt<'src>, block: &mut InstructionBlock<'src, 'ast>) {
         match stmt {
             Stmt::Expr(e) => {
                 self.expr_instr(true, &e.node, block);
@@ -223,7 +266,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     ..
                 } = decl.as_ref();
 
-                let expr = if let Some(rval) = self.address_expr(&value.node) {
+                let expr = if let Some(rval) = self.address_expr(&value.node, block) {
                     rval.into()
                 } else {
                     self.expr(true, &value.node, block)
@@ -233,7 +276,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let ty = ty.borrow().clone().unwrap().node;
 
                 self.names.bind(name.node);
-                let address: Address = self.lookup_ident(name.node);
+                let address: Address = self.handle_ident(name.node, block);
 
                 block.push(Instruction::Decl(address.clone(), ty));
                 self.assign(address, expr, block);
@@ -250,11 +293,13 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 self.while_loop(&condition.node, body, block, end_label.clone());
                 block.push(Instruction::Label(end_label));
             }
-            Stmt::If {
-                condition,
-                then_block,
-                else_branch,
-            } => {
+            Stmt::If(if_stmt) => {
+                let IfStmt {
+                    condition,
+                    then_block,
+                    else_branch,
+                } = if_stmt.as_ref();
+
                 let end_label = self.label();
                 self.if_branch(
                     &condition.node,
@@ -268,7 +313,11 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         };
     }
 
-    fn return_stmt(&mut self, e: Option<&'ast Expr<'src>>, block: &mut InstructionBlock<'src>) {
+    fn return_stmt(
+        &mut self,
+        e: Option<&'ast Expr<'src>>,
+        block: &mut InstructionBlock<'src, 'ast>,
+    ) {
         let ret = if let Some(node) = e {
             // If the return value is a struct initilizer, we need to first declare it
             // as a variable, because the llvm codegenerator expects that the target of
@@ -285,7 +334,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         &mut self,
         condition: &'ast Expr<'src>,
         body: &'ast Block<'src>,
-        block: &mut InstructionBlock<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
         end_label: Label,
     ) {
         let condition_label = self.label();
@@ -307,7 +356,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         condition: &'ast Expr<'src>,
         then_block: &'ast Block<'src>,
         else_branch: &'ast Option<Box<Else<'src>>>,
-        block: &mut InstructionBlock<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
         end_label: Label,
     ) {
         let condition = self.expr_instr(true, condition, block);
@@ -332,12 +381,13 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
             match else_branch.as_ref() {
                 Else::IfStmt(s) => {
-                    if let Stmt::If {
-                        condition,
-                        then_block,
-                        else_branch,
-                    } = s.as_ref()
-                    {
+                    if let Stmt::If(if_stmt) = s.as_ref() {
+                        let IfStmt {
+                            condition,
+                            then_block,
+                            else_branch,
+                        } = if_stmt.as_ref();
+
                         self.if_branch(
                             &condition.node,
                             &then_block,
@@ -361,7 +411,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         &mut self,
         rhs: bool,
         expr: &'ast Expr<'src>,
-        block: &mut InstructionBlock<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
     ) -> Expression<'src> {
         match expr.kind() {
             ExprKind::Binary(l, op, r) => {
@@ -413,13 +463,37 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
                 let ret_type = expr.clone_ty().unwrap();
 
-                if let Some(Type::Simple(Simple::Closure(_))) = callee.node.ty().as_ref() {
+                if let Some(Type::Simple(Simple::Closure(cls_ty))) = callee.node.ty().as_ref() {
+                    let comp_ty = &self.compiler_types[module].get(cls_ty.type_index);
+                    let env = if let Some(env) = comp_ty {
+                        if !env.free_vars.is_empty() {
+                            let vars = env
+                                .free_vars
+                                .iter()
+                                .map(|fv| fv.name)
+                                .map(|name| self.handle_ident(name, block))
+                                .collect::<Vec<_>>();
+
+                            block.push(Instruction::Decl(
+                                Address::Name("_env".to_string()),
+                                Type::Simple(Simple::Env(module, cls_ty.type_index)),
+                            ));
+
+                            Some(CompilerIdent::new(cls_ty.type_index, module, vars))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
                     // Closure Call
                     let ident = self.expr_instr(rhs, &callee.node, block);
                     Expression::CallFuncPtr {
                         ident,
                         args,
                         ret_type,
+                        env,
                     }
                 } else if let ExprKind::Ident(ident) = callee.node.kind() {
                     let varargs = self.mod_funcs[module]
@@ -438,14 +512,14 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 }
             }
             ExprKind::Assign { left, value, .. } => {
-                let expr = if let Some(rval) = self.address_expr(&value.node) {
+                let expr = if let Some(rval) = self.address_expr(&value.node, block) {
                     rval.into()
                 } else {
                     self.expr(true, &value.node, block)
                 };
 
                 let address = if let ExprKind::Ident(name) = left.node.kind() {
-                    self.lookup_ident(name)
+                    self.handle_ident(name, block)
                 } else {
                     let e = self.expr(false, &left.node, block);
                     // remove the deref/copy, so that the value can be assigned
@@ -521,8 +595,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let ty = expr.node.clone_ty().unwrap();
 
                 let address = if let ExprKind::Ident(name) = expr.node.kind() {
-                    self.lookup_ident(name)
-                } else if let Some(a) = self.address_expr(&expr.node) {
+                    self.handle_ident(name, block)
+                } else if let Some(a) = self.address_expr(&expr.node, block) {
                     let temp = self.temp();
                     block.push(Instruction::Decl(temp.clone(), ty.clone()));
                     self.assign(temp, Expression::Copy(a), block)
@@ -545,6 +619,14 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 if let Some((module, ref func)) = self.current {
                     if let Type::Simple(Simple::Closure(cls_ty)) = expr.ty().clone().unwrap() {
                         let key = format!("{}._closure_.{}", func, cls_ty.func_index);
+                        let type_idx = cls_ty.type_index;
+                        let compiler_type = &self.compiler_types[module][type_idx];
+                        let compiler_type = if compiler_type.free_vars.is_empty() {
+                            None
+                        } else {
+                            Some(compiler_type)
+                        };
+
                         let ret_ty = body.ty().clone().unwrap();
                         let params = params
                             .params
@@ -555,7 +637,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                         let head = FunctionHead::new(key.clone(), params, ret_ty, false, false);
 
                         self.names.scope_enter();
-                        self.inner_add_function(module, head, body.as_ref().into());
+                        self.inner_add_function(module, head, body.as_ref().into(), compiler_type);
                         self.names.scope_exit();
 
                         return Expression::Copy(Address::FuncRef(module, key));
@@ -573,9 +655,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         &mut self,
         rhs: bool,
         expr: &'ast Expr<'src>,
-        block: &mut InstructionBlock<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
     ) -> Address<'src> {
-        let rval = self.address_expr(&expr);
+        let rval = self.address_expr(&expr, block);
         if let Some(rval) = rval {
             return rval;
         }
@@ -601,14 +683,18 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         self.assign(temp, e, block)
     }
 
-    fn address_expr(&mut self, expr: &Expr<'src>) -> Option<Address<'src>> {
+    fn address_expr(
+        &mut self,
+        expr: &Expr<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
+    ) -> Option<Address<'src>> {
         Some(match expr.kind() {
             ExprKind::NullLit => Address::Null(expr.clone_ty().unwrap()),
             ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
             ExprKind::FloatLit(lit) => Address::new_const(Type::Simple(Simple::F32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
             // TODO: duplicate clone
-            ExprKind::Ident(ident) => self.lookup_ident(ident),
+            ExprKind::Ident(ident) => self.handle_ident(ident, block),
             _ => return None,
         })
     }
@@ -625,23 +711,33 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         &mut self,
         address: Address<'src>,
         expression: Expression<'src>,
-        block: &mut InstructionBlock<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
     ) -> Address<'src> {
         let assign = Instruction::Assignment(address.clone(), Box::new(expression));
         block.push(assign);
         address
     }
 
-    fn lookup_ident(&mut self, ident: &'src str) -> Address<'src> {
-        let (n, _) = self.names.lookup(ident);
-        n.into()
+    fn handle_ident(
+        &mut self,
+        ident: &'src str,
+        block: &mut InstructionBlock<'src, 'ast>,
+    ) -> Address<'src> {
+        // check env first, because names.lookup() panics if not found
+        if let Some(env) = block.1 {
+            if let Some(fv) = env.free_vars.iter().find(|fv| fv.name == ident) {
+                let address = Address::Name("_env".to_string());
+                return self.temp_assign(Expression::StructGep(address, fv.index as u32), block);
+            }
+        }
+        self.names.lookup(ident).into()
     }
 
     #[inline(always)]
     fn temp_assign(
         &mut self,
         expression: Expression<'src>,
-        block: &mut InstructionBlock<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
     ) -> Address<'src> {
         let temp = self.temp();
         self.assign(temp, expression, block)

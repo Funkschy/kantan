@@ -36,11 +36,12 @@ impl<'src> fmt::Display for ResolveError<'src> {
         };
 
         let s = match &self.error {
-            ResolveErrorType::IllegalAssignment(AssignmentError {
-                name,
-                definition_span,
-                ref bin_op_err,
-            }) => {
+            ResolveErrorType::IllegalAssignment(err) => {
+                let AssignmentError {
+                    name,
+                    definition_span,
+                    ref bin_op_err,
+                } = err.as_ref();
                 let (line_nr, _) = find_line_index(self.source, definition_span.start);
                 let span = *definition_span;
                 let reason = format!(
@@ -95,7 +96,7 @@ impl<'src> fmt::Display for ResolveError<'src> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ResolveErrorType<'src> {
-    IllegalAssignment(AssignmentError<'src>),
+    IllegalAssignment(Box<AssignmentError<'src>>),
     NotDefined(DefinitionError<'src>),
     IllegalOperation(BinaryOperationError<'src>),
     IllegalType(IllegalTypeError<'src>),

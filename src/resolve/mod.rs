@@ -1,6 +1,7 @@
 use std::{
     borrow::Borrow,
     collections::{HashMap, HashSet},
+    hash,
 };
 
 use crate::{
@@ -32,16 +33,54 @@ pub type ModCompilerTypeMap<'src> = ModMap<'src, Vec<CompilerType<'src>>>;
 /// Types constructed by the compiler
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CompilerType<'src> {
-    fields: HashSet<FreeVar<'src>>,
+    pub index: usize,
+    pub free_vars: HashSet<FreeVar<'src>>,
 }
 
 impl<'src> CompilerType<'src> {
-    pub fn new(fields: HashSet<FreeVar<'src>>) -> Self {
-        CompilerType { fields }
+    pub fn new(index: usize, free_vars: HashSet<FreeVar<'src>>) -> Self {
+        CompilerType { index, free_vars }
     }
 }
 
-pub type FreeVar<'src> = (&'src str, Type<'src>);
+#[derive(Debug, Clone, Eq)]
+pub struct FreeVar<'src> {
+    // used to keep the order intact inside the hashset
+    pub index: usize,
+    pub scope: usize,
+    pub name: &'src str,
+    pub ty: Type<'src>,
+}
+
+impl<'src> FreeVar<'src> {
+    pub fn new(index: usize, scope: usize, name: &'src str, ty: Type<'src>) -> Self {
+        FreeVar {
+            index,
+            scope,
+            name,
+            ty,
+        }
+    }
+}
+
+impl<'src> hash::Hash for FreeVar<'src> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.ty.hash(state);
+    }
+}
+
+impl<'src> PartialEq for FreeVar<'src> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.ty == other.ty
+    }
+}
+
+impl<'src> fmt::Display for FreeVar<'src> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.name, self.ty)
+    }
+}
 
 #[derive(Debug)]
 struct ResolveClosureCtx<'src> {
@@ -343,11 +382,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     }
                 };
             }
-            Stmt::If {
-                condition,
-                then_block,
-                else_branch,
-            } => {
+            Stmt::If(if_stmt) => {
+                let IfStmt {
+                    condition,
+                    then_block,
+                    else_branch,
+                } = if_stmt.as_ref();
                 match self.resolve_expr(condition.span, &condition.node, None) {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => self.expect_bool(ty, "if condition", condition.span, errors),
@@ -772,9 +812,15 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         .entry(self.current_name)
                         .or_insert_with(Vec::new);
                     let index = comp_types.len();
-                    comp_types.push(CompilerType::new(free_vars));
+                    comp_types.push(CompilerType::new(index, free_vars));
 
-                    let cls_ty = ClosureType::new(index, cls_count, param_types, Box::new(ret_ty));
+                    let cls_ty = ClosureType::new(
+                        index,
+                        cls_count,
+                        param_types,
+                        Box::new(ret_ty),
+                        self.current_name,
+                    );
 
                     let ty = Type::Simple(Simple::Closure(cls_ty));
                     let key = ClosureKey::new(self.current_func_def.name, cls_count);
@@ -938,7 +984,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             .map(|(sym, i)| {
                 if let Some(ctx) = closure_ctx {
                     if i < ctx.scope_start {
-                        let free_var = (name, sym.node.ty.clone());
+                        let idx = ctx.free_vars.len(); // is ignored for cmp
+                        let free_var = FreeVar::new(idx, i, name, sym.node.ty.clone());
                         ctx.free_vars.insert(free_var);
                     }
                 }
@@ -1103,11 +1150,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             self.error(
                 err_span,
                 expr_span,
-                ResolveErrorType::IllegalAssignment(AssignmentError {
+                ResolveErrorType::IllegalAssignment(Box::new(AssignmentError {
                     name,
                     definition_span: def_span,
                     bin_op_err: err,
-                }),
+                })),
             )
         } else {
             panic!("Invalid Error Type");
