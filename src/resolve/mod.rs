@@ -1,7 +1,6 @@
 use std::{
     borrow::Borrow,
     collections::{HashMap, HashSet},
-    hash,
 };
 
 use crate::{
@@ -31,68 +30,94 @@ pub type ModClosureMap<'src> = ModMap<'src, ClosureDefinitions<'src>>;
 pub type ModCompilerTypeMap<'src> = ModMap<'src, Vec<CompilerType<'src>>>;
 
 /// Types constructed by the compiler
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerType<'src> {
+    pub module: &'src str,
     pub index: usize,
-    pub free_vars: HashSet<FreeVar<'src>>,
+    pub free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
 }
 
-impl<'src> CompilerType<'src> {
-    pub fn new(index: usize, free_vars: HashSet<FreeVar<'src>>) -> Self {
-        CompilerType { index, free_vars }
+impl<'src> fmt::Display for CompilerType<'src> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let vars = self
+            .free_vars
+            .iter()
+            .map(|(k, _)| format!("{}: {}", k.name, k.ty))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        write!(
+            f,
+            "{}._internal_.{} {{ {} }}",
+            self.module, self.index, vars
+        )
     }
 }
 
-#[derive(Debug, Clone, Eq)]
-pub struct FreeVar<'src> {
-    // used to keep the order intact inside the hashset
-    pub index: usize,
-    pub scope: usize,
+impl<'src> CompilerType<'src> {
+    pub fn new(
+        index: usize,
+        module: &'src str,
+        free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
+    ) -> Self {
+        CompilerType {
+            index,
+            module,
+            free_vars,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.free_vars.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.free_vars.len()
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct FreeVarKey<'src> {
     pub name: &'src str,
     pub ty: Type<'src>,
 }
 
-impl<'src> FreeVar<'src> {
-    pub fn new(index: usize, scope: usize, name: &'src str, ty: Type<'src>) -> Self {
-        FreeVar {
-            index,
-            scope,
-            name,
-            ty,
-        }
+impl<'src> FreeVarKey<'src> {
+    pub fn new(name: &'src str, ty: Type<'src>) -> Self {
+        FreeVarKey { name, ty }
     }
 }
 
-impl<'src> hash::Hash for FreeVar<'src> {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.ty.hash(state);
-    }
-}
-
-impl<'src> PartialEq for FreeVar<'src> {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.ty == other.ty
-    }
-}
-
-impl<'src> fmt::Display for FreeVar<'src> {
+impl<'src> fmt::Display for FreeVarKey<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}: {}", self.name, self.ty)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FreeVarValue {
+    // used to keep the order intact inside the hashset
+    pub index: usize,
+    pub scope: usize,
+}
+
+impl FreeVarValue {
+    pub fn new(index: usize, scope: usize) -> Self {
+        FreeVarValue { index, scope }
     }
 }
 
 #[derive(Debug)]
 struct ResolveClosureCtx<'src> {
     scope_start: usize,
-    free_vars: HashSet<FreeVar<'src>>,
+    free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
 }
 
 impl<'src> ResolveClosureCtx<'src> {
     pub fn new(scope_start: usize) -> Self {
         ResolveClosureCtx {
             scope_start,
-            free_vars: HashSet::new(),
+            free_vars: HashMap::new(),
         }
     }
 }
@@ -309,8 +334,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ..
         } = top_lvl
         {
+            let mut closure_ctx = ResolveClosureCtx::new(0);
             self.current_func_def = self.mod_functions[self.current_name][name.node].clone();
-            self.curr_closure_count = 0;
             self.sym_table.scope_enter();
 
             for p in params.params.iter() {
@@ -319,7 +344,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
             if !*is_extern {
                 for stmt in body.0.iter() {
-                    self.resolve_stmt(stmt, errors);
+                    self.resolve_stmt(stmt, errors, &mut closure_ctx);
                 }
             }
 
@@ -327,7 +352,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
     }
 
-    fn resolve_stmt(&mut self, stmt: &'ast Stmt<'src>, errors: &mut Vec<ResolveError<'src>>) {
+    fn resolve_stmt(
+        &mut self,
+        stmt: &'ast Stmt<'src>,
+        errors: &mut Vec<ResolveError<'src>>,
+        closure_ctx: &mut ResolveClosureCtx<'src>,
+    ) {
         match stmt {
             Stmt::VarDecl(decl) => {
                 let VarDecl {
@@ -344,7 +374,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     None
                 };
 
-                match self.resolve_expr(value.span, &value.node, expected) {
+                match self.resolve_expr(value.span, &value.node, expected, closure_ctx) {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => {
                         if let Some(var_type) = var_type_clone {
@@ -388,7 +418,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     then_block,
                     else_branch,
                 } = if_stmt.as_ref();
-                match self.resolve_expr(condition.span, &condition.node, None) {
+                match self.resolve_expr(condition.span, &condition.node, None, closure_ctx) {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => self.expect_bool(ty, "if condition", condition.span, errors),
                 }
@@ -396,7 +426,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 // TODO: refactor to method
                 self.sym_table.scope_enter();
                 for stmt in &then_block.0 {
-                    self.resolve_stmt(&stmt, errors);
+                    self.resolve_stmt(&stmt, errors, closure_ctx);
                 }
                 self.sym_table.scope_exit();
 
@@ -404,7 +434,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     match else_branch.as_ref() {
                         Else::IfStmt(s) => {
                             if let Stmt::If { .. } = s.as_ref() {
-                                self.resolve_stmt(s, errors);
+                                self.resolve_stmt(s, errors, closure_ctx);
                             } else {
                                 panic!("Only if statement allowed here");
                             }
@@ -412,7 +442,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         Else::Block(b) => {
                             self.sym_table.scope_enter();
                             for stmt in &b.0 {
-                                self.resolve_stmt(&stmt, errors);
+                                self.resolve_stmt(&stmt, errors, closure_ctx);
                             }
                             self.sym_table.scope_exit();
                         }
@@ -420,7 +450,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             Stmt::While { condition, body } => {
-                match self.resolve_expr(condition.span, &condition.node, None) {
+                match self.resolve_expr(condition.span, &condition.node, None, closure_ctx) {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => self.expect_bool(ty, "while condition", condition.span, errors),
                 }
@@ -428,7 +458,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 // TODO: refactor to method
                 self.sym_table.scope_enter();
                 for stmt in &body.0 {
-                    self.resolve_stmt(&stmt, errors);
+                    self.resolve_stmt(&stmt, errors, closure_ctx);
                 }
                 self.sym_table.scope_exit();
             }
@@ -441,7 +471,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         unimplemented!("Error for return in void");
                     }
 
-                    let resolved = self.resolve_expr(expr.span, &expr.node, Some(&return_type));
+                    let resolved =
+                        self.resolve_expr(expr.span, &expr.node, Some(&return_type), closure_ctx);
 
                     if let Err(msg) = resolved {
                         errors.push(msg);
@@ -467,7 +498,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             Stmt::Delete(expr) => {
-                let ty = self.resolve_expr(expr.span, &expr.node, None);
+                let ty = self.resolve_expr(expr.span, &expr.node, None, closure_ctx);
                 if let Err(msg) = ty {
                     errors.push(msg);
                 } else if let Ok(ty) = ty {
@@ -485,50 +516,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             Stmt::Expr(ref expr) => {
-                if let Err(msg) = self.resolve_expr(expr.span, &expr.node, None) {
+                if let Err(msg) = self.resolve_expr(expr.span, &expr.node, None, closure_ctx) {
                     errors.push(msg);
                 }
             }
         };
     }
 
-    // TODO: find way to remove duplicate code
     fn resolve_expr(
-        &mut self,
-        span: Span,
-        expr: &'ast Expr<'src>,
-        expected: Option<&Type<'src>>,
-    ) -> Result<Type<'src>, ResolveError<'src>> {
-        let mut queue = expr.sub_exprs();
-        let mut exprs = Vec::with_capacity(queue.len());
-
-        // fill with all sub-sub... expressions
-        // basically a BFS
-        while !queue.is_empty() {
-            let e = queue.pop().unwrap();
-            let mut subs = e.node.sub_exprs();
-            exprs.push(e);
-            queue.append(&mut subs);
-        }
-
-        // check child expressions
-        for Spanned { node: expr, span } in exprs.iter().rev() {
-            let opt_ty = self.check_expr(*span, expr, None)?;
-            // if the type is there already, fill it in
-            if let Some(ty) = opt_ty {
-                expr.set_ty(ty);
-            }
-        }
-
-        // check actual expression
-        let opt_ty = self.check_expr(span, expr, None)?;
-        let ty = self.ty_unwrap(span, &opt_ty, expected)?;
-        // Insert type information
-        expr.set_ty(ty.clone());
-        Ok(ty)
-    }
-
-    fn cls_resolve_expr(
         &mut self,
         span: Span,
         expr: &'ast Expr<'src>,
@@ -549,7 +544,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
         // check child expressions
         for Spanned { node: expr, span } in exprs.iter().rev() {
-            let opt_ty = self.check_expr(*span, expr, Some(closure_ctx))?;
+            let opt_ty = self.check_expr(*span, expr, closure_ctx)?;
             // if the type is there already, fill it in
             if let Some(ty) = opt_ty {
                 expr.set_ty(ty);
@@ -557,7 +552,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
 
         // check actual expression
-        let opt_ty = self.check_expr(span, expr, Some(closure_ctx))?;
+        let opt_ty = self.check_expr(span, expr, closure_ctx)?;
         let ty = self.ty_unwrap(span, &opt_ty, expected)?;
         // Insert type information
         expr.set_ty(ty.clone());
@@ -568,7 +563,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &mut self,
         span: Span,
         expr: &'ast Expr<'src>,
-        closure_ctx: Option<&mut ResolveClosureCtx<'src>>,
+        closure_ctx: &mut ResolveClosureCtx<'src>,
     ) -> Result<Option<Type<'src>>, ResolveError<'src>> {
         match expr.kind() {
             ExprKind::Error(_) => {
@@ -800,19 +795,37 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     }
 
                     let mut cls_ctx = ResolveClosureCtx::new(self.sym_table.num_scopes() - 1);
-                    let ret_ty = self.cls_resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
+                    let ret_ty = self.resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
 
                     self.sym_table.scope_exit();
 
+                    let current_scope = self.sym_table.num_scopes();
+
+                    // vars of cls_ctx that are not free variables of outer scope
+                    let diff = cls_ctx
+                        .free_vars
+                        .iter()
+                        .map(|(_, v)| v.scope)
+                        .filter(|s| *s >= current_scope)
+                        .count();
+
+                    // merge envs
+                    for (k, mut v) in cls_ctx.free_vars {
+                        if v.scope < current_scope {
+                            v.index -= diff;
+                            closure_ctx.free_vars.insert(k, v);
+                        }
+                    }
+
                     let cls_count = self.curr_closure_count;
-                    let free_vars = cls_ctx.free_vars;
+                    let free_vars = closure_ctx.free_vars.clone();
 
                     let comp_types = self
                         .mod_compiler_types
                         .entry(self.current_name)
                         .or_insert_with(Vec::new);
                     let index = comp_types.len();
-                    comp_types.push(CompilerType::new(index, free_vars));
+                    comp_types.push(CompilerType::new(index, self.current_name, free_vars));
 
                     let cls_ty = ClosureType::new(
                         index,
@@ -850,6 +863,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     ) -> Result<Option<Type<'src>>, ResolveError<'src>> {
         // resolve arguments
         let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
+        if cls_type.params.len() != args.0.len() {
+            // TODO: emit custom error
+            panic!(
+                "Expected {} arguments, but got {}!",
+                cls_type.params.len(),
+                args.0.len()
+            );
+        }
 
         let iter = args.0.iter().zip(cls_type.params.iter());
 
@@ -977,17 +998,16 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &self,
         span: Span,
         name: &'src str,
-        closure_ctx: Option<&mut ResolveClosureCtx<'src>>,
+        ctx: &mut ResolveClosureCtx<'src>,
     ) -> Result<Spanned<&Type<'src>>, ResolveError<'src>> {
         self.sym_table
             .lookup(name)
             .map(|(sym, i)| {
-                if let Some(ctx) = closure_ctx {
-                    if i < ctx.scope_start {
-                        let idx = ctx.free_vars.len(); // is ignored for cmp
-                        let free_var = FreeVar::new(idx, i, name, sym.node.ty.clone());
-                        ctx.free_vars.insert(free_var);
-                    }
+                if i < ctx.scope_start {
+                    let idx = ctx.free_vars.len(); // is ignored for cmp
+                    let key = FreeVarKey::new(name, sym.node.ty.clone());
+                    let value = FreeVarValue::new(idx, i);
+                    ctx.free_vars.insert(key, value);
                 }
 
                 sym
@@ -1061,7 +1081,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     fn get_closure(
         &self,
         callee: &Spanned<Expr<'src>>,
-        closure_ctx: Option<&mut ResolveClosureCtx<'src>>,
+        closure_ctx: &mut ResolveClosureCtx<'src>,
     ) -> Result<Spanned<&Type<'src>>, ResolveError<'src>> {
         if let ExprKind::Ident(ident) = callee.node.kind() {
             return self.handle_ident(callee.span, ident, closure_ctx);

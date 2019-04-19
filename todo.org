@@ -1,0 +1,22 @@
+- [x] wenn closure deklariert
+    - [x] freie Variablen ermittlen (resolver)
+    - [x] zu struct zusammenfassen (resolver)
+    - [x] freie variablen in env kopieren (mir)
+    - [x] mir expression mit funcptr und env erstellen (mir)
+- [ ] wenn closure als argument
+    - [x] struct aus function ptr und env ptr als compiler type anlegen (resolver)
+    - [ ] eine stack instanz dieses compiler types übergeben (mir)
+- [ ] wenn closure call
+    - [ ] pointer auf env Umgebung mitgeben (mir)
+        - [x] env struct alloca'en (mir)
+        - [ ] alle benötigten freien Variablen in env struct kopieren (mir)
+        - [x] beim Aufruf als argument hinzufügen (mir)
+    - [ ] eigentlicher call von function pointer (codegen)
+- [ ] wenn closure gecallt
+    - [ ] Umgebungs Variablen aus Umgebung GEPen und in name table binden (mir)
+- [ ] wenn verschachtelt (return type ist closure)
+    - [ ] als function return type einen compiler type eintragen (mir)
+    - [ ] struct aus function ptr und env ptr als compiler type anlegen (mir)
+    - [ ] eine stack instanz dieses compiler types als return wert nehmen (mir)
+    - [ ] verschiedene Umgebungen für die unterschiedlichen closures unterscheiden (mir)
+    - [ ] umgebung + function ptr returnen (mir)

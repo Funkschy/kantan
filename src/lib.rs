@@ -273,20 +273,21 @@ impl<'src> fmt::Display for Mir<'src> {
         let compiler_types = self
             .compiler_types
             .iter()
-            .enumerate()
-            .flat_map(|(i, (m, types))| {
+            .flat_map(|(m, types)| {
                 types
                     .iter()
                     .map(|ct| {
                         format!(
                             "{}._internal_.{}{{ {} }}",
                             m,
-                            i,
+                            ct.index,
                             ct.free_vars
+                                .borrow()
                                 .iter()
+                                .map(|(k, _)| k)
                                 .map(std::string::ToString::to_string)
                                 .collect::<Vec<_>>()
-                                .join(",\n")
+                                .join(", ")
                         )
                     })
                     .collect::<Vec<String>>()
@@ -307,7 +308,7 @@ impl<'src> fmt::Display for Mir<'src> {
             .flat_map(|(m, funcs)| {
                 funcs
                     .iter()
-                    .map(|(_, v)| format!("{}.{}", m, v))
+                    .map(|(_, v)| format!("def {}.{}", m, v))
                     .collect::<Vec<String>>()
             })
             .collect::<Vec<String>>()

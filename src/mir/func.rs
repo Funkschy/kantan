@@ -83,7 +83,7 @@ impl<'src, 'ast> fmt::Display for Func<'src> {
 
         write!(
             f,
-            "def {}({}): {} {{\n{}\n}}",
+            "{}({}): {} {{\n{}\n}}",
             self.name, params, self.ret, instructions
         )
     }

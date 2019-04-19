@@ -1,7 +1,7 @@
 //! The middle intermediate representation.
 //! This IR is very similar to LLVM-IR, but can also be compiled to Assembly directly.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, mem};
 
 use super::{
     parse::ast::*,
@@ -11,7 +11,7 @@ use super::{
     },
     types::*,
 };
-use address::{Address, Constant};
+use address::{Address, Constant, TempVar};
 use blockmap::BlockMap;
 use func::Func;
 use names::NameTable;
@@ -124,52 +124,65 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             let mut block = InstructionBlock::default();
             block.1 = env;
 
-            if let Some(env) = env {
-                if !env.free_vars.is_empty() {
-                    let env_ty = Simple::Env(module, env.index);
-                    let env_ptr_ty = Type::Pointer(Pointer::new(1, env_ty.clone()));
-                    head.params.insert(0, ("_p_env", env_ptr_ty));
-                    self.fill_params(&mut block, &head.params);
-
-                    let env_address = Address::Name("_env".to_owned());
-                    block.push(Instruction::Decl(env_address.clone(), Type::Simple(env_ty)));
-
-                    let address = self.temp_assign(
-                        Expression::Unary(UnaryType::Deref, Address::Name("_p_env".to_owned())),
-                        &mut block,
-                    );
-
-                    self.assign(
-                        env_address.clone(),
-                        Expression::Unary(UnaryType::Deref, address),
-                        &mut block,
-                    );
-                } else {
-                    self.fill_params(&mut block, &head.params);
-                }
-            } else {
-                self.fill_params(&mut block, &head.params);
-            }
-
-            match body {
-                FunctionBody::Block(b) => {
-                    block = self.fill_block(&b.0, block);
-                }
-                FunctionBody::Expr(e) => {
-                    self.names.scope_enter();
-                    self.return_stmt(Some(e), &mut block);
-                    self.names.scope_exit();
-                }
-            }
-
-            Self::add_ret(main_func, &mut block);
-
             // the main function has to return an int
-            let ret_type = if main_func {
+            let mut ret_type = if main_func {
                 Type::Simple(Simple::I32)
             } else {
                 head.ret_type
             };
+
+            match body {
+                FunctionBody::Block(b) => {
+                    self.fill_params(&mut block, &head.params);
+                    block = self.fill_block(&b.0, block);
+                }
+                FunctionBody::Expr(e) => {
+                    if let Some(env) = env {
+                        if !env.free_vars.is_empty() {
+                            let env_ty = Pointer::new(1, Simple::Env(module, env.index));
+                            let env_ty = Type::Pointer(env_ty);
+                            head.params.insert(0, ("_penv", env_ty));
+                            self.fill_params(&mut block, &head.params);
+
+                            let env_address = self.temp_assign(
+                                Expression::Unary(
+                                    UnaryType::Deref,
+                                    Address::Name("_penv".to_string()),
+                                ),
+                                &mut block,
+                            );
+
+                            for (key, value) in env.free_vars.iter() {
+                                let address = self.temp_assign(
+                                    Expression::StructGep(env_address.clone(), value.index as u32),
+                                    &mut block,
+                                );
+                                let value = Expression::Copy(address);
+
+                                self.var_decl(key.name, key.ty.clone(), value, &mut block);
+                            }
+
+                            if let Some(Type::Simple(Simple::Closure(ref cls_ty))) = *e.ty() {
+                                // TODO: rhs?
+                                self.expr_instr(true, e, &mut block);
+                                ret_type = Type::Simple(Simple::Env(module, cls_ty.type_index));
+                                let ret = Instruction::Return(Some(env_address));
+                                block.push(ret);
+                            } else {
+                                self.return_stmt(Some(e), &mut block);
+                            }
+                        } else {
+                            self.fill_params(&mut block, &head.params);
+                            self.return_stmt(Some(e), &mut block);
+                        }
+                    } else {
+                        self.fill_params(&mut block, &head.params);
+                        self.return_stmt(Some(e), &mut block);
+                    }
+                }
+            }
+
+            Self::add_ret(main_func, &mut block);
 
             (ret_type, BlockMap::from_instructions(block))
         } else {
@@ -253,6 +266,30 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         block
     }
 
+    fn var_decl(
+        &mut self,
+        name: &'src str,
+        ty: Type<'src>,
+        value: Expression<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
+    ) -> Address<'src> {
+        self.names.bind(name);
+        let address: Address = self.handle_ident(name, block);
+
+        block.push(Instruction::Decl(address.clone(), ty));
+        self.assign(address, value, block)
+    }
+
+    fn temp_var_decl(
+        &mut self,
+        ty: Type<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
+    ) -> Address<'src> {
+        let temp = self.temp_name();
+        block.push(Instruction::Decl(Address::Temp(temp.clone()), ty));
+        Address::Ref(temp.to_string())
+    }
+
     fn stmt(&mut self, stmt: &'ast Stmt<'src>, block: &mut InstructionBlock<'src, 'ast>) {
         match stmt {
             Stmt::Expr(e) => {
@@ -274,12 +311,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
                 // Unwrapping is safe, because the typechecker inserted the type
                 let ty = ty.borrow().clone().unwrap().node;
-
-                self.names.bind(name.node);
-                let address: Address = self.handle_ident(name.node, block);
-
-                block.push(Instruction::Decl(address.clone(), ty));
-                self.assign(address, expr, block);
+                self.var_decl(name.node, ty, expr, block);
             }
             Stmt::Return(Some(e)) => self.return_stmt(Some(&e.node), block),
             Stmt::Return(None) => self.return_stmt(None, block),
@@ -455,7 +487,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 args,
                 module,
             } => {
-                let args: Vec<Address> = args
+                let mut args: Vec<Address> = args
                     .0
                     .iter()
                     .map(|a| self.expr_instr(true, &a.node, block))
@@ -463,37 +495,36 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
                 let ret_type = expr.clone_ty().unwrap();
 
-                if let Some(Type::Simple(Simple::Closure(cls_ty))) = callee.node.ty().as_ref() {
-                    let comp_ty = &self.compiler_types[module].get(cls_ty.type_index);
-                    let env = if let Some(env) = comp_ty {
-                        if !env.free_vars.is_empty() {
-                            let vars = env
-                                .free_vars
-                                .iter()
-                                .map(|fv| fv.name)
-                                .map(|name| self.handle_ident(name, block))
-                                .collect::<Vec<_>>();
+                if let Some(Type::Simple(Simple::Closure(ct))) = callee.node.ty().as_ref() {
+                    self.expr_instr(rhs, &callee.node, block);
 
-                            block.push(Instruction::Decl(
-                                Address::Name("_env".to_string()),
-                                Type::Simple(Simple::Env(module, cls_ty.type_index)),
-                            ));
+                    let comp_ty = &self.compiler_types[module][ct.type_index];
+                    if !comp_ty.free_vars.is_empty() {
+                        let ty = Type::Simple(Simple::Env(module, ct.type_index));
+                        let env = self.temp_var_decl(ty, block);
 
-                            Some(CompilerIdent::new(cls_ty.type_index, module, vars))
-                        } else {
-                            None
+                        for (k, v) in comp_ty.free_vars.iter() {
+                            let gep = Expression::StructGep(env.clone(), v.index as u32);
+                            let field = self.temp_assign(gep, block);
+                            let address = self.handle_ident(k.name, block);
+                            self.assign(field, Expression::Copy(address), block);
                         }
-                    } else {
-                        None
-                    };
+
+                        args.insert(0, env);
+                    }
 
                     // Closure Call
-                    let ident = self.expr_instr(rhs, &callee.node, block);
+                    let ident = if let Some((module, _)) = self.current {
+                        let key = format!("_closure_.{}", ct.func_index);
+                        CompilerFunc::new(module, key)
+                    } else {
+                        unreachable!()
+                    };
+
                     Expression::CallFuncPtr {
                         ident,
                         args,
                         ret_type,
-                        env,
                     }
                 } else if let ExprKind::Ident(ident) = callee.node.kind() {
                     let varargs = self.mod_funcs[module]
@@ -522,14 +553,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     self.handle_ident(name, block)
                 } else {
                     let e = self.expr(false, &left.node, block);
-                    // remove the deref/copy, so that the value can be assigned
-                    if let Expression::Copy(a) = &e {
-                        a.clone()
-                    } else {
-                        self.temp_assign(e, block)
-                    }
+                    self.get_expression_address(e, block)
                 };
-                Expression::Copy(self.assign(address, expr.clone(), block))
+                Expression::Copy(self.assign(address, expr, block))
             }
             ExprKind::Negate(op, expr) => {
                 // TODO: find correct dec size
@@ -614,11 +640,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 Expression::New(address, ty)
             }
             ExprKind::Closure(params, body) => {
-                // TODO: find free variables and add them as env struct
-
-                if let Some((module, ref func)) = self.current {
+                if let Some((module, _)) = self.current {
                     if let Type::Simple(Simple::Closure(cls_ty)) = expr.ty().clone().unwrap() {
-                        let key = format!("{}._closure_.{}", func, cls_ty.func_index);
+                        let key = format!("_closure_.{}", cls_ty.func_index);
                         let type_idx = cls_ty.type_index;
                         let compiler_type = &self.compiler_types[module][type_idx];
                         let compiler_type = if compiler_type.free_vars.is_empty() {
@@ -636,9 +660,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
                         let head = FunctionHead::new(key.clone(), params, ret_ty, false, false);
 
-                        self.names.scope_enter();
+                        let old_names = mem::replace(&mut self.names, NameTable::new());
                         self.inner_add_function(module, head, body.as_ref().into(), compiler_type);
-                        self.names.scope_exit();
+                        mem::replace(&mut self.names, old_names);
 
                         return Expression::Copy(Address::FuncRef(module, key));
                     }
@@ -647,6 +671,19 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 unreachable!("current should always be set")
             }
             _ => unimplemented!("{:?}", expr),
+        }
+    }
+
+    fn get_expression_address(
+        &mut self,
+        e: Expression<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
+    ) -> Address<'src> {
+        // remove the deref/copy, so that the value can be assigned
+        if let Expression::Copy(a) = &e {
+            a.clone()
+        } else {
+            self.temp_assign(e, block)
         }
     }
 
@@ -724,12 +761,12 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         block: &mut InstructionBlock<'src, 'ast>,
     ) -> Address<'src> {
         // check env first, because names.lookup() panics if not found
-        if let Some(env) = block.1 {
-            if let Some(fv) = env.free_vars.iter().find(|fv| fv.name == ident) {
-                let address = Address::Name("_env".to_string());
-                return self.temp_assign(Expression::StructGep(address, fv.index as u32), block);
-            }
-        }
+        // if let Some(env) = block.1 {
+        //     if let Some(fv) = env.free_vars.iter().find(|fv| fv.name == ident) {
+        //         let address = Address::Name("_env".to_string());
+        //         return self.temp_assign(Expression::StructGep(address, fv.index as u32), block);
+        //     }
+        // }
         self.names.lookup(ident).into()
     }
 
@@ -745,10 +782,14 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
     #[inline(always)]
     fn temp(&mut self) -> Address<'src> {
+        Address::Temp(self.temp_name())
+    }
+
+    #[inline(always)]
+    fn temp_name(&mut self) -> TempVar {
         let temp = self.temp_count.into();
         self.temp_count += 1;
-
-        Address::Temp(temp)
+        temp
     }
 
     #[inline(always)]

@@ -5,19 +5,29 @@ use crate::{parse::token::Token, types::*};
 use super::{address::Address, CompilerType};
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct CompilerIdent<'src> {
-    pub index: usize,
+pub struct CompilerFunc<'src> {
     pub module: &'src str,
-    pub values: Vec<Address<'src>>,
+    pub name: String,
 }
 
-impl<'src> CompilerIdent<'src> {
-    pub fn new(index: usize, module: &'src str, values: Vec<Address<'src>>) -> Self {
-        CompilerIdent {
-            index,
-            module,
-            values,
-        }
+impl<'src> CompilerFunc<'src> {
+    pub fn new(module: &'src str, name: String) -> Self {
+        CompilerFunc { module, name }
+    }
+    #[inline(always)]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[inline(always)]
+    pub fn module(&self) -> &'src str {
+        self.module
+    }
+}
+
+impl<'src> fmt::Display for CompilerFunc<'src> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}.{}", self.module, self.name)
     }
 }
 
@@ -147,6 +157,8 @@ pub enum Expression<'src> {
     Unary(UnaryType, Address<'src>),
     /// x = y
     Copy(Address<'src>),
+    /// x = memcpy(y)
+    MemCpy(Address<'src>, Address<'src>, Type<'src>),
     /// x = call f (y, z)
     Call {
         ident: UserIdent<'src>,
@@ -155,16 +167,17 @@ pub enum Expression<'src> {
         varargs: bool,
     },
     CallFuncPtr {
-        ident: Address<'src>,
+        ident: CompilerFunc<'src>,
         args: Vec<Address<'src>>,
         ret_type: Type<'src>,
-        env: Option<CompilerIdent<'src>>,
     },
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset
     StructGep(Address<'src>, u32),
     /// x = test { 41, "test" }
     StructInit(UserIdent<'src>, Vec<Address<'src>>),
+    /// x = internal.0 { 41, "test" }
+    CompilerStructInit(CompilerType<'src>, Vec<Address<'src>>),
     /// allocates the value of its address on the heap
     /// x = new 5
     New(Address<'src>, Type<'src>),
@@ -181,12 +194,22 @@ impl<'src> fmt::Display for Expression<'src> {
         let s = match self {
             Binary(l, op, r) => format!("{} {} {}", l, op, r),
             Unary(op, a) => format!("{} {}", op, a),
+            MemCpy(dest, src, ty) => format!("memcpy({}, {}, sizeof({}))", dest, src, ty),
             Copy(a) => format!("{}", a),
             New(a, ty) => format!("new(sizeof({}), {})", ty, a),
             SizeOf(ty) => format!("sizeof({})", ty),
             StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
             GetParam(i) => format!("param #{}", i),
             StructInit(ident, values) => format!(
+                "{} {{ {} }}",
+                ident,
+                values
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            CompilerStructInit(ident, values) => format!(
                 "{} {{ {} }}",
                 ident,
                 values

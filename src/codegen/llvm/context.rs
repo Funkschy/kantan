@@ -114,7 +114,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         for (m, comp_types) in types.iter() {
             let mut structs = Vec::new();
             for (i, comp_type) in comp_types.iter().enumerate() {
-                if !comp_type.free_vars.is_empty() {
+                if !comp_type.is_empty() {
                     let name = format!("{}._internal_.{}", m, i);
                     // forward declaration of types
                     let s = LLVMStructCreateNamed(self.context, self.cstring(&name));
@@ -126,7 +126,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
 
         for (m, comp_types) in types.iter() {
             for (i, comp_type) in comp_types.iter().enumerate() {
-                if !comp_type.free_vars.is_empty() {
+                if !comp_type.is_empty() {
                     self.add_llvm_compiler_ty(m, i, comp_type);
                 }
             }
@@ -158,10 +158,10 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     }
 
     unsafe fn add_llvm_compiler_ty(&mut self, module: &str, index: usize, ty: &CompilerType<'src>) {
-        let mut fields = vec![ptr::null_mut(); ty.free_vars.len()];
+        let mut fields = vec![ptr::null_mut(); ty.len()];
 
-        for fv in ty.free_vars.iter() {
-            fields[fv.index] = self.convert(&fv.ty);
+        for (key, value) in ty.free_vars.borrow().iter() {
+            fields[value.index] = self.convert(&key.ty);
         }
 
         let s = self.compiler_types[module][index];
@@ -209,6 +209,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         self.module
     }
 
+    #[inline(always)]
     fn get_intrinsic(&self, intrinsic: Intrinsic) -> LLVMValueRef {
         self.intrinsics[intrinsic as usize]
     }
@@ -222,8 +223,14 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         )
     }
 
+    #[inline(always)]
     fn get_user_type(&self, user_ty: &UserIdent) -> LLVMTypeRef {
         self.user_types[user_ty.module()][user_ty.name()]
+    }
+
+    #[inline(always)]
+    fn get_compiler_type(&self, comp_ty: &CompilerType) -> LLVMTypeRef {
+        self.compiler_types[comp_ty.module][comp_ty.index]
     }
 
     unsafe fn convert(&mut self, ty: &Type<'src>) -> LLVMTypeRef {
@@ -508,7 +515,12 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         }
     }
 
-    unsafe fn build_memcpy(&mut self, dest: LLVMValueRef, src: LLVMValueRef, ty: LLVMTypeRef) {
+    unsafe fn build_memcpy(
+        &mut self,
+        dest: LLVMValueRef,
+        src: LLVMValueRef,
+        ty: LLVMTypeRef,
+    ) -> LLVMValueRef {
         let byte_ty = LLVMInt8TypeInContext(self.context);
         let ptr_ty = LLVMPointerType(byte_ty, ADDRESS_SPACE);
         let dest = LLVMBuildBitCast(self.builder, dest, ptr_ty, self.cstring("dest"));
@@ -524,7 +536,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             memcpy_args.as_mut_ptr(),
             memcpy_args.len() as u32,
             self.cstring(""),
-        );
+        )
     }
 
     unsafe fn translate_mir_expr(&mut self, e: &Expression<'src>, name: &str) -> LLVMValueRef {
@@ -546,6 +558,12 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 let malloc = LLVMBuildMalloc(self.builder, ty, self.cstring(name));
                 self.build_memcpy(malloc, value, ty);
                 malloc
+            }
+            Expression::MemCpy(dest, src, ty) => {
+                let dest = self.translate_mir_address(dest);
+                let src = self.translate_mir_address(src);
+                let ty = self.convert(ty);
+                self.build_memcpy(dest, src, ty)
             }
             Expression::Copy(a) => self.translate_mir_address(a),
             Expression::Binary(l, ty, r) => {
@@ -589,30 +607,15 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 ident,
                 args,
                 ret_type,
-                env,
             } => {
                 let n = self.cstring(name);
 
                 let mut args: Vec<LLVMValueRef> =
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
 
-                if let Some(env) = env {
-                    let env_var = self.translate_mir_address(&Address::Ref("_env".to_string()));
-                    for (i, address) in env.values.iter().enumerate() {
-                        let value = self.translate_mir_address(address);
-                        let env_at_offset = LLVMBuildStructGEP(
-                            self.builder,
-                            env_var,
-                            i as u32,
-                            self.cstring("tmp"),
-                        );
-                        LLVMBuildStore(self.builder, value, env_at_offset);
-                    }
-                    args.insert(0, env_var);
-                }
                 let num_args = args.len() as u32;
 
-                let f = self.translate_mir_address(ident);
+                let f = self.functions[ident.module()][ident.name()];
                 let name = if *ret_type != Type::Simple(Simple::Void) {
                     n
                 } else {
@@ -664,6 +667,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             Expression::StructGep(a, idx) => {
                 let address = match a {
                     Address::Name(n) => self.name_table[n],
+                    Address::Ref(r) => self.name_table[r],
                     Address::Temp(t) => self.name_table[&t.to_string()],
                     Address::Global(g) => self.globals[g],
                     _ => unreachable!("{} is invalid here", a),
@@ -672,21 +676,32 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             }
             Expression::StructInit(identifier, values) => {
                 let struct_ty = self.get_user_type(identifier);
-                let struct_alloca =
-                    LLVMBuildAlloca(self.builder, struct_ty, self.cstring("structtmp"));
-                for (i, value) in values.iter().enumerate() {
-                    let a = self.translate_mir_address(value);
-                    let ptr = LLVMBuildStructGEP(
-                        self.builder,
-                        struct_alloca,
-                        i as u32,
-                        self.cstring(&format!("value.{}", i)),
-                    );
-                    LLVMBuildStore(self.builder, a, ptr);
-                }
-                struct_alloca
+                self.struct_init(struct_ty, values)
+            }
+            Expression::CompilerStructInit(identifier, values) => {
+                let struct_ty = self.get_compiler_type(identifier);
+                self.struct_init(struct_ty, values)
             }
         }
+    }
+
+    unsafe fn struct_init(
+        &mut self,
+        struct_ty: LLVMTypeRef,
+        values: &[Address<'src>],
+    ) -> LLVMValueRef {
+        let struct_alloca = LLVMBuildAlloca(self.builder, struct_ty, self.cstring("structtmp"));
+        for (i, value) in values.iter().enumerate() {
+            let a = self.translate_mir_address(value);
+            let ptr = LLVMBuildStructGEP(
+                self.builder,
+                struct_alloca,
+                i as u32,
+                self.cstring(&format!("value.{}", i)),
+            );
+            LLVMBuildStore(self.builder, a, ptr);
+        }
+        struct_alloca
     }
 
     unsafe fn float_binary(

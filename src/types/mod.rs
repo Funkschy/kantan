@@ -104,7 +104,7 @@ pub enum Simple<'src> {
 pub struct ClosureType<'src> {
     pub params: Vec<(&'src str, Type<'src>)>,
     pub ret_ty: Box<Type<'src>>,
-    // the index inside the function the closure is declared in
+    // the index of the closure
     pub func_index: usize,
     // the index inside the list of compiler types
     pub type_index: usize,
@@ -161,7 +161,7 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Bool => "bool",
             Simple::Void => "void",
             Simple::Varargs => "...",
-            Simple::Env(m, i) => return write!(f, "{}._env_.{}", m, i),
+            Simple::Env(m, i) => return write!(f, "{}._internal_.{}", m, i),
             Simple::UserType(name) => return write!(f, "{}", name),
             Simple::Closure(ClosureType { params, ret_ty, .. }) => {
                 return write!(
