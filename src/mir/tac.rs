@@ -123,6 +123,8 @@ pub enum Instruction<'src> {
     Label(Label),
     /// frees heap memory
     Delete(Address<'src>),
+    /// memcpy(dest, src, sizeof(ty))
+    MemCpy(Address<'src>, Address<'src>, Type<'src>),
     /// No operation
     Nop,
 }
@@ -140,6 +142,7 @@ impl<'src> fmt::Display for Instruction<'src> {
             Return(None) => "return;".to_string(),
             Label(l) => format!("{}:", l),
             Delete(a) => format!("delete({})", a),
+            MemCpy(dest, src, ty) => format!("memcpy({}, {}, sizeof({}))", dest, src, ty),
             Nop => "nop".to_owned(),
         };
 
@@ -157,8 +160,6 @@ pub enum Expression<'src> {
     Unary(UnaryType, Address<'src>),
     /// x = y
     Copy(Address<'src>),
-    /// x = memcpy(y)
-    MemCpy(Address<'src>, Address<'src>, Type<'src>),
     /// x = call f (y, z)
     Call {
         ident: UserIdent<'src>,
@@ -174,6 +175,7 @@ pub enum Expression<'src> {
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset
     StructGep(Address<'src>, u32),
+    Gep(Address<'src>, Vec<u32>),
     /// x = test { 41, "test" }
     StructInit(UserIdent<'src>, Vec<Address<'src>>),
     /// x = internal.0 { 41, "test" }
@@ -194,11 +196,19 @@ impl<'src> fmt::Display for Expression<'src> {
         let s = match self {
             Binary(l, op, r) => format!("{} {} {}", l, op, r),
             Unary(op, a) => format!("{} {}", op, a),
-            MemCpy(dest, src, ty) => format!("memcpy({}, {}, sizeof({}))", dest, src, ty),
             Copy(a) => format!("{}", a),
             New(a, ty) => format!("new(sizeof({}), {})", ty, a),
             SizeOf(ty) => format!("sizeof({})", ty),
             StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
+            Gep(a, offset) => format!(
+                "gep {} offset {}",
+                a,
+                offset
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             GetParam(i) => format!("param #{}", i),
             StructInit(ident, values) => format!(
                 "{} {{ {} }}",

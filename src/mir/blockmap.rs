@@ -22,9 +22,6 @@ impl<'src, 'ast> BlockMap<'src> {
 
         for instr in block.0 {
             match instr {
-                Instruction::Assignment(..) | Instruction::Delete(..) | Instruction::Nop => {
-                    bb.instructions.push(instr);
-                }
                 Instruction::Decl(..) => {
                     vardecls.push(instr);
                 }
@@ -62,6 +59,9 @@ impl<'src, 'ast> BlockMap<'src> {
                     label = Label::from(format!(".entry{}", label_count));
                     label_count += 1;
                     bb = BasicBlock::default();
+                }
+                _ => {
+                    bb.instructions.push(instr);
                 }
             }
         }

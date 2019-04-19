@@ -1,7 +1,7 @@
 //! The middle intermediate representation.
 //! This IR is very similar to LLVM-IR, but can also be compiled to Assembly directly.
 
-use std::{collections::HashMap, mem};
+use std::collections::HashMap;
 
 use super::{
     parse::ast::*,
@@ -139,33 +139,36 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 FunctionBody::Expr(e) => {
                     if let Some(env) = env {
                         if !env.free_vars.is_empty() {
-                            let env_ty = Pointer::new(1, Simple::Env(module, env.index));
-                            let env_ty = Type::Pointer(env_ty);
-                            head.params.insert(0, ("_penv", env_ty));
+                            let env_ty = Simple::Env(module, env.index);
+                            let env_ptr = Type::Pointer(Pointer::new(1, env_ty.clone()));
+                            head.params.insert(0, ("_penv", env_ptr));
                             self.fill_params(&mut block, &head.params);
 
                             let env_address = self.temp_assign(
-                                Expression::Unary(
-                                    UnaryType::Deref,
-                                    Address::Name("_penv".to_string()),
-                                ),
+                                Expression::Copy(self.names.lookup("_penv").into()),
                                 &mut block,
                             );
 
                             for (key, value) in env.free_vars.iter() {
                                 let address = self.temp_assign(
-                                    Expression::StructGep(env_address.clone(), value.index as u32),
+                                    Expression::Gep(
+                                        env_address.clone(),
+                                        vec![0, value.index as u32],
+                                    ),
                                     &mut block,
                                 );
                                 let value = Expression::Copy(address);
 
-                                self.var_decl(key.name, key.ty.clone(), value, &mut block);
+                                let address: Address<'src> = self.names.lookup(key.name).into();
+                                block.push(Instruction::Decl(address.clone(), key.ty.clone()));
+                                self.assign(address, value, &mut block);
                             }
 
                             if let Some(Type::Simple(Simple::Closure(ref cls_ty))) = *e.ty() {
                                 // TODO: rhs?
                                 self.expr_instr(true, e, &mut block);
                                 ret_type = Type::Simple(Simple::Env(module, cls_ty.type_index));
+                                // TODO: return correct env (not the one passed)
                                 let ret = Instruction::Return(Some(env_address));
                                 block.push(ret);
                             } else {
@@ -496,21 +499,28 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let ret_type = expr.clone_ty().unwrap();
 
                 if let Some(Type::Simple(Simple::Closure(ct))) = callee.node.ty().as_ref() {
-                    self.expr_instr(rhs, &callee.node, block);
-
+                    let left = self.expr_instr(rhs, &callee.node, block);
                     let comp_ty = &self.compiler_types[module][ct.type_index];
+
+                    assert!(ret_type == *ct.ret_ty);
+                    dbg!(ct.is_inner_closure);
+
                     if !comp_ty.free_vars.is_empty() {
-                        let ty = Type::Simple(Simple::Env(module, ct.type_index));
-                        let env = self.temp_var_decl(ty, block);
+                        if !ct.is_inner_closure {
+                            let ty = Type::Simple(Simple::Env(module, ct.type_index));
+                            let env = self.temp_var_decl(ty, block);
 
-                        for (k, v) in comp_ty.free_vars.iter() {
-                            let gep = Expression::StructGep(env.clone(), v.index as u32);
-                            let field = self.temp_assign(gep, block);
-                            let address = self.handle_ident(k.name, block);
-                            self.assign(field, Expression::Copy(address), block);
+                            for (k, v) in comp_ty.free_vars.iter() {
+                                let gep = Expression::StructGep(env.clone(), v.index as u32);
+                                let field = self.temp_assign(gep, block);
+                                let address = self.handle_ident(k.name, block);
+                                self.assign(field, Expression::Copy(address), block);
+                            }
+
+                            args.insert(0, env);
+                        } else {
+                            args.insert(0, left);
                         }
-
-                        args.insert(0, env);
                     }
 
                     // Closure Call
@@ -659,10 +669,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                             .collect();
 
                         let head = FunctionHead::new(key.clone(), params, ret_ty, false, false);
-
-                        let old_names = mem::replace(&mut self.names, NameTable::new());
                         self.inner_add_function(module, head, body.as_ref().into(), compiler_type);
-                        mem::replace(&mut self.names, old_names);
 
                         return Expression::Copy(Address::FuncRef(module, key));
                     }

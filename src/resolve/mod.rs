@@ -110,13 +110,15 @@ impl FreeVarValue {
 #[derive(Debug)]
 struct ResolveClosureCtx<'src> {
     scope_start: usize,
+    is_inner: bool,
     free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
 }
 
 impl<'src> ResolveClosureCtx<'src> {
-    pub fn new(scope_start: usize) -> Self {
+    pub fn new(scope_start: usize, is_inner: bool) -> Self {
         ResolveClosureCtx {
             scope_start,
+            is_inner,
             free_vars: HashMap::new(),
         }
     }
@@ -334,7 +336,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ..
         } = top_lvl
         {
-            let mut closure_ctx = ResolveClosureCtx::new(0);
+            let mut closure_ctx = ResolveClosureCtx::new(0, false);
             self.current_func_def = self.mod_functions[self.current_name][name.node].clone();
             self.sym_table.scope_enter();
 
@@ -759,7 +761,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         let cls_ty = self.get_closure(callee, closure_ctx)?;
                         if let Type::Simple(Simple::Closure(ref ct)) = cls_ty.node {
                             callee.node.set_ty(cls_ty.node.clone());
-                            self.call_closure(ct, args, span)
+                            self.call_closure(ct, args, span)?;
+                            Ok(Some(ct.ret_ty.as_ref().clone()))
                         } else {
                             Err(self.call_non_function_error(
                                 callee.span,
@@ -772,7 +775,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         let cls_ty = self.resolve_type(callee, None)?;
                         if let Type::Simple(Simple::Closure(ref ct)) = cls_ty {
                             callee.node.set_ty(cls_ty.clone());
-                            self.call_closure(ct, args, span)
+                            self.call_closure(ct, args, span)?;
+                            Ok(Some(ct.ret_ty.as_ref().clone()))
                         } else {
                             Err(self.call_non_function_error(callee.span, span, cls_ty.clone()))
                         }
@@ -794,7 +798,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         param_types.push((p.0.node, p.1.node.clone()));
                     }
 
-                    let mut cls_ctx = ResolveClosureCtx::new(self.sym_table.num_scopes() - 1);
+                    let mut cls_ctx = ResolveClosureCtx::new(self.sym_table.num_scopes() - 1, true);
                     let ret_ty = self.resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
 
                     self.sym_table.scope_exit();
@@ -833,6 +837,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         param_types,
                         Box::new(ret_ty),
                         self.current_name,
+                        closure_ctx.is_inner,
                     );
 
                     let ty = Type::Simple(Simple::Closure(cls_ty));
@@ -860,7 +865,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         cls_type: &ClosureType<'src>,
         args: &ArgList<'src>,
         expr_span: Span,
-    ) -> Result<Option<Type<'src>>, ResolveError<'src>> {
+    ) -> Result<(), ResolveError<'src>> {
         // resolve arguments
         let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
         if cls_type.params.len() != args.0.len() {
@@ -897,7 +902,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         if let Some(err) = arg_error {
             Err(err)
         } else {
-            Ok(Some(cls_type.ret_ty.as_ref().clone()))
+            Ok(())
         }
     }
 

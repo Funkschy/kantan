@@ -1,4 +1,4 @@
-use std::{fmt, hash};
+use std::fmt;
 
 #[derive(Debug, Eq, Copy, Clone, PartialEq, Hash)]
 pub struct UserIdent<'src> {
@@ -100,15 +100,18 @@ pub enum Simple<'src> {
     Closure(ClosureType<'src>),
 }
 
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ClosureType<'src> {
     pub params: Vec<(&'src str, Type<'src>)>,
+    // TODO: remove because it's the same as the type of the call expr
     pub ret_ty: Box<Type<'src>>,
     // the index of the closure
     pub func_index: usize,
     // the index inside the list of compiler types
     pub type_index: usize,
     pub module: &'src str,
+    // is this closure the return value of another closure?
+    pub is_inner_closure: bool,
 }
 
 impl<'src> ClosureType<'src> {
@@ -118,6 +121,7 @@ impl<'src> ClosureType<'src> {
         params: Vec<(&'src str, Type<'src>)>,
         ret_ty: Box<Type<'src>>,
         module: &'src str,
+        is_inner_closure: bool,
     ) -> Self {
         ClosureType {
             type_index,
@@ -125,20 +129,8 @@ impl<'src> ClosureType<'src> {
             params,
             ret_ty,
             module,
+            is_inner_closure,
         }
-    }
-}
-
-impl<'src> PartialEq for ClosureType<'src> {
-    fn eq(&self, other: &Self) -> bool {
-        self.ret_ty == other.ret_ty && self.params == other.params
-    }
-}
-
-impl<'src> hash::Hash for ClosureType<'src> {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.ret_ty.hash(state);
-        self.params.hash(state);
     }
 }
 

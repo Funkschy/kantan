@@ -318,6 +318,8 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
 
             for (file, functions) in mir.functions.iter() {
                 for (_, function) in functions.iter() {
+                    self.name_table.clear();
+
                     if function.is_extern {
                         continue;
                     }
@@ -473,6 +475,12 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 let else_bb_ref = self.blocks[else_label];
                 LLVMBuildCondBr(self.builder, cond, then_bb_ref, else_bb_ref);
             }
+            Instruction::MemCpy(dest, src, ty) => {
+                let dest = self.translate_mir_address(dest);
+                let src = self.translate_mir_address(src);
+                let ty = self.convert(ty);
+                self.build_memcpy(dest, src, ty);
+            }
             Instruction::Label(_) => {}
             Instruction::Nop => {}
         }
@@ -558,12 +566,6 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 let malloc = LLVMBuildMalloc(self.builder, ty, self.cstring(name));
                 self.build_memcpy(malloc, value, ty);
                 malloc
-            }
-            Expression::MemCpy(dest, src, ty) => {
-                let dest = self.translate_mir_address(dest);
-                let src = self.translate_mir_address(src);
-                let ty = self.convert(ty);
-                self.build_memcpy(dest, src, ty)
             }
             Expression::Copy(a) => self.translate_mir_address(a),
             Expression::Binary(l, ty, r) => {
@@ -673,6 +675,30 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     _ => unreachable!("{} is invalid here", a),
                 };
                 LLVMBuildStructGEP(self.builder, address, *idx, self.cstring("ptr"))
+            }
+            Expression::Gep(a, indices) => {
+                let address = match a {
+                    Address::Name(n) => self.name_table[n],
+                    Address::Ref(r) => self.name_table[r],
+                    Address::Temp(t) => self.name_table[&t.to_string()],
+                    Address::Global(g) => self.globals[g],
+                    _ => unreachable!("{} is invalid here", a),
+                };
+
+                let int_type = LLVMInt32TypeInContext(self.context);
+                let mut indices = indices
+                    .iter()
+                    .map(|i| LLVMConstInt(int_type, *i as u64, false as i32))
+                    .collect::<Vec<_>>();
+
+                let num = indices.len() as u32;
+                LLVMBuildInBoundsGEP(
+                    self.builder,
+                    address,
+                    indices.as_mut_ptr(),
+                    num,
+                    self.cstring("ptr"),
+                )
             }
             Expression::StructInit(identifier, values) => {
                 let struct_ty = self.get_user_type(identifier);
