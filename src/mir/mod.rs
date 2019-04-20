@@ -268,7 +268,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         block: &mut InstructionBlock<'src, 'ast>,
     ) {
         self.names.bind(name);
-        let address = self.handle_ident(name, block);
+        let address = self.lookup_ident(name);
         block.push(Instruction::Decl(address.clone(), ty.clone()));
         self.assign(address, Expression::GetParam(index), block);
     }
@@ -302,7 +302,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         block: &mut InstructionBlock<'src, 'ast>,
     ) -> Address<'src> {
         self.names.bind(name);
-        let address: Address = self.handle_ident(name, block);
+        let address: Address = self.lookup_ident(name);
 
         block.push(Instruction::Decl(address.clone(), ty));
         self.assign(address, value, block)
@@ -336,7 +336,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     ..
                 } = decl.as_ref();
 
-                let expr = if let Some(rval) = self.address_expr(&value.node, block) {
+                let expr = if let Some(rval) = self.address_expr(&value.node) {
                     rval.into()
                 } else {
                     self.expr(true, &value.node, block)
@@ -577,14 +577,14 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 }
             }
             ExprKind::Assign { left, value, .. } => {
-                let expr = if let Some(rval) = self.address_expr(&value.node, block) {
+                let expr = if let Some(rval) = self.address_expr(&value.node) {
                     rval.into()
                 } else {
                     self.expr(true, &value.node, block)
                 };
 
                 let address = if let ExprKind::Ident(name) = left.node.kind() {
-                    self.handle_ident(name, block)
+                    self.lookup_ident(name)
                 } else {
                     let e = self.expr(false, &left.node, block);
                     self.get_expression_address(e, block)
@@ -655,8 +655,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let ty = expr.node.clone_ty().unwrap();
 
                 let address = if let ExprKind::Ident(name) = expr.node.kind() {
-                    self.handle_ident(name, block)
-                } else if let Some(a) = self.address_expr(&expr.node, block) {
+                    self.lookup_ident(name)
+                } else if let Some(a) = self.address_expr(&expr.node) {
                     let temp = self.temp();
                     block.push(Instruction::Decl(temp.clone(), ty.clone()));
                     self.assign(temp, Expression::Copy(a), block)
@@ -719,7 +719,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         for (k, v) in comp_ty.free_vars.iter() {
             let gep = Expression::StructGep(env.clone(), v.index as u32);
             let field = self.temp_assign(gep, block);
-            let address = self.handle_ident(k.name, block);
+            let address = self.lookup_ident(k.name);
             self.assign(field, Expression::Copy(address), block);
         }
 
@@ -747,7 +747,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         expr: &'ast Expr<'src>,
         block: &mut InstructionBlock<'src, 'ast>,
     ) -> Address<'src> {
-        let rval = self.address_expr(&expr, block);
+        let rval = self.address_expr(&expr);
         if let Some(rval) = rval {
             return rval;
         }
@@ -773,18 +773,14 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         self.assign(temp, e, block)
     }
 
-    fn address_expr(
-        &mut self,
-        expr: &Expr<'src>,
-        block: &mut InstructionBlock<'src, 'ast>,
-    ) -> Option<Address<'src>> {
+    fn address_expr(&mut self, expr: &Expr<'src>) -> Option<Address<'src>> {
         Some(match expr.kind() {
             ExprKind::NullLit => Address::Null(expr.clone_ty().unwrap()),
             ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
             ExprKind::FloatLit(lit) => Address::new_const(Type::Simple(Simple::F32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
             // TODO: duplicate clone
-            ExprKind::Ident(ident) => self.handle_ident(ident, block),
+            ExprKind::Ident(ident) => self.lookup_ident(ident),
             _ => return None,
         })
     }
@@ -808,18 +804,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         address
     }
 
-    fn handle_ident(
-        &mut self,
-        ident: &'src str,
-        block: &mut InstructionBlock<'src, 'ast>,
-    ) -> Address<'src> {
-        // check env first, because names.lookup() panics if not found
-        // if let Some(env) = block.1 {
-        //     if let Some(fv) = env.free_vars.iter().find(|fv| fv.name == ident) {
-        //         let address = Address::Name("_env".to_string());
-        //         return self.temp_assign(Expression::StructGep(address, fv.index as u32), block);
-        //     }
-        // }
+    #[inline(always)]
+    fn lookup_ident(&mut self, ident: &'src str) -> Address<'src> {
         self.names.lookup(ident).into()
     }
 
