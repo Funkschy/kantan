@@ -789,6 +789,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     let mut param_types = Vec::with_capacity(params.params.len());
                     self.sym_table.scope_enter();
 
+                    let module = self.current_name;
+
                     for p in params.params.iter() {
                         self.check_user_type_defined(&p.1, &mut errors);
                         if !errors.is_empty() {
@@ -826,10 +828,10 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
                     let comp_types = self
                         .mod_compiler_types
-                        .entry(self.current_name)
+                        .entry(module)
                         .or_insert_with(Vec::new);
                     let index = comp_types.len();
-                    comp_types.push(CompilerType::new(index, self.current_name, free_vars));
+                    comp_types.push(CompilerType::new(index, module, free_vars));
 
                     let cls_ty = ClosureType::new(
                         index,
@@ -845,7 +847,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     self.curr_closure_count += 1;
 
                     self.mod_closures
-                        .entry(self.current_name)
+                        .entry(module)
                         .or_insert_with(ClosureDefinitions::default)
                         .insert(key);
 
