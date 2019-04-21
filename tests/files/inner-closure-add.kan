@@ -1,0 +1,9 @@
+import io
+
+def main(): void {
+    let c = 3;
+    let d = 4;
+    let add3 = |a: i32, b: i32| |c: i32| a + b + c + d;
+    let res = add3(1, 2)(3);
+    io.printf("%d\n", res);
+}

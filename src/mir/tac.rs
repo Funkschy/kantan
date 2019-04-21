@@ -4,33 +4,6 @@ use crate::{parse::token::Token, types::*};
 
 use super::{address::Address, CompilerType};
 
-#[derive(PartialEq, Debug, Clone)]
-pub struct CompilerFunc<'src> {
-    pub module: &'src str,
-    pub name: String,
-}
-
-impl<'src> CompilerFunc<'src> {
-    pub fn new(module: &'src str, name: String) -> Self {
-        CompilerFunc { module, name }
-    }
-    #[inline(always)]
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    #[inline(always)]
-    pub fn module(&self) -> &'src str {
-        self.module
-    }
-}
-
-impl<'src> fmt::Display for CompilerFunc<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}.{}", self.module, self.name)
-    }
-}
-
 #[derive(PartialEq, Debug)]
 pub struct BasicBlock<'src> {
     pub instructions: Vec<Instruction<'src>>,
@@ -168,7 +141,8 @@ pub enum Expression<'src> {
         varargs: bool,
     },
     CallFuncPtr {
-        ident: CompilerFunc<'src>,
+        module: Module<'src>,
+        func_idx: FuncIndex,
         args: Vec<Address<'src>>,
         ret_type: Type<'src>,
     },
@@ -179,7 +153,7 @@ pub enum Expression<'src> {
     /// x = test { 41, "test" }
     StructInit(UserIdent<'src>, Vec<Address<'src>>),
     /// x = internal.0 { 41, "test" }
-    CompilerStructInit(CompilerType<'src>, Vec<Address<'src>>),
+    CompilerStructInit(Module<'src>, TypeIndex, Vec<Address<'src>>),
     /// allocates the value of its address on the heap
     /// x = new 5
     New(Address<'src>, Type<'src>),
@@ -219,9 +193,10 @@ impl<'src> fmt::Display for Expression<'src> {
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
-            CompilerStructInit(ident, values) => format!(
-                "{} {{ {} }}",
-                ident,
+            CompilerStructInit(module, type_idx, values) => format!(
+                "{}._internal_.{} {{ {} }}",
+                module,
+                type_idx,
                 values
                     .iter()
                     .map(std::string::ToString::to_string)
@@ -239,10 +214,15 @@ impl<'src> fmt::Display for Expression<'src> {
                 let varargs = if *varargs { "varargs " } else { "" };
                 format!("{}call {}({})", varargs, f, args)
             }
-            CallFuncPtr { ident, args, .. } => {
+            CallFuncPtr {
+                module,
+                func_idx,
+                args,
+                ..
+            } => {
                 let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
                 let args = args.join(", ");
-                format!("call_ptr {}({})", ident, args)
+                format!("call_ptr {}._internal_.{}({})", module, func_idx, args)
             }
         };
 

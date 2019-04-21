@@ -86,6 +86,10 @@ impl<'src> Type<'src> {
     }
 }
 
+pub type Module<'src> = &'src str;
+pub type TypeIndex = usize;
+pub type FuncIndex = usize;
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Simple<'src> {
     I32,
@@ -95,41 +99,27 @@ pub enum Simple<'src> {
     Void,
     Varargs,
     // (module, type index)
-    Env(&'src str, usize),
+    Closure(Module<'src>, TypeIndex, FuncIndex),
     UserType(UserIdent<'src>),
-    Closure(ClosureType<'src>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ClosureType<'src> {
+    pub surrounding: &'src str,
     pub params: Vec<(&'src str, Type<'src>)>,
-    // TODO: remove because it's the same as the type of the call expr
     pub ret_ty: Box<Type<'src>>,
-    // the index of the closure
-    pub func_index: usize,
-    // the index inside the list of compiler types
-    pub type_index: usize,
-    pub module: &'src str,
-    // is this closure the return value of another closure?
-    pub is_inner_closure: bool,
 }
 
 impl<'src> ClosureType<'src> {
     pub fn new(
-        type_index: usize,
-        func_index: usize,
+        surrounding: &'src str,
         params: Vec<(&'src str, Type<'src>)>,
-        ret_ty: Box<Type<'src>>,
-        module: &'src str,
-        is_inner_closure: bool,
+        ret_ty: Type<'src>,
     ) -> Self {
         ClosureType {
-            type_index,
-            func_index,
+            surrounding,
             params,
-            ret_ty,
-            module,
-            is_inner_closure,
+            ret_ty: Box::new(ret_ty),
         }
     }
 }
@@ -153,21 +143,10 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Bool => "bool",
             Simple::Void => "void",
             Simple::Varargs => "...",
-            Simple::Env(m, i) => return write!(f, "{}._internal_.{}", m, i),
-            Simple::UserType(name) => return write!(f, "{}", name),
-            Simple::Closure(ClosureType { params, ret_ty, .. }) => {
-                return write!(
-                    f,
-                    "({}) -> {}",
-                    params
-                        .iter()
-                        .map(|(_, p)| p)
-                        .map(std::string::ToString::to_string)
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                    ret_ty
-                );
+            Simple::Closure(module, _, func_idx) => {
+                return write!(f, "{}._closure_{}", module, func_idx);
             }
+            Simple::UserType(name) => return write!(f, "{}", name),
         };
         write!(f, "{}", s)
     }

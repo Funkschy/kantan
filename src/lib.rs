@@ -1,10 +1,4 @@
-use std::{
-    borrow::Borrow,
-    cmp,
-    collections::{HashMap, HashSet},
-    error, fmt, hash, io,
-    io::Write,
-};
+use std::{borrow::Borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
 
 mod cli;
 pub mod codegen;
@@ -68,25 +62,7 @@ impl<'src> Default for FunctionDefinition<'src> {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct ClosureKey<'src> {
-    surrounding: &'src str,
-    index: usize,
-}
-
-impl<'src> fmt::Display for ClosureKey<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}._closure_.{}", self.surrounding, self.index)
-    }
-}
-
-impl<'src> ClosureKey<'src> {
-    pub fn new(surrounding: &'src str, index: usize) -> Self {
-        ClosureKey { surrounding, index }
-    }
-}
-
-pub type ClosureDefinitions<'src> = HashSet<ClosureKey<'src>>;
+pub type ClosureDefinitions<'src> = Vec<ClosureType<'src>>;
 
 pub type UserTypeMap<'src> = HashMap<&'src str, UserTypeDefinition<'src>>;
 pub type FunctionMap<'src> = HashMap<&'src str, FunctionDefinition<'src>>;
@@ -280,7 +256,7 @@ impl<'src> fmt::Display for Mir<'src> {
                         format!(
                             "{}._internal_.{}{{ {} }}",
                             m,
-                            ct.index,
+                            ct.type_idx,
                             ct.free_vars
                                 .borrow()
                                 .iter()

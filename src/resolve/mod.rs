@@ -32,8 +32,8 @@ pub type ModCompilerTypeMap<'src> = ModMap<'src, Vec<CompilerType<'src>>>;
 /// Types constructed by the compiler
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerType<'src> {
-    pub module: &'src str,
-    pub index: usize,
+    pub type_idx: usize,
+    pub func_idx: usize,
     pub free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
 }
 
@@ -48,27 +48,23 @@ impl<'src> fmt::Display for CompilerType<'src> {
 
         write!(
             f,
-            "{}._internal_.{} {{ {} }}",
-            self.module, self.index, vars
+            "_internal_.{} {{ ({}), {} }}",
+            self.type_idx, self.func_idx, vars
         )
     }
 }
 
 impl<'src> CompilerType<'src> {
     pub fn new(
-        index: usize,
-        module: &'src str,
+        type_idx: usize,
+        func_idx: usize,
         free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
     ) -> Self {
         CompilerType {
-            index,
-            module,
+            type_idx,
+            func_idx,
             free_vars,
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.free_vars.is_empty()
     }
 
     pub fn len(&self) -> usize {
@@ -143,7 +139,6 @@ pub(crate) struct Resolver<'src, 'ast> {
     mod_closures: ModClosureMap<'src>,
     mod_compiler_types: ModCompilerTypeMap<'src>,
     current_func_def: FunctionDefinition<'src>,
-    curr_closure_count: usize,
 }
 
 impl<'src, 'ast> Resolver<'src, 'ast> {
@@ -161,7 +156,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             mod_closures: HashMap::new(),
             mod_compiler_types: HashMap::new(),
             current_func_def: FunctionDefinition::default(),
-            curr_closure_count: 0,
         }
     }
 
@@ -757,10 +751,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 match func {
                     // normal function call
                     Some(Ok(func_type)) => self.call_function(func_type, args, span),
+                    // callee is ident, but not in top level functions
                     Some(_) => {
                         let cls_ty = self.get_closure(callee, closure_ctx)?;
-                        if let Type::Simple(Simple::Closure(ref ct)) = cls_ty.node {
+                        if let Type::Simple(Simple::Closure(module, _, f_idx)) = cls_ty.node {
                             callee.node.set_ty(cls_ty.node.clone());
+
+                            let ct = &self.mod_closures[module][*f_idx];
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.as_ref().clone()))
                         } else {
@@ -771,10 +768,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                             ))
                         }
                     }
+                    // callee is an arbitrary expression
                     None => {
                         let cls_ty = self.resolve_type(callee, None)?;
-                        if let Type::Simple(Simple::Closure(ref ct)) = cls_ty {
+                        if let Type::Simple(Simple::Closure(module, _, f_idx)) = cls_ty {
                             callee.node.set_ty(cls_ty.clone());
+
+                            let ct = &self.mod_closures[module][f_idx];
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.as_ref().clone()))
                         } else {
@@ -788,8 +788,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     let mut errors = Vec::new();
                     let mut param_types = Vec::with_capacity(params.params.len());
                     self.sym_table.scope_enter();
-
-                    let module = self.current_name;
 
                     for p in params.params.iter() {
                         self.check_user_type_defined(&p.1, &mut errors);
@@ -806,6 +804,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     self.sym_table.scope_exit();
 
                     let current_scope = self.sym_table.num_scopes();
+                    let current_module = self.current_name;
+                    let current_function = self.current_func_def.name;
 
                     // vars of cls_ctx that are not free variables of outer scope
                     let diff = cls_ctx
@@ -823,34 +823,26 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         }
                     }
 
-                    let cls_count = self.curr_closure_count;
                     let free_vars = closure_ctx.free_vars.clone();
 
+                    // create closure definition
+                    let cls_type = ClosureType::new(current_function, param_types, ret_ty);
+                    let cls_defs = self
+                        .mod_closures
+                        .entry(current_module)
+                        .or_insert_with(ClosureDefinitions::default);
+                    let func_idx = cls_defs.len();
+                    cls_defs.push(cls_type);
+
+                    // create type for environment
                     let comp_types = self
                         .mod_compiler_types
-                        .entry(module)
+                        .entry(current_module)
                         .or_insert_with(Vec::new);
-                    let index = comp_types.len();
-                    comp_types.push(CompilerType::new(index, module, free_vars));
+                    let type_idx = comp_types.len();
+                    comp_types.push(CompilerType::new(type_idx, func_idx, free_vars));
 
-                    let cls_ty = ClosureType::new(
-                        index,
-                        cls_count,
-                        param_types,
-                        Box::new(ret_ty),
-                        self.current_name,
-                        closure_ctx.is_inner,
-                    );
-
-                    let ty = Type::Simple(Simple::Closure(cls_ty));
-                    let key = ClosureKey::new(self.current_func_def.name, cls_count);
-                    self.curr_closure_count += 1;
-
-                    self.mod_closures
-                        .entry(module)
-                        .or_insert_with(ClosureDefinitions::default)
-                        .insert(key);
-
+                    let ty = Type::Simple(Simple::Closure(current_module, type_idx, func_idx));
                     Ok(Some(ty))
                 }
                 ClosureBody::Block(..) => {
