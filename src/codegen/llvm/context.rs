@@ -466,12 +466,6 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 let else_bb_ref = self.blocks[else_label];
                 LLVMBuildCondBr(self.builder, cond, then_bb_ref, else_bb_ref);
             }
-            Instruction::MemCpy(dest, src, ty) => {
-                let dest = self.translate_mir_address(dest);
-                let src = self.translate_mir_address(src);
-                let ty = self.convert(ty);
-                self.build_memcpy(dest, src, ty);
-            }
             Instruction::Label(_) => {}
             Instruction::Nop => {}
         }
@@ -680,7 +674,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 let int_type = LLVMInt32TypeInContext(self.context);
                 let mut indices = indices
                     .iter()
-                    .map(|i| LLVMConstInt(int_type, *i as u64, false as i32))
+                    .map(|i| LLVMConstInt(int_type, u64::from(*i), false as i32))
                     .collect::<Vec<_>>();
 
                 let num = indices.len() as u32;

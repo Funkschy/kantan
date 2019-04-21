@@ -96,8 +96,6 @@ pub enum Instruction<'src> {
     Label(Label),
     /// frees heap memory
     Delete(Address<'src>),
-    /// memcpy(dest, src, sizeof(ty))
-    MemCpy(Address<'src>, Address<'src>, Type<'src>),
     /// No operation
     Nop,
 }
@@ -115,7 +113,6 @@ impl<'src> fmt::Display for Instruction<'src> {
             Return(None) => "return;".to_string(),
             Label(l) => format!("{}:", l),
             Delete(a) => format!("delete({})", a),
-            MemCpy(dest, src, ty) => format!("memcpy({}, {}, sizeof({}))", dest, src, ty),
             Nop => "nop".to_owned(),
         };
 
@@ -179,7 +176,7 @@ impl<'src> fmt::Display for Expression<'src> {
                 a,
                 offset
                     .iter()
-                    .map(|i| i.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
