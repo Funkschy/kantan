@@ -137,7 +137,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
 
     unsafe fn add_llvm_compiler_ty(&mut self, module: &str, index: usize, ty: &CompilerType<'src>) {
         let mut fields = vec![ptr::null_mut(); ty.len() + 1];
-        let f = self.get_closure(module, ty.func_idx).1;
+        let f = self.get_closure(module, index).1;
         fields[0] = LLVMPointerType(f, ADDRESS_SPACE);
 
         for (key, value) in ty.free_vars.borrow().iter() {
@@ -238,7 +238,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         self.functions[module][name.as_str()]
     }
 
-    unsafe fn convert(&self, ty: &Type<'src>) -> LLVMTypeRef {
+    unsafe fn convert(&mut self, ty: &Type<'src>) -> LLVMTypeRef {
         match ty {
             Type::Simple(ty) => match ty {
                 Simple::I32 => LLVMInt32TypeInContext(self.context),
@@ -249,7 +249,12 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
                 }
                 Simple::UserType(user_ty) => self.get_user_type(&user_ty),
-                Simple::Closure(module, type_idx, _) => self.compiler_types[module][*type_idx],
+                Simple::Closure(module, type_idx) => self.compiler_types[module][*type_idx],
+                Simple::Function(cls_ty) => {
+                    let ret_type = self.convert(&cls_ty.ret_ty);
+                    let mut params = self.convert_params(false, &cls_ty.params);
+                    self.func_type(false, ret_type, &mut params)
+                }
                 // varargs is just handled as a type for convenience
                 Simple::Varargs => panic!("Varargs is not a real type"),
             },
@@ -590,12 +595,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     UnaryType::Deref => a,
                 }
             }
-            Expression::CallFuncPtr {
-                module,
-                func_idx,
-                args,
-                ret_type,
-            } => {
+            Expression::CallFuncPtr { args, ret_type } => {
                 let n = self.cstring(name);
 
                 let mut args: Vec<LLVMValueRef> =
@@ -603,14 +603,26 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
 
                 let num_args = args.len() as u32;
 
-                let f = self.get_closure(module, *func_idx);
+                let mut indices = self.convert_indices(&[0, 0]);
+                let num_indices = indices.len() as u32;
+
+                let fptr = LLVMBuildInBoundsGEP(
+                    self.builder,
+                    args[0],
+                    indices.as_mut_ptr(),
+                    num_indices,
+                    self.cstring("_fptr"),
+                );
+                let f = LLVMBuildLoad(self.builder, fptr, self.cstring("fptr"));
+
+                // let f = self.get_closure(module, *func_idx);
                 let name = if *ret_type != Type::Simple(Simple::Void) {
                     n
                 } else {
                     // void functions can't have a name
                     self.cstring("")
                 };
-                LLVMBuildCall(self.builder, f.0, args.as_mut_ptr(), num_args, name)
+                LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, name)
             }
             Expression::Call {
                 ident,
@@ -671,11 +683,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     _ => unreachable!("{} is invalid here", a),
                 };
 
-                let int_type = LLVMInt32TypeInContext(self.context);
-                let mut indices = indices
-                    .iter()
-                    .map(|i| LLVMConstInt(int_type, u64::from(*i), false as i32))
-                    .collect::<Vec<_>>();
+                let mut indices = self.convert_indices(indices);
 
                 let num = indices.len() as u32;
                 LLVMBuildInBoundsGEP(
@@ -695,6 +703,14 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 self.struct_init(struct_ty, values)
             }
         }
+    }
+
+    unsafe fn convert_indices(&self, indices: &[u32]) -> Vec<LLVMValueRef> {
+        let int_type = LLVMInt32TypeInContext(self.context);
+        indices
+            .iter()
+            .map(|i| LLVMConstInt(int_type, u64::from(*i), false as i32))
+            .collect()
     }
 
     unsafe fn struct_init(

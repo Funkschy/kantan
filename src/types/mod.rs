@@ -66,6 +66,14 @@ impl<'src> Type<'src> {
     }
 
     #[inline]
+    pub fn is_closure(&self) -> bool {
+        if let Type::Simple(Simple::Closure(..)) = self {
+            return true;
+        }
+        false
+    }
+
+    #[inline]
     pub fn simple(&self) -> &Simple<'src> {
         match self {
             Type::Simple(s) => &s,
@@ -88,7 +96,6 @@ impl<'src> Type<'src> {
 
 pub type Module<'src> = &'src str;
 pub type TypeIndex = usize;
-pub type FuncIndex = usize;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Simple<'src> {
@@ -99,7 +106,8 @@ pub enum Simple<'src> {
     Void,
     Varargs,
     // (module, type index)
-    Closure(Module<'src>, TypeIndex, FuncIndex),
+    Closure(Module<'src>, TypeIndex),
+    Function(Box<ClosureType<'src>>),
     UserType(UserIdent<'src>),
 }
 
@@ -107,9 +115,10 @@ pub enum Simple<'src> {
 pub struct ClosureType<'src> {
     pub surrounding: &'src str,
     pub params: Vec<(&'src str, Type<'src>)>,
-    pub ret_ty: Box<Type<'src>>,
+    pub ret_ty: Type<'src>,
 }
 
+// TODO: implement display
 impl<'src> ClosureType<'src> {
     pub fn new(
         surrounding: &'src str,
@@ -119,7 +128,7 @@ impl<'src> ClosureType<'src> {
         ClosureType {
             surrounding,
             params,
-            ret_ty: Box::new(ret_ty),
+            ret_ty,
         }
     }
 }
@@ -143,9 +152,11 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Bool => "bool",
             Simple::Void => "void",
             Simple::Varargs => "...",
-            Simple::Closure(module, _, func_idx) => {
-                return write!(f, "{}._closure_{}", module, func_idx);
+            Simple::Closure(module, type_idx) => {
+                return write!(f, "{}._closure_{}", module, type_idx);
             }
+            // TODO: implement display
+            Simple::Function(cls_ty) => return write!(f, "{:?}", cls_ty),
             Simple::UserType(name) => return write!(f, "{}", name),
         };
         write!(f, "{}", s)

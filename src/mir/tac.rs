@@ -137,9 +137,10 @@ pub enum Expression<'src> {
         ret_type: Type<'src>,
         varargs: bool,
     },
+    /// A call to a function pointer
+    /// the actual function pointer is passed as the first field inside
+    /// the closure struct which is passed as the first argument
     CallFuncPtr {
-        module: Module<'src>,
-        func_idx: FuncIndex,
         args: Vec<Address<'src>>,
         ret_type: Type<'src>,
     },
@@ -211,15 +212,9 @@ impl<'src> fmt::Display for Expression<'src> {
                 let varargs = if *varargs { "varargs " } else { "" };
                 format!("{}call {}({})", varargs, f, args)
             }
-            CallFuncPtr {
-                module,
-                func_idx,
-                args,
-                ..
-            } => {
+            CallFuncPtr { args, .. } => {
                 let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
-                let args = args.join(", ");
-                format!("call_ptr {}._internal_.{}({})", module, func_idx, args)
+                format!("call_ptr {}({})", &args[0], args.join(", "))
             }
         };
 

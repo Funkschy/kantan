@@ -170,7 +170,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         block: &mut InstructionBlock<'src, 'ast>,
     ) {
         if let Some(env) = env {
-            let env_ty = Simple::Closure(module, env.type_idx, env.func_idx);
+            let env_ty = Simple::Closure(module, env.type_idx);
             let env_ptr = Type::Pointer(Pointer::new(1, env_ty.clone()));
             params.insert(0, ("_penv", env_ptr));
             self.fill_params(block, params);
@@ -489,18 +489,13 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
                 let ret_type = expr.clone_ty().unwrap();
 
-                let ty = callee.node.ty();
-                if let Some(Type::Simple(Simple::Closure(module, _, func_idx))) = ty.as_ref() {
+                let is_closure = callee.node.ty().as_ref().map(Type::is_closure);
+                if is_closure.unwrap_or(false) {
                     let left = self.expr_instr(rhs, &callee.node, block);
                     args.insert(0, Address::Ref(left.to_string()));
 
                     // Closure Call
-                    Expression::CallFuncPtr {
-                        module,
-                        func_idx: *func_idx,
-                        args,
-                        ret_type,
-                    }
+                    Expression::CallFuncPtr { args, ret_type }
                 } else if let ExprKind::Ident(ident) = callee.node.kind() {
                     let varargs = self.mod_funcs[module]
                         .get(ident)
@@ -619,8 +614,9 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 // environment and a pointer to the correct function (in this case the func index,
                 // because the codegen can figure out which function to call)
                 let ty = expr.ty().clone().unwrap();
-                if let Type::Simple(Simple::Closure(module, type_idx, func_idx)) = ty {
-                    let key = format!("_closure_.{}", func_idx);
+                if let Type::Simple(Simple::Closure(module, type_idx)) = ty {
+                    // TODO: unique identifier?
+                    let key = format!("_closure_.{}", type_idx);
                     let compiler_type = &self.compiler_types[module][type_idx];
 
                     let mut fields = compiler_type

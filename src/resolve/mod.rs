@@ -33,8 +33,8 @@ pub type ModCompilerTypeMap<'src> = ModMap<'src, Vec<CompilerType<'src>>>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerType<'src> {
     pub type_idx: usize,
-    pub func_idx: usize,
     pub free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
+    pub closure_type: ClosureType<'src>,
 }
 
 impl<'src> fmt::Display for CompilerType<'src> {
@@ -48,8 +48,8 @@ impl<'src> fmt::Display for CompilerType<'src> {
 
         write!(
             f,
-            "_internal_.{} {{ ({}), {} }}",
-            self.type_idx, self.func_idx, vars
+            "_internal_.{} {{ ({:?}), {} }}",
+            self.type_idx, self.closure_type, vars
         )
     }
 }
@@ -57,12 +57,12 @@ impl<'src> fmt::Display for CompilerType<'src> {
 impl<'src> CompilerType<'src> {
     pub fn new(
         type_idx: usize,
-        func_idx: usize,
+        closure_type: ClosureType<'src>,
         free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
     ) -> Self {
         CompilerType {
             type_idx,
-            func_idx,
+            closure_type,
             free_vars,
         }
     }
@@ -754,12 +754,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // callee is ident, but not in top level functions
                     Some(_) => {
                         let cls_ty = self.get_closure(callee, closure_ctx)?;
-                        if let Type::Simple(Simple::Closure(module, _, f_idx)) = cls_ty.node {
+                        if let Type::Simple(Simple::Closure(module, type_idx)) = cls_ty.node {
                             callee.node.set_ty(cls_ty.node.clone());
 
-                            let ct = &self.mod_closures[module][*f_idx];
+                            let comp_type = &self.mod_compiler_types[module][*type_idx];
+                            let ct = &comp_type.closure_type;
                             self.call_closure(ct, args, span)?;
-                            Ok(Some(ct.ret_ty.as_ref().clone()))
+                            Ok(Some(ct.ret_ty.clone()))
                         } else {
                             Err(self.call_non_function_error(
                                 callee.span,
@@ -771,12 +772,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // callee is an arbitrary expression
                     None => {
                         let cls_ty = self.resolve_type(callee, None)?;
-                        if let Type::Simple(Simple::Closure(module, _, f_idx)) = cls_ty {
+                        if let Type::Simple(Simple::Closure(module, type_idx)) = cls_ty {
                             callee.node.set_ty(cls_ty.clone());
 
-                            let ct = &self.mod_closures[module][f_idx];
+                            let comp_type = &self.mod_compiler_types[module][type_idx];
+                            let ct = &comp_type.closure_type;
                             self.call_closure(ct, args, span)?;
-                            Ok(Some(ct.ret_ty.as_ref().clone()))
+                            Ok(Some(ct.ret_ty.clone()))
                         } else {
                             Err(self.call_non_function_error(callee.span, span, cls_ty.clone()))
                         }
@@ -831,8 +833,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         .mod_closures
                         .entry(current_module)
                         .or_insert_with(ClosureDefinitions::default);
-                    let func_idx = cls_defs.len();
-                    cls_defs.push(cls_type);
+                    cls_defs.push(cls_type.clone());
 
                     // create type for environment
                     let comp_types = self
@@ -840,9 +841,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         .entry(current_module)
                         .or_insert_with(Vec::new);
                     let type_idx = comp_types.len();
-                    comp_types.push(CompilerType::new(type_idx, func_idx, free_vars));
+                    comp_types.push(CompilerType::new(type_idx, cls_type, free_vars));
 
-                    let ty = Type::Simple(Simple::Closure(current_module, type_idx, func_idx));
+                    let ty = Type::Simple(Simple::Closure(current_module, type_idx));
                     Ok(Some(ty))
                 }
                 ClosureBody::Block(..) => {
