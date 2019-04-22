@@ -252,7 +252,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 Simple::Closure(module, type_idx) => self.compiler_types[module][*type_idx],
                 Simple::Function(cls_ty) => {
                     let ret_type = self.convert(&cls_ty.ret_ty);
-                    let mut params = self.convert_params(false, &cls_ty.params);
+                    let mut params = self.convert_params(false, &cls_ty.params.0);
                     self.func_type(false, ret_type, &mut params)
                 }
                 // varargs is just handled as a type for convenience

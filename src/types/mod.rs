@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, hash};
 
 #[derive(Debug, Eq, Copy, Clone, PartialEq, Hash)]
 pub struct UserIdent<'src> {
@@ -97,6 +97,45 @@ impl<'src> Type<'src> {
 pub type Module<'src> = &'src str;
 pub type TypeIndex = usize;
 
+#[derive(Debug, Clone, Eq)]
+pub struct ClosureParamList<'src>(pub Vec<(&'src str, Type<'src>)>);
+
+impl<'src> ClosureParamList<'src> {
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = &(&'src str, Type<'src>)> {
+        self.0.iter()
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'src> PartialEq for ClosureParamList<'src> {
+    fn eq(&self, other: &Self) -> bool {
+        if other.0.len() == self.0.len() {
+            return self.0.iter().zip(other.0.iter()).all(|(s, o)| s.1 == o.1);
+        }
+
+        false
+    }
+}
+
+impl<'src> hash::Hash for ClosureParamList<'src> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        for t in self.0.iter().map(|(_, t)| t) {
+            t.hash(state);
+        }
+    }
+}
+
+impl<'src> From<Vec<(&'src str, Type<'src>)>> for ClosureParamList<'src> {
+    fn from(value: Vec<(&'src str, Type<'src>)>) -> Self {
+        ClosureParamList(value)
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Simple<'src> {
     I32,
@@ -113,21 +152,15 @@ pub enum Simple<'src> {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ClosureType<'src> {
-    pub surrounding: &'src str,
-    pub params: Vec<(&'src str, Type<'src>)>,
+    pub params: ClosureParamList<'src>,
     pub ret_ty: Type<'src>,
 }
 
 // TODO: implement display
 impl<'src> ClosureType<'src> {
-    pub fn new(
-        surrounding: &'src str,
-        params: Vec<(&'src str, Type<'src>)>,
-        ret_ty: Type<'src>,
-    ) -> Self {
+    pub fn new(params: Vec<(&'src str, Type<'src>)>, ret_ty: Type<'src>) -> Self {
         ClosureType {
-            surrounding,
-            params,
+            params: params.into(),
             ret_ty,
         }
     }

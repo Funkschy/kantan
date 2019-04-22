@@ -807,7 +807,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
                     let current_scope = self.sym_table.num_scopes();
                     let current_module = self.current_name;
-                    let current_function = self.current_func_def.name;
 
                     // vars of cls_ctx that are not free variables of outer scope
                     let diff = cls_ctx
@@ -828,7 +827,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     let free_vars = closure_ctx.free_vars.clone();
 
                     // create closure definition
-                    let cls_type = ClosureType::new(current_function, param_types, ret_ty);
+                    let cls_type = ClosureType::new(param_types, ret_ty);
                     let cls_defs = self
                         .mod_closures
                         .entry(current_module)
