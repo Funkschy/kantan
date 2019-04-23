@@ -317,6 +317,7 @@ pub enum NumBinaryType {
     SmallerEq,
     Greater,
     GreaterEq,
+    And,
 }
 
 impl<'a> From<&Token<'a>> for Option<NumBinaryType> {
@@ -334,6 +335,7 @@ impl<'a> From<&Token<'a>> for Option<NumBinaryType> {
             Token::SmallerEquals => Some(SmallerEq),
             Token::Greater => Some(Greater),
             Token::GreaterEquals => Some(GreaterEq),
+            Token::AmpersandAmpersand => Some(And),
             _ => None,
         }
     }
@@ -354,6 +356,7 @@ impl fmt::Display for NumBinaryType {
             SmallerEq => "<=",
             Greater => ">",
             GreaterEq => ">=",
+            And => "&&",
         };
 
         write!(f, "{}", s)

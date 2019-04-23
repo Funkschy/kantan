@@ -493,6 +493,34 @@ where
                                 Type::Pointer(Pointer::new(counter, inner)),
                             ))
                         }
+                        Spanned {
+                            node: Token::LParen,
+                            ..
+                        } => {
+                            let start = self.consume(Token::LParen)?.span.start;
+                            let mut types = Vec::new();
+
+                            while !self.peek_eq(Token::RParen) {
+                                types.push(self.consume_type()?.node);
+                                if !self.peek_eq(Token::RParen) {
+                                    self.consume(Token::Comma)?;
+                                }
+                            }
+
+                            self.consume(Token::RParen)?;
+                            self.consume(Token::Colon)?;
+
+                            let ret_ty = self.consume_type()?;
+
+                            Ok(Spanned::new(
+                                start,
+                                ret_ty.span.end,
+                                Type::Simple(Simple::Function(Box::new(ClosureType::new(
+                                    types,
+                                    ret_ty.node,
+                                )))),
+                            ))
+                        }
                         _ => {
                             let tok = Spanned::clone(&peek);
                             Err(self.make_consume_err(&tok, "Type".to_owned()).unwrap_err())
@@ -546,6 +574,7 @@ where
         let tok = &token.node;
         match tok {
             Token::EqualsEquals
+            | Token::AmpersandAmpersand
             | Token::BangEquals
             | Token::SmallerEquals
             | Token::GreaterEquals
@@ -559,8 +588,10 @@ where
                 let right_span = right.span;
                 let left_span = left.span;
 
+                // TODO: clean up
                 let expr = match tok {
                     Token::EqualsEquals
+                    | Token::AmpersandAmpersand
                     | Token::BangEquals
                     | Token::GreaterEquals
                     | Token::Greater

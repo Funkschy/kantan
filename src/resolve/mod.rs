@@ -498,16 +498,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 if let Err(msg) = ty {
                     errors.push(msg);
                 } else if let Ok(ty) = ty {
-                    match ty {
-                        Type::Pointer(_) => {}
-                        _ => {
-                            let err = self.error(
-                                expr.span,
-                                expr.span,
-                                ResolveErrorType::Delete(NonPtrError(ty)),
-                            );
-                            errors.push(err);
-                        }
+                    if !ty.is_ptr() {
+                        let err = self.error(
+                            expr.span,
+                            expr.span,
+                            ResolveErrorType::Delete(NonPtrError(ty)),
+                        );
+                        errors.push(err);
                     }
                 }
             }
@@ -754,13 +751,18 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // callee is ident, but not in top level functions
                     Some(_) => {
                         let cls_ty = self.get_closure(callee, closure_ctx)?;
-                        if let Type::Simple(Simple::Closure(module, type_idx)) = cls_ty.node {
+                        if let Type::Simple(Simple::CompilerType(module, type_idx)) = cls_ty.node {
                             callee.node.set_ty(cls_ty.node.clone());
 
                             let comp_type = &self.mod_compiler_types[module][*type_idx];
                             let ct = &comp_type.closure_type;
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.clone()))
+                        } else if let Type::Simple(Simple::Function(closure)) = cls_ty.node {
+                            callee.node.set_ty(cls_ty.node.clone());
+
+                            self.call_closure(closure, args, span)?;
+                            Ok(Some(closure.ret_ty.clone()))
                         } else {
                             Err(self.call_non_function_error(
                                 callee.span,
@@ -772,13 +774,18 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // callee is an arbitrary expression
                     None => {
                         let cls_ty = self.resolve_type(callee, None)?;
-                        if let Type::Simple(Simple::Closure(module, type_idx)) = cls_ty {
+                        if let Type::Simple(Simple::CompilerType(module, type_idx)) = cls_ty {
                             callee.node.set_ty(cls_ty.clone());
 
                             let comp_type = &self.mod_compiler_types[module][type_idx];
                             let ct = &comp_type.closure_type;
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.clone()))
+                        } else if let Type::Simple(Simple::Function(ref closure)) = cls_ty {
+                            callee.node.set_ty(cls_ty.clone());
+
+                            self.call_closure(closure, args, span)?;
+                            Ok(Some(closure.ret_ty.clone()))
                         } else {
                             Err(self.call_non_function_error(callee.span, span, cls_ty.clone()))
                         }
@@ -797,7 +804,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                             return Err(errors.swap_remove(0));
                         }
                         self.bind_param(p);
-                        param_types.push((p.0.node, p.1.node.clone()));
+                        param_types.push(p.1.node.clone());
                     }
 
                     let mut cls_ctx = ResolveClosureCtx::new(self.sym_table.num_scopes() - 1, true);
@@ -842,7 +849,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     let type_idx = comp_types.len();
                     comp_types.push(CompilerType::new(type_idx, cls_type, free_vars));
 
-                    let ty = Type::Simple(Simple::Closure(current_module, type_idx));
+                    let ty = Type::Simple(Simple::CompilerType(current_module, type_idx));
                     Ok(Some(ty))
                 }
                 ClosureBody::Block(..) => {
@@ -874,7 +881,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         let iter = args.0.iter().zip(cls_type.params.iter());
 
         for (arg, param_type) in iter {
-            let ty = self.resolve_type(arg, Some(&param_type.1))?;
+            let ty = self.resolve_type(arg, Some(&param_type))?;
             arg_types.push((arg.span, ty));
         }
 
@@ -884,7 +891,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             .zip(arg_types.iter())
             .filter_map(|(p, (arg_span, a))| {
                 // compare arguments to expected parameters
-                if let Err(err) = self.compare_types(*arg_span, expr_span, &p.1, a, "argument") {
+                if let Err(err) = self.compare_types(*arg_span, expr_span, &p, a, "argument") {
                     return Some(err);
                 }
                 None
@@ -1278,6 +1285,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         first: &'a Type<'src>,
         second: &'a Type<'src>,
     ) -> (bool, &'a Type<'src>) {
+        // TODO: better error message here (probably best, to just return a result)
+        if first.is_closure() || second.is_closure() {
+            return (false, first);
+        }
+
         if first == second {
             let prec = op.precedence();
             // Hacky solution, because we want to allow ==, <, !=, ... for pointers,

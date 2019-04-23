@@ -170,7 +170,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         block: &mut InstructionBlock<'src, 'ast>,
     ) {
         if let Some(env) = env {
-            let env_ty = Simple::Closure(module, env.type_idx);
+            // TODO: use simple *i8 for env and cast it into correct type here
+            let env_ty = Simple::CompilerType(module, env.type_idx);
             let env_ptr = Type::Pointer(Pointer::new(1, env_ty.clone()));
             params.insert(0, ("_penv", env_ptr));
             self.fill_params(block, params);
@@ -201,6 +202,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         idx: usize,
         block: &mut InstructionBlock<'src, 'ast>,
     ) -> Expression<'src> {
+        // TODO: emit cast to actual type, since the env type of a called function
+        // will just be an *i8
         let temp = self.temp_assign(Expression::Gep(env_address, vec![0, idx as u32]), block);
         Expression::Copy(temp)
     }
@@ -610,11 +613,8 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 Expression::New(address, ty)
             }
             ExprKind::Closure(params, body) => {
-                // TODO: fill environment and return an expression, that contains the filled
-                // environment and a pointer to the correct function (in this case the func index,
-                // because the codegen can figure out which function to call)
                 let ty = expr.ty().clone().unwrap();
-                if let Type::Simple(Simple::Closure(module, type_idx)) = ty {
+                if let Type::Simple(Simple::CompilerType(module, type_idx)) = ty {
                     // TODO: unique identifier?
                     let key = format!("_closure_.{}", type_idx);
                     let compiler_type = &self.compiler_types[module][type_idx];

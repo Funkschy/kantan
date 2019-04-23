@@ -249,10 +249,10 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
                 }
                 Simple::UserType(user_ty) => self.get_user_type(&user_ty),
-                Simple::Closure(module, type_idx) => self.compiler_types[module][*type_idx],
+                Simple::CompilerType(module, type_idx) => self.compiler_types[module][*type_idx],
                 Simple::Function(cls_ty) => {
                     let ret_type = self.convert(&cls_ty.ret_ty);
-                    let mut params = self.convert_params(false, &cls_ty.params.0);
+                    let mut params = self.convert_param_types(cls_ty.params.iter());
                     self.func_type(false, ret_type, &mut params)
                 }
                 // varargs is just handled as a type for convenience
@@ -286,6 +286,13 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         } else {
             Vec::new()
         }
+    }
+
+    unsafe fn convert_param_types<'a, I>(&'a mut self, iter: I) -> Vec<LLVMTypeRef>
+    where
+        I: Iterator<Item = &'a Type<'src>>,
+    {
+        iter.map(|t| self.convert(t)).collect()
     }
 
     unsafe fn func_type(
@@ -600,7 +607,6 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
 
                 let mut args: Vec<LLVMValueRef> =
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
-
                 let num_args = args.len() as u32;
 
                 let mut indices = self.convert_indices(&[0, 0]);
@@ -775,6 +781,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             NumBinaryType::Add => LLVMBuildAdd(self.builder, left, right, n),
             NumBinaryType::Sub => LLVMBuildSub(self.builder, left, right, n),
             NumBinaryType::Mul => LLVMBuildMul(self.builder, left, right, n),
+            NumBinaryType::And => LLVMBuildAnd(self.builder, left, right, n),
             // TODO: signed vs unsigned
             NumBinaryType::Div => LLVMBuildSDiv(self.builder, left, right, n),
             _ => {
