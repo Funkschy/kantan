@@ -484,7 +484,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 args,
                 module,
             } => {
-                let mut args: Vec<Address> = args
+                let args: Vec<Address> = args
                     .0
                     .iter()
                     .map(|a| self.expr_instr(true, &a.node, block))
@@ -495,10 +495,14 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let is_closure = callee.node.ty().as_ref().map(Type::is_closure);
                 if is_closure.unwrap_or(false) {
                     let left = self.expr_instr(rhs, &callee.node, block);
-                    args.insert(0, Address::Ref(left.to_string()));
+                    let ident = Address::Ref(left.to_string());
 
                     // Closure Call
-                    Expression::CallFuncPtr { args, ret_type }
+                    Expression::CallFuncPtr {
+                        ident,
+                        args,
+                        ret_type,
+                    }
                 } else if let ExprKind::Ident(ident) = callee.node.kind() {
                     let varargs = self.mod_funcs[module]
                         .get(ident)

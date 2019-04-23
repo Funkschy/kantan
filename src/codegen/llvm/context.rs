@@ -602,24 +602,21 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     UnaryType::Deref => a,
                 }
             }
-            Expression::CallFuncPtr { args, ret_type } => {
+            Expression::CallFuncPtr {
+                ident,
+                args,
+                ret_type,
+            } => {
                 let n = self.cstring(name);
+                let ident = self.translate_mir_address(ident);
 
                 let mut args: Vec<LLVMValueRef> =
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
+                args.insert(0, ident);
                 let num_args = args.len() as u32;
 
-                let mut indices = self.convert_indices(&[0, 0]);
-                let num_indices = indices.len() as u32;
-
-                let fptr = LLVMBuildInBoundsGEP(
-                    self.builder,
-                    args[0],
-                    indices.as_mut_ptr(),
-                    num_indices,
-                    self.cstring("_fptr"),
-                );
-                let f = LLVMBuildLoad(self.builder, fptr, self.cstring("fptr"));
+                let fptr = self.gep(ident, &[0, 0], "_fptr");
+                let f = LLVMBuildLoad(self.builder, fptr, self.cstring("_fptr_load"));
 
                 // let f = self.get_closure(module, *func_idx);
                 let name = if *ret_type != Type::Simple(Simple::Void) {
@@ -689,16 +686,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     _ => unreachable!("{} is invalid here", a),
                 };
 
-                let mut indices = self.convert_indices(indices);
-
-                let num = indices.len() as u32;
-                LLVMBuildInBoundsGEP(
-                    self.builder,
-                    address,
-                    indices.as_mut_ptr(),
-                    num,
-                    self.cstring("ptr"),
-                )
+                self.gep(address, indices, "ptr")
             }
             Expression::StructInit(identifier, values) => {
                 let struct_ty = self.get_user_type(identifier);
@@ -709,6 +697,19 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 self.struct_init(struct_ty, values)
             }
         }
+    }
+
+    unsafe fn gep(&mut self, address: LLVMValueRef, indices: &[u32], name: &str) -> LLVMValueRef {
+        let mut indices = self.convert_indices(indices);
+        let num_indices = indices.len() as u32;
+
+        LLVMBuildInBoundsGEP(
+            self.builder,
+            address,
+            indices.as_mut_ptr(),
+            num_indices,
+            self.cstring(name),
+        )
     }
 
     unsafe fn convert_indices(&self, indices: &[u32]) -> Vec<LLVMValueRef> {
