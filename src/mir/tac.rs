@@ -2,7 +2,7 @@ use std::{borrow::Borrow, fmt};
 
 use crate::{parse::token::Token, types::*};
 
-use super::{address::Address, CompilerType};
+use super::{address::Address, CompilerTypeDefinition};
 
 #[derive(PartialEq, Debug)]
 pub struct BasicBlock<'src> {
@@ -22,7 +22,7 @@ impl<'src> Default for BasicBlock<'src> {
 #[derive(Debug, Default)]
 pub struct InstructionBlock<'src, 'ast>(
     pub Vec<Instruction<'src>>,
-    pub Option<&'ast CompilerType<'src>>,
+    pub Option<&'ast CompilerTypeDefinition<'src>>,
 );
 
 impl<'src, 'ast> InstructionBlock<'src, 'ast> {

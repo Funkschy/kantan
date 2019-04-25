@@ -7,9 +7,9 @@ use llvm_sys::{
 
 use crate::{
     mir::{address::*, tac::*},
-    resolve::{CompilerType, ModCompilerTypeMap, ModTypeMap},
+    resolve::{ModCompilerTypeMap, ModTypeMap},
     types::*,
-    Mir, UserTypeDefinition,
+    CompilerTypeDefinition, Mir, UserTypeDefinition,
 };
 
 const ADDRESS_SPACE: u32 = 0;
@@ -135,13 +135,16 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         }
     }
 
-    unsafe fn add_llvm_compiler_ty(&mut self, module: &str, index: usize, ty: &CompilerType<'src>) {
-        let mut fields = vec![ptr::null_mut(); ty.len() + 1];
-        let f = self.get_closure(module, index).1;
-        fields[0] = LLVMPointerType(f, ADDRESS_SPACE);
+    unsafe fn add_llvm_compiler_ty(
+        &mut self,
+        module: &str,
+        index: usize,
+        ty: &CompilerTypeDefinition<'src>,
+    ) {
+        let mut fields = vec![ptr::null_mut(); ty.fields.len()];
 
-        for (key, value) in ty.free_vars.borrow().iter() {
-            fields[value.index + 1] = self.convert(&key.ty);
+        for (i, (_, ty)) in ty.fields.iter().enumerate() {
+            fields[i] = self.convert(ty);
         }
 
         let s = self.compiler_types[module][index];
@@ -455,7 +458,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 let expr = self.translate_mir_expr(e, &n);
 
                 if *a == Address::Empty {
-                    // Only void calls generate empty addresses. The Typechecker does not allow them to be
+                    // Only void calls generate empty addresses. The typechecker does not allow them to be
                     // assigned or used in any way, but the mir generates assign instructions for every
                     // expression, so we return here, to make sure that no actual assign is generated
                     // for the result of a void function call

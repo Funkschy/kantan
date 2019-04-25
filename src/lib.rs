@@ -43,6 +43,51 @@ impl<'src> fmt::Display for UserTypeDefinition<'src> {
     }
 }
 
+pub const COMP_TY_CLS_NAME: &str = "_closure";
+
+#[derive(Debug)]
+pub struct CompilerTypeDefinition<'src> {
+    pub index: usize,
+    pub fields: Vec<(&'src str, Type<'src>)>,
+}
+
+impl<'src> CompilerTypeDefinition<'src> {
+    pub fn new(index: usize, fields: Vec<(&'src str, Type<'src>)>) -> Self {
+        CompilerTypeDefinition { index, fields }
+    }
+
+    pub fn get_function(&self) -> Option<&ClosureType<'src>> {
+        self.fields.get(0).and_then(|(_, last)| {
+            if let Type::Pointer(Pointer {
+                ty: Simple::Function(cls_ty),
+                ..
+            }) = last
+            {
+                Some(cls_ty.as_ref())
+            } else {
+                None
+            }
+        })
+    }
+}
+
+impl<'src> fmt::Display for CompilerTypeDefinition<'src> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let fields = self
+            .fields
+            .iter()
+            .map(|(name, node)| format!("    {}: {}", name, node))
+            .collect::<Vec<String>>()
+            .join(",\n");
+
+        write!(
+            f,
+            "type _internal_.{} struct {{\n{}\n}}",
+            self.index, fields
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FunctionDefinition<'src> {
     name: &'src str,
@@ -256,12 +301,10 @@ impl<'src> fmt::Display for Mir<'src> {
                         format!(
                             "{}._internal_.{}{{ {} }}",
                             m,
-                            ct.type_idx,
-                            ct.free_vars
-                                .borrow()
+                            ct.index,
+                            ct.fields
                                 .iter()
-                                .map(|(k, _)| k)
-                                .map(std::string::ToString::to_string)
+                                .map(|(k, ty)| format!("{}: {}", k, ty))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         )

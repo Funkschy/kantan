@@ -27,50 +27,7 @@ pub type ModMap<'src, T> = HashMap<&'src str, T>;
 pub type ModTypeMap<'src> = ModMap<'src, UserTypeMap<'src>>;
 pub type ModFuncMap<'src> = ModMap<'src, FunctionMap<'src>>;
 pub type ModClosureMap<'src> = ModMap<'src, ClosureDefinitions<'src>>;
-pub type ModCompilerTypeMap<'src> = ModMap<'src, Vec<CompilerType<'src>>>;
-
-/// Types constructed by the compiler
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompilerType<'src> {
-    pub type_idx: usize,
-    pub free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
-    pub closure_type: ClosureType<'src>,
-}
-
-impl<'src> fmt::Display for CompilerType<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let vars = self
-            .free_vars
-            .iter()
-            .map(|(k, _)| format!("{}: {}", k.name, k.ty))
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        write!(
-            f,
-            "_internal_.{} {{ ({:?}), {} }}",
-            self.type_idx, self.closure_type, vars
-        )
-    }
-}
-
-impl<'src> CompilerType<'src> {
-    pub fn new(
-        type_idx: usize,
-        closure_type: ClosureType<'src>,
-        free_vars: HashMap<FreeVarKey<'src>, FreeVarValue>,
-    ) -> Self {
-        CompilerType {
-            type_idx,
-            closure_type,
-            free_vars,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.free_vars.len()
-    }
-}
+pub type ModCompilerTypeMap<'src> = ModMap<'src, Vec<CompilerTypeDefinition<'src>>>;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct FreeVarKey<'src> {
@@ -117,6 +74,22 @@ impl<'src> ResolveClosureCtx<'src> {
             is_inner,
             free_vars: HashMap::new(),
         }
+    }
+}
+
+impl<'src> From<&mut ResolveClosureCtx<'src>> for Vec<(&'src str, Type<'src>)> {
+    fn from(value: &mut ResolveClosureCtx<'src>) -> Self {
+        let mut vec = Vec::with_capacity(value.free_vars.len());
+
+        for (k, v) in value.free_vars.iter() {
+            if v.index > vec.len() {
+                vec.push((k.name, k.ty.clone()));
+            } else {
+                vec.insert(v.index, (k.name, k.ty.clone()));
+            }
+        }
+
+        vec
     }
 }
 
@@ -755,7 +728,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                             callee.node.set_ty(cls_ty.node.clone());
 
                             let comp_type = &self.mod_compiler_types[module][*type_idx];
-                            let ct = &comp_type.closure_type;
+                            let ct = comp_type.get_function().unwrap();
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.clone()))
                         } else if let Type::Simple(Simple::Function(closure)) = cls_ty.node {
@@ -778,7 +751,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                             callee.node.set_ty(cls_ty.clone());
 
                             let comp_type = &self.mod_compiler_types[module][type_idx];
-                            let ct = &comp_type.closure_type;
+                            let ct = comp_type.get_function().unwrap();
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.clone()))
                         } else if let Type::Simple(Simple::Function(ref closure)) = cls_ty {
@@ -831,8 +804,20 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         }
                     }
 
-                    let free_vars = closure_ctx.free_vars.clone();
+                    let comp_types = self
+                        .mod_compiler_types
+                        .entry(current_module)
+                        .or_insert_with(Vec::new);
+                    let type_idx = comp_types.len();
 
+                    // insert environment pointer into params
+                    param_types.insert(
+                        0,
+                        Type::Pointer(Pointer::new(
+                            1,
+                            Simple::CompilerType(current_module, type_idx),
+                        )),
+                    );
                     // create closure definition
                     let cls_type = ClosureType::new(param_types, ret_ty);
                     let cls_defs = self
@@ -841,13 +826,18 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         .or_insert_with(ClosureDefinitions::default);
                     cls_defs.push(cls_type.clone());
 
-                    // create type for environment
-                    let comp_types = self
-                        .mod_compiler_types
-                        .entry(current_module)
-                        .or_insert_with(Vec::new);
-                    let type_idx = comp_types.len();
-                    comp_types.push(CompilerType::new(type_idx, cls_type, free_vars));
+                    let mut fields: Vec<(&'src str, Type<'src>)> = closure_ctx.into();
+                    fields.insert(
+                        0,
+                        (
+                            COMP_TY_CLS_NAME,
+                            Type::Pointer(Pointer::new(1, Simple::Function(Box::new(cls_type)))),
+                        ),
+                    );
+
+                    comp_types.push(CompilerTypeDefinition::new(type_idx, fields));
+                    // TODO: actually use
+                    // comp_types.push(CompilerTypeDefinition::new(type_idx, closure_ctx.into()));
 
                     let ty = Type::Simple(Simple::CompilerType(current_module, type_idx));
                     Ok(Some(ty))
@@ -869,7 +859,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     ) -> Result<(), ResolveError<'src>> {
         // resolve arguments
         let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
-        if cls_type.params.len() != args.0.len() {
+        // substract 1, because one argument is added by the compiler (env)
+        if cls_type.params.len() - 1 != args.0.len() {
             // TODO: emit custom error
             panic!(
                 "Expected {} arguments, but got {}!",
@@ -878,7 +869,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             );
         }
 
-        let iter = args.0.iter().zip(cls_type.params.iter());
+        let iter = args.0.iter().zip(cls_type.params.iter().skip(1));
 
         for (arg, param_type) in iter {
             let ty = self.resolve_type(arg, Some(&param_type))?;
@@ -888,6 +879,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         let arg_error = cls_type
             .params
             .iter()
+            .skip(1)
             .zip(arg_types.iter())
             .filter_map(|(p, (arg_span, a))| {
                 // compare arguments to expected parameters

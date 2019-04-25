@@ -5,11 +5,9 @@ use std::collections::HashMap;
 
 use super::{
     parse::ast::*,
-    resolve::{
-        symbol::SymbolTable, CompilerType, ModCompilerTypeMap, ModFuncMap, ModTypeMap,
-        ResolveResult,
-    },
+    resolve::{symbol::SymbolTable, ModCompilerTypeMap, ModFuncMap, ModTypeMap, ResolveResult},
     types::*,
+    CompilerTypeDefinition, COMP_TY_CLS_NAME,
 };
 use address::{Address, Constant, TempVar};
 use blockmap::BlockMap;
@@ -116,7 +114,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         module: &'src str,
         mut head: FunctionHead<'src>,
         body: FunctionBody<'src, 'ast>,
-        env: Option<&'ast CompilerType<'src>>,
+        env: Option<&'ast CompilerTypeDefinition<'src>>,
     ) {
         self.current = Some((module, head.name.clone()));
         let main_func = head.name == "main";
@@ -165,13 +163,13 @@ impl<'src, 'ast> Tac<'src, 'ast> {
         &mut self,
         module: &'src str,
         e: &'ast Expr<'src>,
-        env: Option<&'ast CompilerType<'src>>,
+        env: Option<&'ast CompilerTypeDefinition<'src>>,
         params: &mut Vec<(&'src str, Type<'src>)>,
         block: &mut InstructionBlock<'src, 'ast>,
     ) {
         if let Some(env) = env {
             // TODO: use simple *i8 for env and cast it into correct type here
-            let env_ty = Simple::CompilerType(module, env.type_idx);
+            let env_ty = Simple::CompilerType(module, env.index);
             let env_ptr = Type::Pointer(Pointer::new(1, env_ty.clone()));
             params.insert(0, ("_penv", env_ptr));
             self.fill_params(block, params);
@@ -179,11 +177,11 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             let penv = Expression::Copy(self.names.lookup("_penv").into());
             let env_address = self.temp_assign(penv, block);
 
-            for (key, value) in env.free_vars.iter() {
-                let value = self.get_from_env(env_address.clone(), value.index + 1, block);
-                let address: Address<'src> = self.names.lookup(key.name).into();
+            for (index, (name, ty)) in env.fields.iter().enumerate() {
+                let value = self.get_from_env(env_address.clone(), index as u32, block);
+                let address: Address<'src> = self.names.lookup(name).into();
 
-                block.push(Instruction::Decl(address.clone(), key.ty.clone()));
+                block.push(Instruction::Decl(address.clone(), ty.clone()));
                 self.assign(address, value, block);
             }
 
@@ -199,12 +197,12 @@ impl<'src, 'ast> Tac<'src, 'ast> {
     fn get_from_env(
         &mut self,
         env_address: Address<'src>,
-        idx: usize,
+        idx: u32,
         block: &mut InstructionBlock<'src, 'ast>,
     ) -> Expression<'src> {
         // TODO: emit cast to actual type, since the env type of a called function
         // will just be an *i8
-        let temp = self.temp_assign(Expression::Gep(env_address, vec![0, idx as u32]), block);
+        let temp = self.temp_assign(Expression::Gep(env_address, vec![0, idx]), block);
         Expression::Copy(temp)
     }
 
@@ -623,12 +621,15 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     let key = format!("_closure_.{}", type_idx);
                     let compiler_type = &self.compiler_types[module][type_idx];
 
-                    let mut fields = compiler_type
-                        .free_vars
+                    let (_, cls_ty) = &compiler_type.fields[0];
+                    let expr = Expression::Copy(Address::FuncRef(module, key.clone()));
+                    self.var_decl(COMP_TY_CLS_NAME, cls_ty.clone(), expr, block);
+
+                    let fields = compiler_type
+                        .fields
                         .iter()
-                        .map(|(k, _)| self.lookup_ident(k.name))
+                        .map(|(name, _)| self.lookup_ident(name))
                         .collect::<Vec<_>>();
-                    fields.insert(0, Address::FuncRef(module, key.clone()));
 
                     let ret_ty = body.ty().clone().unwrap();
                     let params = params
@@ -649,7 +650,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                     return Expression::CompilerStructInit(module, type_idx, fields);
                 }
 
-                unreachable!("current should always be set")
+                unreachable!("type should never be wrong")
             }
             _ => unimplemented!("{:?}", expr),
         }
