@@ -617,19 +617,27 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             ExprKind::Closure(params, body) => {
                 let ty = expr.ty().clone().unwrap();
                 if let Type::Simple(Simple::CompilerType(module, type_idx)) = ty {
-                    // TODO: unique identifier?
                     let key = format!("_closure_.{}", type_idx);
                     let compiler_type = &self.compiler_types[module][type_idx];
 
                     let (_, cls_ty) = &compiler_type.fields[0];
                     let expr = Expression::Copy(Address::FuncRef(module, key.clone()));
-                    self.var_decl(COMP_TY_CLS_NAME, cls_ty.clone(), expr, block);
+                    let func = self.var_decl(COMP_TY_CLS_NAME, cls_ty.clone(), expr, block);
 
-                    let fields = compiler_type
+                    let env_type = &self.compiler_types[module][type_idx + 1];
+                    let env_fields = env_type
                         .fields
                         .iter()
                         .map(|(name, _)| self.lookup_ident(name))
                         .collect::<Vec<_>>();
+
+                    let expr = Expression::CompilerStructInit(module, type_idx + 1, env_fields);
+                    let env = self.var_decl(
+                        "_env",
+                        Type::Simple(Simple::CompilerType(module, type_idx + 1)),
+                        expr,
+                        block,
+                    );
 
                     let ret_ty = body.ty().clone().unwrap();
                     let params = params
@@ -638,16 +646,21 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                         .map(|p| (p.0.node, p.1.node.clone()))
                         .collect();
 
-                    let head = FunctionHead::new(key, params, ret_ty, false, false);
-
                     self.inner_add_function(
                         module,
-                        head,
+                        FunctionHead::new(key, params, ret_ty, false, false),
                         body.as_ref().into(),
-                        Some(compiler_type),
+                        Some(env_type),
                     );
 
-                    return Expression::CompilerStructInit(module, type_idx, fields);
+                    // TODO: this has to be just the environment by value. The
+                    // call instruction can just use the type_idx to regenerate the
+                    // key and call the closure
+                    return Expression::CompilerStructInit(
+                        module,
+                        type_idx,
+                        vec![func, Address::Ref(env.to_string())],
+                    );
                 }
 
                 unreachable!("type should never be wrong")

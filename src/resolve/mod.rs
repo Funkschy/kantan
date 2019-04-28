@@ -750,7 +750,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         if let Type::Simple(Simple::CompilerType(module, type_idx)) = cls_ty {
                             callee.node.set_ty(cls_ty.clone());
 
-                            let comp_type = &self.mod_compiler_types[module][type_idx];
+                            let comp_type = &self.mod_compiler_types[module][type_idx - 1];
                             let ct = comp_type.get_function().unwrap();
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.clone()))
@@ -781,7 +781,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     }
 
                     let mut cls_ctx = ResolveClosureCtx::new(self.sym_table.num_scopes() - 1, true);
-                    let ret_ty = self.resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
+                    let mut ret_ty = self.resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
+                    if let Type::Simple(Simple::CompilerType(_, ref mut type_idx)) = ret_ty {
+                        // change return type to environment only
+                        *type_idx += 1;
+                    }
 
                     self.sym_table.scope_exit();
 
@@ -815,7 +819,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         0,
                         Type::Pointer(Pointer::new(
                             1,
-                            Simple::CompilerType(current_module, type_idx),
+                            Simple::CompilerType(current_module, type_idx + 1),
                         )),
                     );
                     // create closure definition
@@ -826,18 +830,24 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         .or_insert_with(ClosureDefinitions::default);
                     cls_defs.push(cls_type.clone());
 
-                    let mut fields: Vec<(&'src str, Type<'src>)> = closure_ctx.into();
-                    fields.insert(
-                        0,
+                    let cls_ptr = Pointer::new(1, Simple::Function(Box::new(cls_type)));
+                    let fields = vec![
+                        (COMP_TY_CLS_NAME, Type::Pointer(cls_ptr)),
                         (
-                            COMP_TY_CLS_NAME,
-                            Type::Pointer(Pointer::new(1, Simple::Function(Box::new(cls_type)))),
+                            "_env",
+                            Type::Pointer(Pointer::new(
+                                1,
+                                Simple::CompilerType(current_module, type_idx + 1),
+                            )),
                         ),
-                    );
+                    ];
 
                     comp_types.push(CompilerTypeDefinition::new(type_idx, fields));
-                    // TODO: actually use
-                    // comp_types.push(CompilerTypeDefinition::new(type_idx, closure_ctx.into()));
+
+                    comp_types.push(CompilerTypeDefinition::new(
+                        type_idx + 1,
+                        closure_ctx.into(),
+                    ));
 
                     let ty = Type::Simple(Simple::CompilerType(current_module, type_idx));
                     Ok(Some(ty))

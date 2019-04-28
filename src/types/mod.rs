@@ -148,7 +148,7 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::Void => "void",
             Simple::Varargs => "...",
             Simple::CompilerType(module, type_idx) => {
-                return write!(f, "{}._internal_{}", module, type_idx);
+                return write!(f, "{}._internal_.{}", module, type_idx);
             }
             // TODO: implement display
             Simple::Function(cls_ty) => return write!(f, "{:?}", cls_ty),
