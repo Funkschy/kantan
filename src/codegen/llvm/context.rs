@@ -442,8 +442,6 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
 
                         for (i, value) in values.iter().enumerate() {
                             let a = self.translate_mir_address(value);
-                            dbg!(&n);
-                            dbg!(&value);
                             let ptr = LLVMBuildStructGEP(
                                 self.builder,
                                 var,
@@ -613,18 +611,10 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 ret_type,
             } => {
                 let n = self.cstring(name);
-                let ident = self.translate_mir_address(ident);
+                let f = self.translate_mir_address(ident);
 
                 let mut args: Vec<LLVMValueRef> =
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
-
-                let fptr = self.gep(ident, &[0, 0], "_fptr");
-                let f = LLVMBuildLoad(self.builder, fptr, self.cstring("_fptr_load"));
-
-                let env = self.gep(ident, &[0, 1], "_env");
-                let e = LLVMBuildLoad(self.builder, env, self.cstring("_env_load"));
-
-                args.insert(0, e);
                 let num_args = args.len() as u32;
 
                 // let f = self.get_closure(module, *func_idx);

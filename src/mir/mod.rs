@@ -7,7 +7,7 @@ use super::{
     parse::ast::*,
     resolve::{symbol::SymbolTable, ModCompilerTypeMap, ModFuncMap, ModTypeMap, ResolveResult},
     types::*,
-    CompilerTypeDefinition, COMP_TY_CLS_NAME,
+    CompilerTypeDefinition,
 };
 use address::{Address, Constant, TempVar};
 use blockmap::BlockMap;
@@ -482,7 +482,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 args,
                 module,
             } => {
-                let args: Vec<Address> = args
+                let mut args: Vec<Address> = args
                     .0
                     .iter()
                     .map(|a| self.expr_instr(true, &a.node, block))
@@ -490,10 +490,14 @@ impl<'src, 'ast> Tac<'src, 'ast> {
 
                 let ret_type = expr.clone_ty().unwrap();
 
-                let is_closure = callee.node.ty().as_ref().map(Type::is_closure);
-                if is_closure.unwrap_or(false) {
-                    let left = self.expr_instr(rhs, &callee.node, block);
-                    let ident = Address::Ref(left.to_string());
+                if let Some(Type::Simple(Simple::CompilerType(module, type_idx))) =
+                    callee.node.ty().as_ref()
+                {
+                    let env = self.expr_instr(rhs, &callee.node, block);
+                    let key = format!("_closure_.{}", type_idx);
+                    let ident = Address::FuncRef(module, key);
+
+                    args.insert(0, Address::Ref(env.to_string()));
 
                     // Closure Call
                     Expression::CallFuncPtr {
@@ -618,26 +622,12 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let ty = expr.ty().clone().unwrap();
                 if let Type::Simple(Simple::CompilerType(module, type_idx)) = ty {
                     let key = format!("_closure_.{}", type_idx);
-                    let compiler_type = &self.compiler_types[module][type_idx];
-
-                    let (_, cls_ty) = &compiler_type.fields[0];
-                    let expr = Expression::Copy(Address::FuncRef(module, key.clone()));
-                    let func = self.var_decl(COMP_TY_CLS_NAME, cls_ty.clone(), expr, block);
-
-                    let env_type = &self.compiler_types[module][type_idx + 1];
+                    let env_type = &self.compiler_types[module][type_idx];
                     let env_fields = env_type
                         .fields
                         .iter()
                         .map(|(name, _)| self.lookup_ident(name))
                         .collect::<Vec<_>>();
-
-                    let expr = Expression::CompilerStructInit(module, type_idx + 1, env_fields);
-                    let env = self.var_decl(
-                        "_env",
-                        Type::Simple(Simple::CompilerType(module, type_idx + 1)),
-                        expr,
-                        block,
-                    );
 
                     let ret_ty = body.ty().clone().unwrap();
                     let params = params
@@ -653,14 +643,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                         Some(env_type),
                     );
 
-                    // TODO: this has to be just the environment by value. The
-                    // call instruction can just use the type_idx to regenerate the
-                    // key and call the closure
-                    return Expression::CompilerStructInit(
-                        module,
-                        type_idx,
-                        vec![func, Address::Ref(env.to_string())],
-                    );
+                    return Expression::CompilerStructInit(module, type_idx, env_fields);
                 }
 
                 unreachable!("type should never be wrong")

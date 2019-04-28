@@ -727,7 +727,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         if let Type::Simple(Simple::CompilerType(module, type_idx)) = cls_ty.node {
                             callee.node.set_ty(cls_ty.node.clone());
 
-                            let comp_type = &self.mod_compiler_types[module][*type_idx];
+                            let comp_type = &self.mod_compiler_types[module][*type_idx - 1];
                             let ct = comp_type.get_function().unwrap();
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.clone()))
@@ -781,11 +781,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     }
 
                     let mut cls_ctx = ResolveClosureCtx::new(self.sym_table.num_scopes() - 1, true);
-                    let mut ret_ty = self.resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
-                    if let Type::Simple(Simple::CompilerType(_, ref mut type_idx)) = ret_ty {
-                        // change return type to environment only
-                        *type_idx += 1;
-                    }
+                    let ret_ty = self.resolve_expr(e.span, &e.node, None, &mut cls_ctx)?;
 
                     self.sym_table.scope_exit();
 
@@ -842,14 +838,16 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         ),
                     ];
 
+                    // (fptr + envptr) type
                     comp_types.push(CompilerTypeDefinition::new(type_idx, fields));
 
+                    // env type
                     comp_types.push(CompilerTypeDefinition::new(
                         type_idx + 1,
                         closure_ctx.into(),
                     ));
 
-                    let ty = Type::Simple(Simple::CompilerType(current_module, type_idx));
+                    let ty = Type::Simple(Simple::CompilerType(current_module, type_idx + 1));
                     Ok(Some(ty))
                 }
                 ClosureBody::Block(..) => {
@@ -869,12 +867,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     ) -> Result<(), ResolveError<'src>> {
         // resolve arguments
         let mut arg_types: Vec<(Span, Type)> = Vec::with_capacity(args.0.len());
-        // substract 1, because one argument is added by the compiler (env)
+        // subtract 1, because one argument is added by the compiler (env)
         if cls_type.params.len() - 1 != args.0.len() {
             // TODO: emit custom error
             panic!(
                 "Expected {} arguments, but got {}!",
-                cls_type.params.len(),
+                cls_type.params.len() - 1,
                 args.0.len()
             );
         }
