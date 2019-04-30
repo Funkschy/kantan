@@ -498,7 +498,8 @@ where
                             ..
                         } => {
                             let start = self.consume(Token::LParen)?.span.start;
-                            let mut types = Vec::new();
+                            // add env pointer
+                            let mut types = vec![Type::Pointer(Pointer::new(1, Simple::Void))];
 
                             while !self.peek_eq(Token::RParen) {
                                 types.push(self.consume_type()?.node);

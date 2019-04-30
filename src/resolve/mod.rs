@@ -727,8 +727,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         if let Type::Simple(Simple::CompilerType(module, type_idx)) = cls_ty.node {
                             callee.node.set_ty(cls_ty.node.clone());
 
-                            let comp_type = &self.mod_compiler_types[module][*type_idx - 1];
-                            let ct = comp_type.get_function().unwrap();
+                            let ct = &self.mod_closures[module][*type_idx];
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.clone()))
                         } else if let Type::Simple(Simple::Function(closure)) = cls_ty.node {
@@ -750,8 +749,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         if let Type::Simple(Simple::CompilerType(module, type_idx)) = cls_ty {
                             callee.node.set_ty(cls_ty.clone());
 
-                            let comp_type = &self.mod_compiler_types[module][type_idx - 1];
-                            let ct = comp_type.get_function().unwrap();
+                            let ct = &self.mod_closures[module][type_idx];
                             self.call_closure(ct, args, span)?;
                             Ok(Some(ct.ret_ty.clone()))
                         } else if let Type::Simple(Simple::Function(ref closure)) = cls_ty {
@@ -815,7 +813,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         0,
                         Type::Pointer(Pointer::new(
                             1,
-                            Simple::CompilerType(current_module, type_idx + 1),
+                            Simple::CompilerType(current_module, type_idx),
                         )),
                     );
                     // create closure definition
@@ -826,28 +824,10 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         .or_insert_with(ClosureDefinitions::default);
                     cls_defs.push(cls_type.clone());
 
-                    let cls_ptr = Pointer::new(1, Simple::Function(Box::new(cls_type)));
-                    let fields = vec![
-                        (COMP_TY_CLS_NAME, Type::Pointer(cls_ptr)),
-                        (
-                            "_env",
-                            Type::Pointer(Pointer::new(
-                                1,
-                                Simple::CompilerType(current_module, type_idx + 1),
-                            )),
-                        ),
-                    ];
-
-                    // (fptr + envptr) type
-                    comp_types.push(CompilerTypeDefinition::new(type_idx, fields));
-
                     // env type
-                    comp_types.push(CompilerTypeDefinition::new(
-                        type_idx + 1,
-                        closure_ctx.into(),
-                    ));
+                    comp_types.push(CompilerTypeDefinition::new(type_idx, closure_ctx.into()));
 
-                    let ty = Type::Simple(Simple::CompilerType(current_module, type_idx + 1));
+                    let ty = Type::Simple(Simple::CompilerType(current_module, type_idx));
                     Ok(Some(ty))
                 }
                 ClosureBody::Block(..) => {
@@ -977,9 +957,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             .zip(arg_types.iter())
             .filter_map(|(p, (arg_span, a))| {
                 // compare arguments to expected parameters
-                if let Err(err) = self.compare_types(*arg_span, expr_span, &p.node, a, "argument") {
-                    return Some(err);
-                }
+                // if let Err(err) = self.compare_types(*arg_span, expr_span, &p.node, a, "argument") {
+                //     return Some(err);
+                // }
                 None
             })
             // only evaluate the first argument (this should probably be changed)

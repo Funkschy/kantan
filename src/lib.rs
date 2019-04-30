@@ -55,20 +55,6 @@ impl<'src> CompilerTypeDefinition<'src> {
     pub fn new(index: usize, fields: Vec<(&'src str, Type<'src>)>) -> Self {
         CompilerTypeDefinition { index, fields }
     }
-
-    pub fn get_function(&self) -> Option<&ClosureType<'src>> {
-        self.fields.get(0).and_then(|(_, last)| {
-            if let Type::Pointer(Pointer {
-                ty: Simple::Function(cls_ty),
-                ..
-            }) = last
-            {
-                Some(cls_ty.as_ref())
-            } else {
-                None
-            }
-        })
-    }
 }
 
 impl<'src> fmt::Display for CompilerTypeDefinition<'src> {

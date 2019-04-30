@@ -485,6 +485,10 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let mut args: Vec<Address> = args
                     .0
                     .iter()
+                    .map(|a| {
+                        dbg!(&a.node.ty());
+                        a
+                    })
                     .map(|a| self.expr_instr(true, &a.node, block))
                     .collect();
 
