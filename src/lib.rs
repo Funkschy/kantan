@@ -1,4 +1,10 @@
-use std::{borrow::Borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write};
+use std::{
+    borrow::Borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write, time::Instant,
+};
+
+use clap::ArgMatches;
+
+use codegen::llvm::{emit_to_file, CodeGenArgs, CodeGenOptLevel, OutputType};
 
 mod cli;
 pub mod codegen;
@@ -314,7 +320,7 @@ pub fn compile<'src, W: Write>(
     writer: &mut W,
 ) -> Result<Mir<'src>, CompilationError> {
     init_ansi();
-    println!("Parsing...");
+    let mut now = Instant::now();
     let (mut ast_sources, err_count) = ast_sources(sources);
 
     if err_count != 0 {
@@ -323,6 +329,7 @@ pub fn compile<'src, W: Write>(
         }
         return Err(CompilationError::ParseError);
     }
+    println!("Parsing:          {} ms", now.elapsed().as_nanos());
 
     // Try to find the main function in one of the ASTs
     // TODO: require one of the files to be called main.*
@@ -333,11 +340,37 @@ pub fn compile<'src, W: Write>(
     }
 
     let main = main.unwrap();
-    println!("Type checking...");
-    let symbols = type_check(main, &mut ast_sources, writer)?;
 
-    println!("Constructing mir...");
+    now = Instant::now();
+    let symbols = type_check(main, &mut ast_sources, writer)?;
+    println!("Type checking:    {} ms", now.elapsed().as_micros());
+
+    now = Instant::now();
     let mir = construct_tac(&ast_sources, symbols);
+    println!("Mir construction: {} ms", now.elapsed().as_nanos());
 
     Ok(mir)
+}
+
+pub fn llvm_emit_to_file<W: Write>(mir: &Mir, err_writer: &mut W, args: &ArgMatches, dump: bool) {
+    let output_file = if let Some(out) = args.value_of("output") {
+        out.trim()
+    } else {
+        "out.o"
+    };
+
+    let opt_lvl = args
+        .value_of("opt")
+        .and_then(CodeGenOptLevel::convert)
+        .unwrap_or(CodeGenOptLevel::OptNone);
+
+    let output_type = args
+        .value_of("emit")
+        .and_then(|ty| OutputType::convert(ty.trim()))
+        .unwrap_or(OutputType::Object);
+
+    let codegen_args = CodeGenArgs::new(output_file, err_writer, output_type, opt_lvl);
+    let now = Instant::now();
+    emit_to_file(&mir, codegen_args, dump);
+    println!("LLVM compilation: {} ms", now.elapsed().as_nanos());
 }

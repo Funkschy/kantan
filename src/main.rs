@@ -2,8 +2,8 @@ use clap::{App, Arg, ArgMatches};
 use std::{fs, io};
 
 use kantan::{
-    codegen::llvm::{emit_to_file, CodeGenArgs, CodeGenOptLevel, OutputType},
-    compile, stdlib, CompilationError, Source, AUTHOR, DESCRIPTION, NAME, VERSION,
+    compile, llvm_emit_to_file, stdlib, CompilationError, Source, AUTHOR, DESCRIPTION, NAME,
+    VERSION,
 };
 
 fn main() -> Result<(), CompilationError> {
@@ -46,25 +46,7 @@ fn main() -> Result<(), CompilationError> {
         println!("{}", mir);
     }
 
-    let output_file = if let Some(out) = args.value_of("output") {
-        out.trim()
-    } else {
-        "out.o"
-    };
-
-    let opt_lvl = args
-        .value_of("opt")
-        .and_then(CodeGenOptLevel::convert)
-        .unwrap_or(CodeGenOptLevel::OptNone);
-
-    let output_type = args
-        .value_of("emit")
-        .and_then(|ty| OutputType::convert(ty.trim()))
-        .unwrap_or(OutputType::Object);
-
-    let codegen_args = CodeGenArgs::new(output_file, &mut err_writer, output_type, opt_lvl);
-
-    emit_to_file(&mir, codegen_args, dump);
+    llvm_emit_to_file(&mir, &mut err_writer, &args, dump);
 
     Ok(())
 }
