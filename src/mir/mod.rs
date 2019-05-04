@@ -5,7 +5,10 @@ use std::collections::HashMap;
 
 use super::{
     parse::ast::*,
-    resolve::{symbol::SymbolTable, ModCompilerTypeMap, ModFuncMap, ModTypeMap, ResolveResult},
+    resolve::{
+        symbol::SymbolTable, ModClosureMap, ModCompilerTypeMap, ModFuncMap, ModTypeMap,
+        ResolveResult,
+    },
     types::*,
     CompilerTypeDefinition,
 };
@@ -68,6 +71,7 @@ pub struct Tac<'src, 'ast> {
     pub(crate) types: &'ast ModTypeMap<'src>,
     compiler_types: &'ast ModCompilerTypeMap<'src>,
     mod_funcs: &'ast ModFuncMap<'src>,
+    closures: &'ast ModClosureMap<'src>,
     symbols: &'ast SymbolTable<'src>,
     names: NameTable<'src>,
     // TODO: reset for each function
@@ -89,6 +93,7 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             literals: HashMap::new(),
             names: NameTable::new(),
             mod_funcs: &resolve_result.mod_functions,
+            closures: &resolve_result.mod_closures,
             symbols: &resolve_result.symbols,
             types: &resolve_result.mod_user_types,
             compiler_types: &resolve_result.mod_compiler_types,
@@ -485,25 +490,32 @@ impl<'src, 'ast> Tac<'src, 'ast> {
                 let mut args: Vec<Address> = args
                     .0
                     .iter()
-                    .map(|a| {
-                        dbg!(&a.node.ty());
-                        a
-                    })
-                    .map(|a| self.expr_instr(true, &a.node, block))
+                    .map(|a| self.handle_arg(&a.node, block))
                     .collect();
 
                 let ret_type = expr.clone_ty().unwrap();
+                let callee_ty = callee.node.ty();
 
-                if let Some(Type::Simple(Simple::CompilerType(module, type_idx))) =
-                    callee.node.ty().as_ref()
-                {
+                if let Some((module, type_idx)) = callee_ty.as_ref().and_then(Type::get_closure) {
                     let env = self.expr_instr(rhs, &callee.node, block);
                     let key = format!("_closure_.{}", type_idx);
                     let ident = Address::FuncRef(module, key);
 
                     args.insert(0, Address::Ref(env.to_string()));
 
-                    // Closure Call
+                    Expression::CallFuncPtr {
+                        ident,
+                        args,
+                        ret_type,
+                    }
+                } else if callee_ty.as_ref().and_then(Type::get_function).is_some() {
+                    let left = self.expr_instr(rhs, &callee.node, block);
+                    let temp = self.temp_assign(Expression::Copy(left), block);
+                    let ident = self.temp_assign(Expression::Gep(temp.clone(), vec![0, 0]), block);
+                    let env = self.temp_assign(Expression::Gep(temp, vec![0, 1]), block);
+
+                    args.insert(0, env);
+
                     Expression::CallFuncPtr {
                         ident,
                         args,
@@ -654,6 +666,56 @@ impl<'src, 'ast> Tac<'src, 'ast> {
             }
             _ => unimplemented!("{:?}", expr),
         }
+    }
+
+    fn handle_arg(
+        &mut self,
+        arg: &'ast Expr<'src>,
+        block: &mut InstructionBlock<'src, 'ast>,
+    ) -> Address<'src> {
+        let address = self.expr_instr(true, &arg, block);
+        // closures are handled differently
+        if let Some((module, type_idx)) = arg.ty().as_ref().and_then(Type::get_closure) {
+            // the resolver generates 2 types for each closure
+            let pass_idx = type_idx - 1;
+            let cls_idx = type_idx / 2;
+            let cls_ty = &self.closures[module][cls_idx];
+
+            let temp = self.temp();
+            block.push(Instruction::Decl(
+                temp.clone(),
+                Type::Simple(Simple::CompilerType(module, pass_idx)),
+            ));
+
+            let key = format!("_closure_.{}", type_idx);
+            let cls = Address::FuncRef(module, key);
+            let expr = Expression::CompilerStructInit(
+                module,
+                pass_idx,
+                vec![cls, Address::Ref(address.to_string())],
+            );
+            self.assign(temp.clone(), expr, block);
+
+            let cls_ty = self.patch_closure_type(cls_ty);
+
+            let temp = self.temp_assign(
+                Expression::BitCast(
+                    Address::Ref(temp.to_string()),
+                    Type::Pointer(Pointer::new(1, Simple::FunctionWithEnv(Box::new(cls_ty)))),
+                ),
+                block,
+            );
+
+            return Address::Ref(temp.to_string());
+        }
+        address
+    }
+
+    #[inline(always)]
+    fn patch_closure_type(&self, cls_ty: &ClosureType<'src>) -> ClosureType<'src> {
+        let mut cls_ty = cls_ty.clone();
+        cls_ty.params[0] = Type::Pointer(Pointer::new(1, Simple::I8));
+        cls_ty
     }
 
     #[inline(always)]

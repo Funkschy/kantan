@@ -1,0 +1,15 @@
+import io
+
+def print(i: i32, p: (i32): bool): void {
+    if p(i) {
+        io.printf("True\n");
+    } else {
+        io.printf("False\n");
+    }
+}
+
+def main(): void {
+    let is_zero = |i: i32| i == 0;
+    print(0, is_zero);
+    print(3, is_zero);
+}

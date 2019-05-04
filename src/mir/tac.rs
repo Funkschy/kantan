@@ -143,6 +143,8 @@ pub enum Expression<'src> {
         args: Vec<Address<'src>>,
         ret_type: Type<'src>,
     },
+    /// static cast an expression into another type
+    BitCast(Address<'src>, Type<'src>),
     /// Gets a pointer to the Xth element of a struct or array
     /// x = base + offset
     StructGep(Address<'src>, u32),
@@ -187,7 +189,7 @@ impl<'src> fmt::Display for Expression<'src> {
                 values
                     .iter()
                     .map(std::string::ToString::to_string)
-                    .collect::<Vec<String>>()
+                    .collect::<Vec<_>>()
                     .join(", ")
             ),
             CompilerStructInit(module, type_idx, values) => format!(
@@ -215,6 +217,7 @@ impl<'src> fmt::Display for Expression<'src> {
                 let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
                 format!("call_ptr {}({})", ident, args.join(", "))
             }
+            BitCast(a, t) => format!("bitcast<{}>({})", t, a),
         };
 
         write!(f, "{}", s)

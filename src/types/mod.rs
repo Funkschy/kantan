@@ -66,14 +66,26 @@ impl<'src> Type<'src> {
     }
 
     #[inline]
-    pub fn is_closure(&self) -> bool {
+    pub fn get_closure(&self) -> Option<(Module<'src>, TypeIndex)> {
         match self {
-            Type::Simple(Simple::CompilerType(..))
+            Type::Simple(Simple::CompilerType(module, type_idx))
             | Type::Pointer(Pointer {
-                ty: Simple::CompilerType(..),
+                ty: Simple::CompilerType(module, type_idx),
                 ..
-            }) => true,
-            _ => false,
+            }) => Some((module, *type_idx)),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn get_function(&self) -> Option<&ClosureType<'src>> {
+        match self {
+            Type::Simple(Simple::FunctionWithEnv(closure))
+            | Type::Pointer(Pointer {
+                ty: Simple::FunctionWithEnv(closure),
+                ..
+            }) => Some(closure.as_ref()),
+            _ => None,
         }
     }
 
@@ -103,6 +115,7 @@ pub type TypeIndex = usize;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Simple<'src> {
+    I8,
     I32,
     F32,
     Bool,
@@ -111,7 +124,8 @@ pub enum Simple<'src> {
     Varargs,
     // (module, type index)
     CompilerType(Module<'src>, TypeIndex),
-    Function(Box<ClosureType<'src>>),
+    FunctionPointer(Box<ClosureType<'src>>),
+    FunctionWithEnv(Box<ClosureType<'src>>),
     UserType(UserIdent<'src>),
 }
 
@@ -121,18 +135,27 @@ pub struct ClosureType<'src> {
     pub ret_ty: Type<'src>,
 }
 
-// TODO: implement display
 impl<'src> ClosureType<'src> {
     pub fn new(params: Vec<Type<'src>>, ret_ty: Type<'src>) -> Self {
         ClosureType { params, ret_ty }
     }
 }
 
+impl<'src> fmt::Display for ClosureType<'src> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let params = self
+            .params
+            .iter()
+            .map(|t| t.to_string())
+            .collect::<Vec<_>>();
+        write!(f, "({}): {}", params.join(", "), self.ret_ty)
+    }
+}
+
 impl<'src> Simple<'src> {
     pub fn arithmetic(&self) -> bool {
         match self {
-            Simple::I32 => true,
-            Simple::F32 => true,
+            Simple::I8 | Simple::I32 | Simple::F32 => true,
             _ => false,
         }
     }
@@ -141,6 +164,7 @@ impl<'src> Simple<'src> {
 impl<'src> fmt::Display for Simple<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
+            Simple::I8 => "i8",
             Simple::I32 => "i32",
             Simple::F32 => "f32",
             Simple::String => "string",
@@ -150,8 +174,15 @@ impl<'src> fmt::Display for Simple<'src> {
             Simple::CompilerType(module, type_idx) => {
                 return write!(f, "{}._internal_.{}", module, type_idx);
             }
-            // TODO: implement display
-            Simple::Function(cls_ty) => return write!(f, "{:?}", cls_ty),
+            Simple::FunctionWithEnv(cls_ty) => {
+                return write!(
+                    f,
+                    "{{ *{}, {} }}",
+                    cls_ty,
+                    Type::Pointer(Pointer::new(1, Simple::I8))
+                )
+            }
+            Simple::FunctionPointer(cls_ty) => return write!(f, "{}", cls_ty),
             Simple::UserType(name) => return write!(f, "{}", name),
         };
         write!(f, "{}", s)

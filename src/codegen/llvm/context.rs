@@ -235,6 +235,11 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         self.user_types[user_ty.module()][user_ty.name()]
     }
 
+    #[inline(always)]
+    unsafe fn get_byte_ptr(&self) -> LLVMTypeRef {
+        LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
+    }
+
     #[inline]
     unsafe fn get_closure(&self, module: &str, func_idx: usize) -> LLVMFuncDef {
         let name = format!("_closure_.{}", func_idx);
@@ -244,18 +249,35 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     unsafe fn convert(&mut self, ty: &Type<'src>) -> LLVMTypeRef {
         match ty {
             Type::Simple(ty) => match ty {
+                Simple::I8 => LLVMInt8TypeInContext(self.context),
                 Simple::I32 => LLVMInt32TypeInContext(self.context),
                 Simple::F32 => LLVMFloatTypeInContext(self.context),
                 Simple::Bool => LLVMInt1TypeInContext(self.context),
                 Simple::Void => LLVMVoidTypeInContext(self.context),
-                Simple::String => {
-                    LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
-                }
+                Simple::String => self.get_byte_ptr(),
                 Simple::UserType(user_ty) => self.get_user_type(&user_ty),
                 Simple::CompilerType(module, type_idx) => self.compiler_types[module][*type_idx],
-                Simple::Function(cls_ty) => {
+                Simple::FunctionWithEnv(cls_ty) => {
                     let ret_type = self.convert(&cls_ty.ret_ty);
                     let mut params = self.convert_param_types(cls_ty.params.iter());
+
+                    let f_type = LLVMPointerType(
+                        self.func_type(false, ret_type, &mut params),
+                        ADDRESS_SPACE,
+                    );
+                    let mut elems = vec![f_type, self.get_byte_ptr()];
+
+                    LLVMStructTypeInContext(
+                        self.context,
+                        elems.as_mut_ptr(),
+                        elems.len() as u32,
+                        false as i32,
+                    )
+                }
+                Simple::FunctionPointer(cls_ty) => {
+                    let ret_type = self.convert(&cls_ty.ret_ty);
+                    let mut params = self.convert_param_types(cls_ty.params.iter());
+
                     self.func_type(false, ret_type, &mut params)
                 }
                 // varargs is just handled as a type for convenience
@@ -441,14 +463,14 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                         let var = self.name_table[&n];
 
                         for (i, value) in values.iter().enumerate() {
-                            let a = self.translate_mir_address(value);
+                            let val = self.translate_mir_address(value);
                             let ptr = LLVMBuildStructGEP(
                                 self.builder,
                                 var,
                                 i as u32,
                                 self.cstring(&format!("{}.{}", n, i)),
                             );
-                            LLVMBuildStore(self.builder, a, ptr);
+                            LLVMBuildStore(self.builder, val, ptr);
                         }
                         return;
                     }
@@ -550,6 +572,12 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     unsafe fn translate_mir_expr(&mut self, e: &Expression<'src>, name: &str) -> LLVMValueRef {
         match e {
             Expression::GetParam(i) => LLVMGetParam(self.current_function.unwrap().0, *i),
+            Expression::Copy(a) => self.translate_mir_address(a),
+            Expression::BitCast(a, ty) => {
+                let ty = self.convert(ty);
+                let address = self.translate_mir_address(a);
+                LLVMBuildBitCast(self.builder, address, ty, self.cstring(name))
+            }
             Expression::SizeOf(ty) => {
                 let ty = self.convert(ty);
                 // TODO: remove when i64 is supported
@@ -567,7 +595,6 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 self.build_memcpy(malloc, value, ty);
                 malloc
             }
-            Expression::Copy(a) => self.translate_mir_address(a),
             Expression::Binary(l, ty, r) => {
                 let left = self.translate_mir_address(l);
                 let right = self.translate_mir_address(r);
@@ -613,17 +640,25 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 let n = self.cstring(name);
                 let f = self.translate_mir_address(ident);
 
+                LLVMDumpType(LLVMTypeOf(f));
+                println!("");
+
                 let mut args: Vec<LLVMValueRef> =
                     args.iter().map(|a| self.translate_mir_address(a)).collect();
                 let num_args = args.len() as u32;
 
-                // let f = self.get_closure(module, *func_idx);
                 let name = if *ret_type != Type::Simple(Simple::Void) {
                     n
                 } else {
                     // void functions can't have a name
                     self.cstring("")
                 };
+
+                for a in args.iter() {
+                    LLVMDumpType(LLVMTypeOf(*a));
+                    println!("");
+                }
+
                 LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, name)
             }
             Expression::Call {
@@ -664,6 +699,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     // void functions can't have a name
                     self.cstring("")
                 };
+
                 LLVMBuildCall(self.builder, f.0, args.as_mut_ptr(), num_args, name)
             }
             Expression::StructGep(a, idx) => {

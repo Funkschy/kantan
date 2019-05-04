@@ -499,7 +499,7 @@ where
                         } => {
                             let start = self.consume(Token::LParen)?.span.start;
                             // add env pointer
-                            let mut types = vec![Type::Pointer(Pointer::new(1, Simple::Void))];
+                            let mut types = vec![Type::Pointer(Pointer::new(1, Simple::I8))];
 
                             while !self.peek_eq(Token::RParen) {
                                 types.push(self.consume_type()?.node);
@@ -513,13 +513,18 @@ where
 
                             let ret_ty = self.consume_type()?;
 
+                            // TODO: find way to differenciate between
+                            // functions with and without env
                             Ok(Spanned::new(
                                 start,
                                 ret_ty.span.end,
-                                Type::Simple(Simple::Function(Box::new(ClosureType::new(
-                                    types,
-                                    ret_ty.node,
-                                )))),
+                                Type::Pointer(Pointer::new(
+                                    1,
+                                    Simple::FunctionWithEnv(Box::new(ClosureType::new(
+                                        types,
+                                        ret_ty.node,
+                                    ))),
+                                )),
                             ))
                         }
                         _ => {

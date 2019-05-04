@@ -717,6 +717,22 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 module,
             } => {
                 let func = self.get_function(module, callee);
+                let check_cases = |cls_ty: &Type<'src>| {
+                    if let Some((module, type_idx)) = cls_ty.get_closure() {
+                        callee.node.set_ty(cls_ty.clone());
+
+                        let ct = &self.mod_closures[module][type_idx / 2];
+                        self.call_closure(ct, args, span)?;
+                        Ok(Some(ct.ret_ty.clone()))
+                    } else if let Some(closure) = cls_ty.get_function() {
+                        callee.node.set_ty(cls_ty.clone());
+
+                        self.call_closure(closure, args, span)?;
+                        Ok(Some(closure.ret_ty.clone()))
+                    } else {
+                        Err(self.call_non_function_error(callee.span, span, cls_ty.clone()))
+                    }
+                };
 
                 match func {
                     // normal function call
@@ -724,42 +740,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // callee is ident, but not in top level functions
                     Some(_) => {
                         let cls_ty = self.get_closure(callee, closure_ctx)?;
-                        if let Type::Simple(Simple::CompilerType(module, type_idx)) = cls_ty.node {
-                            callee.node.set_ty(cls_ty.node.clone());
-
-                            let ct = &self.mod_closures[module][*type_idx];
-                            self.call_closure(ct, args, span)?;
-                            Ok(Some(ct.ret_ty.clone()))
-                        } else if let Type::Simple(Simple::Function(closure)) = cls_ty.node {
-                            callee.node.set_ty(cls_ty.node.clone());
-
-                            self.call_closure(closure, args, span)?;
-                            Ok(Some(closure.ret_ty.clone()))
-                        } else {
-                            Err(self.call_non_function_error(
-                                callee.span,
-                                span,
-                                cls_ty.node.clone(),
-                            ))
-                        }
+                        check_cases(&cls_ty.node)
                     }
                     // callee is an arbitrary expression
                     None => {
                         let cls_ty = self.resolve_type(callee, None)?;
-                        if let Type::Simple(Simple::CompilerType(module, type_idx)) = cls_ty {
-                            callee.node.set_ty(cls_ty.clone());
-
-                            let ct = &self.mod_closures[module][type_idx];
-                            self.call_closure(ct, args, span)?;
-                            Ok(Some(ct.ret_ty.clone()))
-                        } else if let Type::Simple(Simple::Function(ref closure)) = cls_ty {
-                            callee.node.set_ty(cls_ty.clone());
-
-                            self.call_closure(closure, args, span)?;
-                            Ok(Some(closure.ret_ty.clone()))
-                        } else {
-                            Err(self.call_non_function_error(callee.span, span, cls_ty.clone()))
-                        }
+                        check_cases(&cls_ty)
                     }
                 }
             }
@@ -797,7 +783,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     // merge envs
                     for (k, mut v) in cls_ctx.free_vars {
                         if v.scope < current_scope {
-                            v.index -= diff;
+                            if v.index >= diff {
+                                v.index -= diff;
+                            } else {
+                                v.index = 0;
+                            }
                             closure_ctx.free_vars.insert(k, v);
                         }
                     }
@@ -807,13 +797,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         .entry(current_module)
                         .or_insert_with(Vec::new);
                     let type_idx = comp_types.len();
+                    let env_idx = type_idx + 1;
 
                     // insert environment pointer into params
                     param_types.insert(
                         0,
                         Type::Pointer(Pointer::new(
                             1,
-                            Simple::CompilerType(current_module, type_idx),
+                            Simple::CompilerType(current_module, env_idx),
                         )),
                     );
                     // create closure definition
@@ -824,10 +815,25 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         .or_insert_with(ClosureDefinitions::default);
                     cls_defs.push(cls_type.clone());
 
-                    // env type
-                    comp_types.push(CompilerTypeDefinition::new(type_idx, closure_ctx.into()));
+                    let cls_ptr = Pointer::new(1, Simple::FunctionPointer(Box::new(cls_type)));
+                    let fields = vec![
+                        (COMP_TY_CLS_NAME, Type::Pointer(cls_ptr)),
+                        (
+                            "_env",
+                            Type::Pointer(Pointer::new(
+                                1,
+                                Simple::CompilerType(current_module, env_idx),
+                            )),
+                        ),
+                    ];
 
-                    let ty = Type::Simple(Simple::CompilerType(current_module, type_idx));
+                    // (fptr + envptr) type
+                    comp_types.push(CompilerTypeDefinition::new(type_idx, fields));
+
+                    // env type
+                    comp_types.push(CompilerTypeDefinition::new(env_idx, closure_ctx.into()));
+
+                    let ty = Type::Simple(Simple::CompilerType(current_module, env_idx));
                     Ok(Some(ty))
                 }
                 ClosureBody::Block(..) => {
@@ -1266,7 +1272,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         second: &'a Type<'src>,
     ) -> (bool, &'a Type<'src>) {
         // TODO: better error message here (probably best, to just return a result)
-        if first.is_closure() || second.is_closure() {
+        if first.get_closure().is_some() || second.get_closure().is_some() {
             return (false, first);
         }
 
