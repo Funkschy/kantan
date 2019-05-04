@@ -378,16 +378,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 if let Err(msg) = ty {
                     errors.push(msg);
                 } else if let Ok(ty) = ty {
-                    match ty {
-                        Type::Pointer(_) => {}
-                        _ => {
-                            let err = self.error(
-                                expr.span,
-                                expr.span,
-                                ResolveErrorType::Delete(NonPtrError(ty)),
-                            );
-                            errors.push(err);
-                        }
+                    if !ty.is_ptr() {
+                        let err = self.error(
+                            expr.span,
+                            expr.span,
+                            ResolveErrorType::Delete(NonPtrError(ty)),
+                        );
+                        errors.push(err);
                     }
                 }
             }

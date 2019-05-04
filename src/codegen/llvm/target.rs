@@ -181,7 +181,6 @@ impl Drop for Target {
 
 pub struct TargetMachine {
     tm_ref: LLVMTargetMachineRef,
-    target: Target,
     features: *mut i8,
     cpu: *mut i8,
 }
@@ -211,7 +210,6 @@ impl TargetMachine {
 
             TargetMachine {
                 tm_ref: machine,
-                target,
                 features,
                 cpu,
             }

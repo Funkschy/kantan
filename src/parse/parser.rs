@@ -524,6 +524,7 @@ where
             | Token::BangEquals
             | Token::SmallerEquals
             | Token::GreaterEquals
+            | Token::AmpersandAmpersand
             | Token::Smaller
             | Token::Greater
             | Token::Plus
@@ -534,10 +535,12 @@ where
                 let right_span = right.span;
                 let left_span = left.span;
 
+                // TODO: cleanup
                 let expr = match tok {
                     Token::EqualsEquals
                     | Token::BangEquals
                     | Token::GreaterEquals
+                    | Token::AmpersandAmpersand
                     | Token::Greater
                     | Token::SmallerEquals
                     | Token::Smaller => {

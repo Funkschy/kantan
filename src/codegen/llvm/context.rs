@@ -626,6 +626,7 @@ impl<'src> KantanLLVMContext<'src> {
             NumBinaryType::Add => LLVMBuildAdd(self.builder, left, right, n),
             NumBinaryType::Sub => LLVMBuildSub(self.builder, left, right, n),
             NumBinaryType::Mul => LLVMBuildMul(self.builder, left, right, n),
+            NumBinaryType::And => LLVMBuildAnd(self.builder, left, right, n),
             // TODO: signed vs unsigned
             NumBinaryType::Div => LLVMBuildSDiv(self.builder, left, right, n),
             _ => {
