@@ -53,7 +53,7 @@ impl<'a, W: Write> CodeGenArgs<'a, W> {
     }
 }
 
-pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: CodeGenArgs<'a, W>) {
+pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: CodeGenArgs<'a, W>, dump: bool) {
     let mut ctx = KantanLLVMContext::new("main", &mir);
     ctx.generate(&mir);
 
@@ -61,14 +61,16 @@ pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: CodeGenArgs<'a, W>) {
     let vendor = VendorType::PC;
     let os = OsType::GnuLinux;
 
-    if let Err(msg) = ctx.verify_module() {
-        unsafe {
-            let cstr = CString::from_raw(msg);
-            let msg = cstr.to_str().unwrap();
-            print_error(msg, args.err_writer).unwrap();
-            ctx.dump_module();
+    if dump {
+        if let Err(msg) = ctx.verify_module() {
+            unsafe {
+                let cstr = CString::from_raw(msg);
+                let msg = cstr.to_str().unwrap();
+                print_error(msg, args.err_writer).unwrap();
+                ctx.dump_module();
+            }
+            panic!("Error while verifying");
         }
-        panic!("Error while verifying");
     }
 
     let module = if args.opt_lvl > CodeGenOptLevel::OptNone {
@@ -77,8 +79,9 @@ pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: CodeGenArgs<'a, W>) {
         ctx.module()
     };
 
-    // TODO: remove
-    ctx.dump_module();
+    if dump {
+        ctx.dump_module();
+    }
 
     let target = Target::try_from(TargetTriple::new(arch, vendor, os)).unwrap();
     let tm = TargetMachine::new(target, CpuType::Generic, args.opt_lvl);

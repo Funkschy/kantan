@@ -12,6 +12,16 @@ fn main() -> Result<(), CompilationError> {
     let stderr = io::stderr();
     let mut err_writer = stderr.lock();
 
+    let dump;
+    #[cfg(debug_assertions)]
+    {
+        dump = true;
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        dump = args.is_present("dump");
+    }
+
     let mut sources = args
         .values_of("source-file")
         .unwrap()
@@ -32,7 +42,9 @@ fn main() -> Result<(), CompilationError> {
     sources.append(&mut stdlib);
 
     let mir = compile(&sources, &mut err_writer)?;
-    println!("{}", mir);
+    if dump {
+        println!("{}", mir);
+    }
 
     let output_file = if let Some(out) = args.value_of("output") {
         out.trim()
@@ -52,7 +64,7 @@ fn main() -> Result<(), CompilationError> {
 
     let codegen_args = CodeGenArgs::new(output_file, &mut err_writer, output_type, opt_lvl);
 
-    emit_to_file(&mir, codegen_args);
+    emit_to_file(&mir, codegen_args, dump);
 
     Ok(())
 }
@@ -97,6 +109,7 @@ pub fn parse_args<'a>() -> ArgMatches<'a> {
                 .possible_values(&["0", "1", "2", "3"])
                 .takes_value(true),
         )
+        .arg(Arg::with_name("dump").short("d").long("dump"))
         .arg(Arg::with_name("source-file").multiple(true).required(true))
         .get_matches()
 }
