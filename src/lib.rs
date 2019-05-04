@@ -329,7 +329,7 @@ pub fn compile<'src, W: Write>(
         }
         return Err(CompilationError::ParseError);
     }
-    println!("Parsing:          {} μs", now.elapsed().as_nanos());
+    println!("Parsing:          {} μs", now.elapsed().as_micros());
 
     // Try to find the main function in one of the ASTs
     // TODO: require one of the files to be called main.*
@@ -347,7 +347,7 @@ pub fn compile<'src, W: Write>(
 
     now = Instant::now();
     let mir = construct_tac(&ast_sources, symbols);
-    println!("Mir construction: {} μs", now.elapsed().as_nanos());
+    println!("Mir construction: {} μs", now.elapsed().as_micros());
 
     Ok(mir)
 }
@@ -372,5 +372,5 @@ pub fn llvm_emit_to_file<W: Write>(mir: &Mir, err_writer: &mut W, args: &ArgMatc
     let codegen_args = CodeGenArgs::new(output_file, err_writer, output_type, opt_lvl);
     let now = Instant::now();
     emit_to_file(&mir, codegen_args, dump);
-    println!("LLVM compilation: {} μs", now.elapsed().as_nanos());
+    println!("LLVM compilation: {} μs", now.elapsed().as_micros());
 }
