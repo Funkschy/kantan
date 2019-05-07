@@ -14,7 +14,7 @@ mod resolve;
 mod types;
 
 use self::{
-    mir::{func::Func, tac::Label, Tac},
+    mir::{func::Func, tac::Label, FunctionHead, Tac},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
     resolve::{ModTypeMap, ResolveResult, Resolver},
     types::*,
@@ -51,14 +51,26 @@ impl<'src> fmt::Display for UserTypeDefinition<'src> {
 
 #[derive(Debug, Clone)]
 pub struct FunctionDefinition<'src> {
+    name: &'src str,
     ret_type: Spanned<Type<'src>>,
     params: Vec<Spanned<Type<'src>>>,
     varargs: bool,
 }
 
+impl<'src> Default for FunctionDefinition<'src> {
+    fn default() -> Self {
+        FunctionDefinition {
+            name: "",
+            ret_type: Spanned::new(0, 0, Type::Simple(Simple::Void)),
+            params: vec![],
+            varargs: false,
+        }
+    }
+}
+
 pub type UserTypeMap<'src> = HashMap<&'src str, UserTypeDefinition<'src>>;
 pub type FunctionMap<'src> = HashMap<&'src str, FunctionDefinition<'src>>;
-pub type MirFuncMap<'src> = HashMap<&'src str, Func<'src>>;
+pub type MirFuncMap<'src> = HashMap<String, Func<'src>>;
 
 #[derive(Debug)]
 pub struct Source {
@@ -268,6 +280,7 @@ fn construct_tac<'src>(
     for (src_name, (_, prg)) in ast_sources.iter() {
         for top_lvl in prg.0.iter() {
             if !tac.functions.contains_key(src_name) {
+                // TODO: remove, when stdlib is implemented
                 // since io is currently inserted into the ast manually, the mir generation would
                 // crash, because it uses the resolve_result to prepare its modules and io may not
                 // have been imported
@@ -289,14 +302,20 @@ fn construct_tac<'src>(
                     .iter()
                     .map(|Param(n, ty)| (n.node, ty.node.clone()))
                     .collect();
-                let ret_type = ret_type.node.clone();
 
-                let ident = UserIdent::new(src_name, name.node);
+                let head = FunctionHead::new(
+                    name.node.to_owned(),
+                    params,
+                    ret_type.node.clone(),
+                    *is_extern,
+                    varargs,
+                );
 
-                tac.add_function(ident, params, &body, ret_type, *is_extern, varargs);
+                tac.add_function(src_name, head, body);
             }
         }
     }
+
     Mir {
         global_strings: tac.literals,
         functions: tac.functions,

@@ -5,7 +5,7 @@ use crate::types::*;
 
 #[derive(PartialEq, Debug)]
 pub struct Func<'src> {
-    pub(crate) name: &'src str,
+    pub(crate) name: String,
     pub(crate) params: Vec<(&'src str, Type<'src>)>,
     pub(crate) ret: Type<'src>,
     pub(crate) blocks: BlockMap<'src>,
@@ -15,7 +15,7 @@ pub struct Func<'src> {
 
 impl<'src> Func<'src> {
     pub fn new(
-        name: &'src str,
+        name: String,
         params: Vec<(&'src str, Type<'src>)>,
         ret: Type<'src>,
         blocks: BlockMap<'src>,
@@ -83,7 +83,7 @@ impl<'src> fmt::Display for Func<'src> {
 
         write!(
             f,
-            "def {}({}): {} {{\n{}\n}}",
+            "{}({}): {} {{\n{}\n}}",
             self.name, params, self.ret, instructions
         )
     }

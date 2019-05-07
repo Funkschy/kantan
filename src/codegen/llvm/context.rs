@@ -7,6 +7,7 @@ use llvm_sys::{
 
 use crate::{
     mir::{address::*, tac::*},
+    resolve::ModTypeMap,
     types::*,
     Mir, UserTypeDefinition,
 };
@@ -17,7 +18,9 @@ enum Intrinsic {
     MemCpy = 0,
 }
 
-pub struct KantanLLVMContext<'src> {
+type LLVMFuncDef = (LLVMValueRef, LLVMTypeRef);
+
+pub struct KantanLLVMContext<'src, 'mir> {
     // TODO: we probably want separate Modules
     module: LLVMModuleRef,
     context: LLVMContextRef,
@@ -26,15 +29,15 @@ pub struct KantanLLVMContext<'src> {
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
     blocks: HashMap<Label, LLVMBasicBlockRef>,
-    functions: HashMap<&'src str, HashMap<&'src str, LLVMValueRef>>,
+    functions: HashMap<&'src str, HashMap<&'mir str, LLVMFuncDef>>,
     user_types: HashMap<&'src str, HashMap<&'src str, LLVMTypeRef>>,
     // TODO: make hashmap to save memory
     strings: Vec<CString>,
     intrinsics: Vec<LLVMValueRef>,
 }
 
-impl<'src> KantanLLVMContext<'src> {
-    pub fn new(name: &str, mir: &Mir<'src>) -> Self {
+impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
+    pub fn new(name: &str, mir: &'mir Mir<'src>) -> Self {
         unsafe {
             let name = CString::new(name).unwrap().into_raw();
 
@@ -64,22 +67,7 @@ impl<'src> KantanLLVMContext<'src> {
             };
 
             ctx.add_intrinsics();
-
-            for (m, typemap) in mir.types.iter() {
-                let mut structs: HashMap<&'src str, _> = HashMap::new();
-                for (n, _ty) in typemap.iter() {
-                    // forward declaration of types
-                    let s = LLVMStructCreateNamed(ctx.context, ctx.cstring(n));
-                    structs.insert(n, s);
-                }
-                ctx.user_types.insert(m, structs);
-            }
-
-            for (m, typemap) in mir.types.iter() {
-                for (n, ty) in typemap.iter() {
-                    ctx.add_llvm_struct(m, n, ty);
-                }
-            }
+            ctx.add_user_types(&mir.types);
 
             // Function definitions need to be evaluated first
             for (file, functions) in mir.functions.iter() {
@@ -88,15 +76,35 @@ impl<'src> KantanLLVMContext<'src> {
                 for (_, function) in functions.iter() {
                     let ret_type = ctx.convert(&function.ret);
 
-                    let func_type = ctx.func_type(function.is_varargs, ret_type, &function.params);
+                    let mut params = ctx.convert_params(function.is_varargs, &function.params);
+                    let func_type = ctx.func_type(function.is_varargs, ret_type, &mut params);
+
                     let f = ctx.llvm_add_func(func_type, &function.name, function.is_extern);
-                    llvm_funcs.insert(function.name, f);
+                    llvm_funcs.insert(function.name.as_ref(), (f, func_type));
                 }
 
                 ctx.functions.insert(file, llvm_funcs);
             }
 
             ctx
+        }
+    }
+
+    unsafe fn add_user_types(&mut self, types: &ModTypeMap<'src>) {
+        for (m, typemap) in types.iter() {
+            let mut structs: HashMap<&'src str, _> = HashMap::new();
+            for (n, _) in typemap.iter() {
+                // forward declaration of types
+                let s = LLVMStructCreateNamed(self.context, self.cstring(n));
+                structs.insert(n, s);
+            }
+            self.user_types.insert(m, structs);
+        }
+
+        for (m, typemap) in types.iter() {
+            for (n, ty) in typemap.iter() {
+                self.add_llvm_struct(m, n, ty);
+            }
         }
     }
 
@@ -124,7 +132,7 @@ impl<'src> KantanLLVMContext<'src> {
         self.intrinsics.push(memcpy_func);
     }
 
-    unsafe fn add_llvm_struct(&mut self, module: &str, name: &str, def: &UserTypeDefinition) {
+    unsafe fn add_llvm_struct(&mut self, module: &str, name: &str, def: &UserTypeDefinition<'src>) {
         let mut fields = vec![ptr::null_mut(); def.fields.len()];
 
         for (_, (i, ty)) in def.fields.iter() {
@@ -136,7 +144,7 @@ impl<'src> KantanLLVMContext<'src> {
     }
 }
 
-impl<'src> KantanLLVMContext<'src> {
+impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     pub fn verify_module(&self) -> Result<(), *mut i8> {
         unsafe {
             let mut error = ptr::null_mut();
@@ -165,6 +173,7 @@ impl<'src> KantanLLVMContext<'src> {
         self.module
     }
 
+    #[inline(always)]
     fn get_intrinsic(&self, intrinsic: Intrinsic) -> LLVMValueRef {
         self.intrinsics[intrinsic as usize]
     }
@@ -178,26 +187,30 @@ impl<'src> KantanLLVMContext<'src> {
         )
     }
 
+    #[inline(always)]
     fn get_user_type(&self, user_ty: &UserIdent) -> LLVMTypeRef {
         self.user_types[user_ty.module()][user_ty.name()]
     }
 
-    unsafe fn convert(&self, ty: &Type) -> LLVMTypeRef {
+    #[inline(always)]
+    unsafe fn get_byte_ptr(&self) -> LLVMTypeRef {
+        LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
+    }
+
+    unsafe fn convert(&mut self, ty: &Type<'src>) -> LLVMTypeRef {
         match ty {
             Type::Simple(ty) => match ty {
                 Simple::I32 => LLVMInt32TypeInContext(self.context),
                 Simple::F32 => LLVMFloatTypeInContext(self.context),
                 Simple::Bool => LLVMInt1TypeInContext(self.context),
                 Simple::Void => LLVMVoidTypeInContext(self.context),
-                Simple::String => {
-                    LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE)
-                }
+                Simple::String => self.get_byte_ptr(),
                 Simple::UserType(user_ty) => self.get_user_type(&user_ty),
                 // varargs is just handled as a type for convenience
                 Simple::Varargs => panic!("Varargs is not a real type"),
             },
             Type::Pointer(ptr) => {
-                let mut ty = self.convert(&Type::Simple(ptr.ty));
+                let mut ty = self.convert(&Type::Simple(ptr.ty.clone()));
                 for _ in 0..ptr.number {
                     ty = LLVMPointerType(ty, ADDRESS_SPACE);
                 }
@@ -206,27 +219,32 @@ impl<'src> KantanLLVMContext<'src> {
         }
     }
 }
-impl<'src> KantanLLVMContext<'src> {
+
+impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     unsafe fn cstring(&mut self, string: &str) -> *mut i8 {
         let cstr = CString::new(string).unwrap().into_raw();
         self.strings.push(CString::from_raw(cstr));
-        cstr
+        cstr as *mut i8
+    }
+
+    unsafe fn convert_params(
+        &mut self,
+        varargs: bool,
+        params: &[(&str, Type<'src>)],
+    ) -> Vec<LLVMTypeRef> {
+        if !varargs {
+            params.iter().map(|(_, t)| self.convert(t)).collect()
+        } else {
+            Vec::new()
+        }
     }
 
     unsafe fn func_type(
         &mut self,
         varargs: bool,
         ret: LLVMTypeRef,
-        params: &[(&str, Type)],
+        params: &mut [LLVMTypeRef],
     ) -> LLVMTypeRef {
-        let iter = params.iter();
-
-        let mut params: Vec<LLVMTypeRef> = if !varargs {
-            iter.map(|(_, t)| self.convert(t)).collect()
-        } else {
-            Vec::new()
-        };
-
         LLVMFunctionType(
             ret,
             params.as_mut_ptr(),
@@ -235,7 +253,7 @@ impl<'src> KantanLLVMContext<'src> {
         )
     }
 
-    pub fn generate(&mut self, mir: &Mir<'src>) {
+    pub fn generate(&mut self, mir: &'mir Mir<'src>) {
         unsafe {
             for (label, string) in &mir.global_strings {
                 self.add_global_string(label, string);
@@ -243,12 +261,15 @@ impl<'src> KantanLLVMContext<'src> {
 
             for (file, functions) in mir.functions.iter() {
                 for (_, function) in functions.iter() {
+                    self.name_table.clear();
+
                     if function.is_extern {
                         continue;
                     }
 
-                    let f = self.functions[*file][&function.name];
-                    self.current_function = Some(f);
+                    let name: &str = function.name.as_ref();
+                    let f = self.functions[*file][name];
+                    self.current_function = Some(f.0);
 
                     let mut bbs = Vec::with_capacity(function.blocks.blocks.len());
 
@@ -256,7 +277,7 @@ impl<'src> KantanLLVMContext<'src> {
                     for b in function.blocks.blocks.iter() {
                         if let Instruction::Label(label) = &b.instructions[0] {
                             let name: &str = label.borrow();
-                            let bb_ref = self.add_bb(f, name);
+                            let bb_ref = self.add_bb(f.0, name);
                             self.blocks.insert(label.clone(), bb_ref);
                             bbs.push(bb_ref);
                         } else {
@@ -332,7 +353,7 @@ impl<'src> KantanLLVMContext<'src> {
         LLVMAppendBasicBlockInContext(self.context, f, name)
     }
 
-    unsafe fn translate_mir_instr(&mut self, instr: &Instruction) {
+    unsafe fn translate_mir_instr(&mut self, instr: &Instruction<'src>) {
         match instr {
             Instruction::Return(Some(a)) => {
                 LLVMBuildRet(self.builder, self.translate_mir_address(a));
@@ -359,14 +380,14 @@ impl<'src> KantanLLVMContext<'src> {
                     let var = self.name_table[&n];
 
                     for (i, value) in values.iter().enumerate() {
-                        let a = self.translate_mir_address(value);
+                        let val = self.translate_mir_address(value);
                         let ptr = LLVMBuildStructGEP(
                             self.builder,
                             var,
                             i as u32,
                             self.cstring(&format!("{}.{}", n, i)),
                         );
-                        LLVMBuildStore(self.builder, a, ptr);
+                        LLVMBuildStore(self.builder, val, ptr);
                     }
                     return;
                 }
@@ -374,7 +395,7 @@ impl<'src> KantanLLVMContext<'src> {
                 let expr = self.translate_mir_expr(e, &n);
 
                 if *a == Address::Empty {
-                    // Only void calls generate empty addresses. The Typechecker does not allow them to be
+                    // Only void calls generate empty addresses. The typechecker does not allow them to be
                     // assigned or used in any way, but the mir generates assign instructions for every
                     // expression, so we return here, to make sure that no actual assign is generated
                     // for the result of a void function call
@@ -402,7 +423,7 @@ impl<'src> KantanLLVMContext<'src> {
         }
     }
 
-    unsafe fn translate_mir_address(&mut self, a: &Address) -> LLVMValueRef {
+    unsafe fn translate_mir_address(&mut self, a: &Address<'src>) -> LLVMValueRef {
         match a {
             Address::Empty => unreachable!(),
             Address::Null(ty) => LLVMConstNull(self.convert(ty)),
@@ -438,7 +459,12 @@ impl<'src> KantanLLVMContext<'src> {
         }
     }
 
-    unsafe fn build_memcpy(&mut self, dest: LLVMValueRef, src: LLVMValueRef, ty: LLVMTypeRef) {
+    unsafe fn build_memcpy(
+        &mut self,
+        dest: LLVMValueRef,
+        src: LLVMValueRef,
+        ty: LLVMTypeRef,
+    ) -> LLVMValueRef {
         let byte_ty = LLVMInt8TypeInContext(self.context);
         let ptr_ty = LLVMPointerType(byte_ty, ADDRESS_SPACE);
         let dest = LLVMBuildBitCast(self.builder, dest, ptr_ty, self.cstring("dest"));
@@ -454,10 +480,10 @@ impl<'src> KantanLLVMContext<'src> {
             memcpy_args.as_mut_ptr(),
             memcpy_args.len() as u32,
             self.cstring(""),
-        );
+        )
     }
 
-    unsafe fn translate_mir_expr(&mut self, e: &Expression, name: &str) -> LLVMValueRef {
+    unsafe fn translate_mir_expr(&mut self, e: &Expression<'src>, name: &str) -> LLVMValueRef {
         match e {
             Expression::GetParam(i) => LLVMGetParam(self.current_function.unwrap(), *i),
             Expression::SizeOf(ty) => {
@@ -553,7 +579,8 @@ impl<'src> KantanLLVMContext<'src> {
                     // void functions can't have a name
                     self.cstring("")
                 };
-                LLVMBuildCall(self.builder, f, args.as_mut_ptr(), num_args, name)
+
+                LLVMBuildCall(self.builder, f.0, args.as_mut_ptr(), num_args, name)
             }
             Expression::StructGep(a, idx) => {
                 let address = match a {
@@ -566,21 +593,28 @@ impl<'src> KantanLLVMContext<'src> {
             }
             Expression::StructInit(identifier, values) => {
                 let struct_ty = self.get_user_type(identifier);
-                let struct_alloca =
-                    LLVMBuildAlloca(self.builder, struct_ty, self.cstring("structtmp"));
-                for (i, value) in values.iter().enumerate() {
-                    let a = self.translate_mir_address(value);
-                    let ptr = LLVMBuildStructGEP(
-                        self.builder,
-                        struct_alloca,
-                        i as u32,
-                        self.cstring(&format!("value.{}", i)),
-                    );
-                    LLVMBuildStore(self.builder, a, ptr);
-                }
-                struct_alloca
+                self.struct_init(struct_ty, values)
             }
         }
+    }
+
+    unsafe fn struct_init(
+        &mut self,
+        struct_ty: LLVMTypeRef,
+        values: &[Address<'src>],
+    ) -> LLVMValueRef {
+        let struct_alloca = LLVMBuildAlloca(self.builder, struct_ty, self.cstring("structtmp"));
+        for (i, value) in values.iter().enumerate() {
+            let a = self.translate_mir_address(value);
+            let ptr = LLVMBuildStructGEP(
+                self.builder,
+                struct_alloca,
+                i as u32,
+                self.cstring(&format!("value.{}", i)),
+            );
+            LLVMBuildStore(self.builder, a, ptr);
+        }
+        struct_alloca
     }
 
     unsafe fn float_binary(
@@ -645,7 +679,7 @@ impl<'src> KantanLLVMContext<'src> {
     }
 }
 
-impl<'src> Drop for KantanLLVMContext<'src> {
+impl<'src, 'mir> Drop for KantanLLVMContext<'src, 'mir> {
     fn drop(&mut self) {
         unsafe {
             LLVMDisposeBuilder(self.builder);

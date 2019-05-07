@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::types::Simple;
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Token<'src> {
     NullLit,
     Ident(&'src str),

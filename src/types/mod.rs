@@ -86,7 +86,7 @@ impl<'src> Type<'src> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Simple<'src> {
     I32,
     F32,
@@ -122,7 +122,7 @@ impl<'src> fmt::Display for Simple<'src> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Pointer<'src> {
     /// the number of references: 1 = *, 2 = **
     pub number: usize,

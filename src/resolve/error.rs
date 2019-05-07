@@ -36,11 +36,12 @@ impl<'src> fmt::Display for ResolveError<'src> {
         };
 
         let s = match &self.error {
-            ResolveErrorType::IllegalAssignment(AssignmentError {
-                name,
-                definition_span,
-                ref bin_op_err,
-            }) => {
+            ResolveErrorType::IllegalAssignment(err) => {
+                let AssignmentError {
+                    name,
+                    definition_span,
+                    ref bin_op_err,
+                } = err.as_ref();
                 let (line_nr, _) = find_line_index(self.source, definition_span.start);
                 let span = *definition_span;
                 let reason = format!(
@@ -83,6 +84,10 @@ impl<'src> fmt::Display for ResolveError<'src> {
                 "Cannot use operator '{}' on expression of type '{}'",
                 err.op, err.ty
             )),
+            ResolveErrorType::CallNonFunction(ref err) => self.fmt_err(&format!(
+                "Trying to call variable of type '{}' however UFCS is not supported yet",
+                err.0
+            )),
         };
 
         write!(f, "{}", s)
@@ -91,7 +96,7 @@ impl<'src> fmt::Display for ResolveError<'src> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ResolveErrorType<'src> {
-    IllegalAssignment(AssignmentError<'src>),
+    IllegalAssignment(Box<AssignmentError<'src>>),
     NotDefined(DefinitionError<'src>),
     IllegalOperation(BinaryOperationError<'src>),
     IllegalType(IllegalTypeError<'src>),
@@ -101,6 +106,7 @@ pub enum ResolveErrorType<'src> {
     Deref(NonPtrError<'src>),
     Delete(NonPtrError<'src>),
     NotArithmetic(ArithmeticError<'src>),
+    CallNonFunction(NonFunctionError<'src>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -114,6 +120,9 @@ impl<'src> ArithmeticError<'src> {
         ArithmeticError { ty, op }
     }
 }
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct NonFunctionError<'src>(pub Type<'src>);
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TypeInferenceError;
