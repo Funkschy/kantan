@@ -81,11 +81,11 @@ impl<'src> fmt::Display for ResolveError<'src> {
                 ty
             )),
             ResolveErrorType::NotArithmetic(ref err) => self.fmt_err(&format!(
-                "Cannot use operator '{}' on expression of type '{}'",
+                "cannot use operator '{}' on expression of type '{}'",
                 err.op, err.ty
             )),
             ResolveErrorType::CallNonFunction(ref err) => self.fmt_err(&format!(
-                "Trying to call variable of type '{}' however UFCS is not supported yet",
+                "trying to call variable of type '{}', but UFCS is not supported yet",
                 err.0
             )),
         };

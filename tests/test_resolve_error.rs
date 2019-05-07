@@ -162,3 +162,30 @@ fn test_invalid_equality_operation_should_return_error_message() {
 
     assert_eq!(expected, output);
 }
+
+#[test]
+fn test_call_of_non_function_type_should_return_error_message() {
+    let mut cursor = Cursor::new(Vec::new());
+
+    let source = Source::new(
+        "test-call-non-func",
+        r#"def main(): void {
+"test"();
+ }"#,
+    );
+
+    kantan::compile(&[source], &mut cursor).unwrap_err();
+    let output = String::from_utf8(cursor.into_inner()).unwrap();
+
+    let expected = concat!(
+        r#"error: trying to call variable of type 'string', but UFCS is not supported yet
+--> test-call-non-func:2:2
+  |
+2 |"test"();
+"#,
+        "  |\u{1b}[31m ^^^^\u{1b}[0m
+"
+    );
+
+    assert_eq!(expected, output);
+}
