@@ -100,13 +100,13 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         self.mod_user_types.insert(name, HashMap::new());
         self.mod_functions.insert(name, HashMap::new());
 
-        let (_, prg) = self.programs.get(name).unwrap();
+        let Unit { ast, .. } = self.programs.get(name).unwrap();
 
-        for top_lvl in prg.0.iter() {
+        for top_lvl in ast.0.iter() {
             self.declare_top_lvl(&top_lvl, errors);
         }
 
-        for top_lvl in prg.0.iter() {
+        for top_lvl in ast.0.iter() {
             self.resolve_top_lvl(top_lvl, errors);
         }
     }
@@ -736,8 +736,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     }
 
     fn current_source(&self) -> &'src Source {
-        let (src, _) = self.programs[self.current_name];
-        src
+        self.programs[self.current_name].source
     }
 
     fn handle_ident(
@@ -1097,8 +1096,8 @@ mod tests {
         }]);
 
         let mut map = HashMap::new();
-        map.insert("main", (&main_src, main_ast));
-        map.insert("test", (&test_src, test_ast));
+        map.insert("main", Unit::new(&main_src, main_ast));
+        map.insert("test", Unit::new(&test_src, test_ast));
 
         let mut resolver = Resolver::new("main", &map);
         let errors = resolver.resolve();
@@ -1137,7 +1136,7 @@ mod tests {
         ]);
 
         let mut map = HashMap::new();
-        map.insert("test", (&source, ast));
+        map.insert("test", Unit::new(&source, ast));
 
         let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
@@ -1164,7 +1163,7 @@ mod tests {
         }]);
 
         let mut map = HashMap::new();
-        map.insert("test", (&source, ast));
+        map.insert("test", Unit::new(&source, ast));
 
         let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();
@@ -1172,7 +1171,7 @@ mod tests {
         let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
 
-        if let TopLvl::FuncDecl { body, .. } = &(&map["test"].1).0[0] {
+        if let TopLvl::FuncDecl { body, .. } = &(&map["test"].ast).0[0] {
             if let Stmt::VarDecl(decl) = &body.0[0] {
                 assert_eq!(
                     decl.value.node.ty().clone(),
@@ -1214,7 +1213,7 @@ mod tests {
         }]);
 
         let mut map = HashMap::new();
-        map.insert("test", (&source, ast));
+        map.insert("test", Unit::new(&source, ast));
 
         let mut resolver = Resolver::new("test", &map);
         let errors = resolver.resolve();

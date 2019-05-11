@@ -28,7 +28,18 @@ pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
 pub const AUTHOR: &str = env!("CARGO_PKG_AUTHORS");
 pub const DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
 
-pub type PrgMap<'src> = HashMap<&'src str, (&'src Source, Program<'src>)>;
+pub struct Unit<'src> {
+    source: &'src Source,
+    ast: Program<'src>,
+}
+
+impl<'src> Unit<'src> {
+    pub fn new(source: &'src Source, ast: Program<'src>) -> Self {
+        Unit { source, ast }
+    }
+}
+
+pub type PrgMap<'src> = HashMap<&'src str, Unit<'src>>;
 
 #[derive(Debug)]
 pub struct UserTypeDefinition<'src> {
@@ -186,7 +197,7 @@ fn ast_sources(sources: &[Source]) -> (PrgMap<'_>, usize) {
         sources
             .iter()
             .zip(parse_trees.into_iter())
-            .map(|(src, prg)| (src.name.as_str(), (src, prg)))
+            .map(|(src, prg)| (src.name.as_str(), Unit::new(src, prg)))
             .collect(),
         err_count,
     )
@@ -195,8 +206,8 @@ fn ast_sources(sources: &[Source]) -> (PrgMap<'_>, usize) {
 fn find_main<'src>(ast_sources: &PrgMap<'src>) -> Option<&'src str> {
     ast_sources
         .iter()
-        .find(|(_, (_, prg))| {
-            prg.0.iter().any(|top_lvl| {
+        .find(|(_, unit)| {
+            unit.ast.0.iter().any(|top_lvl| {
                 if let TopLvl::FuncDecl { name, .. } = top_lvl {
                     name.node == "main"
                 } else {
@@ -277,8 +288,8 @@ fn construct_tac<'src>(
     resolve_result: ResolveResult<'src>,
 ) -> Mir<'src> {
     let mut tac = Tac::new(resolve_result);
-    for (src_name, (_, prg)) in ast_sources.iter() {
-        for top_lvl in prg.0.iter() {
+    for (src_name, unit) in ast_sources.iter() {
+        for top_lvl in unit.ast.0.iter() {
             if !tac.functions.contains_key(src_name) {
                 // TODO: remove, when stdlib is implemented
                 // since io is currently inserted into the ast manually, the mir generation would
@@ -343,7 +354,7 @@ pub fn compile<'src, W: Write>(
     let (mut ast_sources, err_count) = ast_sources(sources);
 
     if err_count != 0 {
-        for (source, ast) in ast_sources.values() {
+        for Unit { source, ast } in ast_sources.values() {
             report_errors(source, ast, writer)?;
         }
         return Err(CompilationError::ParseError);
@@ -351,7 +362,6 @@ pub fn compile<'src, W: Write>(
     println!("Parsing:          {} μs", now.elapsed().as_micros());
 
     // Try to find the main function in one of the ASTs
-    // TODO: require one of the files to be called main.*
     let main = find_main(&ast_sources);
 
     if main.is_none() {
