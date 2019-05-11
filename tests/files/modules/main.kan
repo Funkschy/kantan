@@ -1,6 +1,6 @@
-import io
-import lib
-import bintree
+import "io"
+import "lib"
+import "bintree"
 
 def test(): void {
     io.printf("Test\n");

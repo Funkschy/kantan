@@ -1,4 +1,4 @@
-import io
+import "io"
 
 def f(i: i32): i32 {
     let x = 20;

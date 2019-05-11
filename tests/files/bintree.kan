@@ -1,4 +1,4 @@
-import io
+import "io"
 
 type Person struct {
     name: string,

@@ -131,7 +131,7 @@ where
 
     fn import(&mut self) -> TopLvlResult<'src> {
         self.consume(Token::Import)?;
-        let name = self.consume_ident()?;
+        let name = self.consume_string()?;
 
         Ok(TopLvl::Import { name })
     }
@@ -385,6 +385,31 @@ where
                         let tok = Spanned::clone(&peek);
                         return Err(self
                             .make_consume_err(&tok, "Identifier".to_owned())
+                            .unwrap_err());
+                    }
+                }
+                Err(err) => Err(err),
+            };
+        }
+
+        Err(self.eof().unwrap_err())
+    }
+
+    fn consume_string(&mut self) -> ParseResult<'src, Spanned<&'src str>> {
+        if let Some(peek) = self.scanner.peek().cloned() {
+            return match peek {
+                Ok(peek) => {
+                    if let Spanned {
+                        node: Token::StringLit(lit),
+                        span,
+                    } = peek
+                    {
+                        self.advance()?;
+                        return Ok(Spanned::from_span(span, lit));
+                    } else {
+                        let tok = Spanned::clone(&peek);
+                        return Err(self
+                            .make_consume_err(&tok, "string".to_owned())
                             .unwrap_err());
                     }
                 }
@@ -1020,7 +1045,10 @@ mod tests {
 
     #[test]
     fn test_parse_import() {
-        let source = Source::new("main", "import test\ndef main(): void {}");
+        let source = Source::new(
+            "main",
+            concat!("import ", r#""test""#, "\ndef main(): void {}"),
+        );
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1028,12 +1056,12 @@ mod tests {
         assert_eq!(
             Program(vec![
                 TopLvl::Import {
-                    name: Spanned::new(7, 10, "test")
+                    name: Spanned::new(8, 11, "test")
                 },
                 TopLvl::FuncDecl {
-                    name: Spanned::new(16, 19, "main"),
+                    name: Spanned::new(18, 21, "main"),
                     is_extern: false,
-                    ret_type: Spanned::new(24, 27, Type::Simple(Simple::Void)),
+                    ret_type: Spanned::new(26, 29, Type::Simple(Simple::Void)),
                     params: ParamList::default(),
                     body: Block(vec![])
                 }

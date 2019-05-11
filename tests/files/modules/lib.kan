@@ -1,4 +1,4 @@
-import bintree
+import "bintree"
 
 type Person struct {
     name: string
