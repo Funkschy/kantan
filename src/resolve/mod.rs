@@ -1171,7 +1171,7 @@ mod tests {
         let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
 
-        if let TopLvl::FuncDecl { body, .. } = &(&map["test"].ast).0[0] {
+        if let TopLvl::FuncDecl { body, .. } = &map["test"].ast.0[0] {
             if let Stmt::VarDecl(decl) = &body.0[0] {
                 assert_eq!(
                     decl.value.node.ty().clone(),

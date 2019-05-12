@@ -8,7 +8,7 @@ type ExprResult<'src> = ParseResult<'src, Spanned<Expr<'src>>>;
 type StmtResult<'src> = ParseResult<'src, Stmt<'src>>;
 type TopLvlResult<'src> = ParseResult<'src, TopLvl<'src>>;
 
-fn as_err_stmt<'src>(err: Spanned<ParseError<'src>>) -> Stmt<'src> {
+fn as_err_stmt(err: Spanned<ParseError>) -> Stmt {
     Stmt::Expr(Spanned::new(
         err.span.start,
         err.span.end,

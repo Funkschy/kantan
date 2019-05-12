@@ -5,7 +5,6 @@ const NAME: &str = "test.s";
 fn compile_dir(name: &str) {
     let paths = fs::read_dir(name)
         .unwrap()
-        .into_iter()
         .map(|f| f.unwrap().path())
         .collect::<Vec<PathBuf>>();
 

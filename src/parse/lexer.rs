@@ -324,7 +324,7 @@ mod tests {
         let source = Source::new("main", ". ...");
         let lexer = Lexer::new(&source);
 
-        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        let tokens: Vec<Spanned<Token>> = lexer.map(std::result::Result::unwrap).collect();
         assert_eq!(
             vec![
                 Spanned::new(0, 1, Token::Dot),
@@ -340,7 +340,7 @@ mod tests {
 
         let lexer = Lexer::new(&source);
 
-        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        let tokens: Vec<Spanned<Token>> = lexer.map(std::result::Result::unwrap).collect();
         assert_eq!(
             vec![
                 Spanned::new(0, 1, Token::Dot),
@@ -363,7 +363,7 @@ mod tests {
 
         let lexer = Lexer::new(&source);
 
-        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        let tokens: Vec<Spanned<Token>> = lexer.map(std::result::Result::unwrap).collect();
         assert_eq!(
             vec![
                 Spanned::new(0, 1, Token::DecLit("1")),
@@ -379,7 +379,7 @@ mod tests {
         let source = Source::new("main", "1 <= 2 <=2< =3");
         let lexer = Lexer::new(&source);
 
-        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        let tokens: Vec<Spanned<Token>> = lexer.map(std::result::Result::unwrap).collect();
         assert_eq!(
             vec![
                 Spanned::new(0, 1, Token::DecLit("1")),
@@ -414,7 +414,7 @@ mod tests {
         let source = Source::new("main", r#"let s = "";"#);
         let lexer = Lexer::new(&source);
 
-        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        let tokens: Vec<Spanned<Token>> = lexer.map(std::result::Result::unwrap).collect();
         assert_eq!(
             vec![
                 Spanned::new(0, 2, Token::Let),
@@ -500,13 +500,13 @@ mod tests {
         let source = Source::new("main", "hello1 world");
         let mut lexer = Lexer::new(&source);
 
-        let slice = lexer.read_while(|c| c.is_alphabetic());
+        let slice = lexer.read_while(char::is_alphabetic);
         assert_eq!("hello", slice);
 
         let source = Source::new("main", "こんにちは");
         let mut lexer = Lexer::new(&source);
 
-        let slice = lexer.read_while(|c| c.is_alphabetic());
+        let slice = lexer.read_while(char::is_alphabetic);
         assert_eq!("こんにちは", slice);
 
         let source = Source::new("main", "hello1 world");
@@ -558,7 +558,7 @@ mod tests {
         let source = Source::new("main", "let test: i32 = (42);");
         let lexer = Lexer::new(&source);
 
-        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        let tokens: Vec<Spanned<Token>> = lexer.map(std::result::Result::unwrap).collect();
         let expected = vec![
             Spanned::new(0, 2, Token::Let),
             Spanned::new(4, 7, Token::Ident("test")),
@@ -579,7 +579,7 @@ mod tests {
         let source = Source::new("main", "= == =");
         let lexer = Lexer::new(&source);
 
-        let tokens: Vec<Spanned<Token>> = lexer.map(|e| e.unwrap()).collect();
+        let tokens: Vec<Spanned<Token>> = lexer.map(std::result::Result::unwrap).collect();
         let expected = vec![
             Spanned::new(0, 1, Token::Equals),
             Spanned::new(2, 3, Token::EqualsEquals),
