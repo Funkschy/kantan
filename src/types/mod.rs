@@ -11,12 +11,12 @@ impl<'src> UserIdent<'src> {
         UserIdent { file, name }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn name(&self) -> &'src str {
         self.name
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn module(&self) -> &'src str {
         self.file
     }
@@ -38,8 +38,7 @@ impl<'src> Type<'src> {
     #[inline]
     pub fn is_ptr(&self) -> bool {
         match self {
-            Type::Pointer(_) => true,
-            Type::Simple(Simple::String) => true,
+            Type::Pointer(_) | Type::Simple(Simple::String) => true,
             _ => false,
         }
     }
@@ -100,8 +99,7 @@ pub enum Simple<'src> {
 impl<'src> Simple<'src> {
     pub fn arithmetic(&self) -> bool {
         match self {
-            Simple::I32 => true,
-            Simple::F32 => true,
+            Simple::I32 | Simple::F32 => true,
             _ => false,
         }
     }

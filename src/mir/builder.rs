@@ -58,7 +58,9 @@ impl<'src> MirBuilder<'src> {
 
         let main_func = head.name == "main";
 
-        let (ret_type, block_map) = if !head.is_extern {
+        let (ret_type, block_map) = if head.is_extern {
+            (head.ret_type, BlockMap::default())
+        } else {
             let mut block = InstructionBlock::default();
             self.fill_params(&mut block, &head.params);
             block = self.fill_block(&body.0, block);
@@ -73,8 +75,6 @@ impl<'src> MirBuilder<'src> {
             Self::add_ret(main_func, &mut block);
 
             (ret_type, BlockMap::from_instructions(block))
-        } else {
-            (head.ret_type, BlockMap::default())
         };
 
         let f = Func::new(
@@ -119,7 +119,7 @@ impl<'src> MirBuilder<'src> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn bind_param(
         &mut self,
         index: u32,
@@ -373,8 +373,7 @@ impl<'src> MirBuilder<'src> {
                     let varargs = self
                         .definitions
                         .get_function(module, ident)
-                        .map(|f| f.varargs)
-                        .unwrap_or(false);
+                        .map_or(false, |f| f.varargs);
 
                     Expression::Call {
                         ident: UserIdent::new(module, ident),
@@ -522,7 +521,7 @@ impl<'src> MirBuilder<'src> {
         self.assign(temp, e, block)
     }
 
-    #[inline(always)]
+    #[inline]
     fn get_expression_address(
         &mut self,
         e: Expression<'src>,
@@ -548,7 +547,7 @@ impl<'src> MirBuilder<'src> {
         address
     }
 
-    #[inline(always)]
+    #[inline]
     fn lookup_ident(&mut self, ident: &'src str) -> Address<'src> {
         self.names.lookup(ident).into()
     }
@@ -580,7 +579,7 @@ impl<'src> MirBuilder<'src> {
         self.assign(temp, expression, block)
     }
 
-    #[inline(always)]
+    #[inline]
     fn temp(&mut self) -> Address<'src> {
         let temp = self.temp_count.into();
         self.temp_count += 1;
@@ -588,7 +587,7 @@ impl<'src> MirBuilder<'src> {
         Address::Temp(temp)
     }
 
-    #[inline(always)]
+    #[inline]
     fn label(&mut self) -> Label {
         let label = Label::new(self.label_count);
         self.label_count += 1;

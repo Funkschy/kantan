@@ -148,15 +148,15 @@ impl<'src> Lexer<'src> {
             return Ok(keyword);
         }
 
-        if !slice.is_ascii() {
+        if slice.is_ascii() {
+            Ok(self.spanned(start, Token::Ident(slice)))
+        } else {
             Err(self.spanned(
                 start,
                 ParseError::LexError(LexError::with_cause(
                     "Non ascii identifiers are currently not supported",
                 )),
             ))
-        } else {
-            Ok(self.spanned(start, Token::Ident(slice)))
         }
     }
 

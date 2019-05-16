@@ -63,14 +63,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         // TODO: check for recursive type defs
         // Check if every field of a user defined type in every struct is defined
         for (_, type_def) in self.definitions.iter_types() {
-            for (_, (_, ty)) in type_def.fields.iter() {
+            for (_, ty) in type_def.fields.values() {
                 self.check_user_type_defined(ty, &mut errors);
             }
         }
 
         for (_, func_def) in self.definitions.iter_functions() {
             self.check_user_type_defined(&func_def.ret_type, &mut errors);
-            for p_ty in func_def.params.iter() {
+            for p_ty in &func_def.params {
                 self.check_user_type_defined(p_ty, &mut errors);
             }
         }
@@ -84,11 +84,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
         let Unit { ast, .. } = self.programs.get(name).unwrap();
 
-        for top_lvl in ast.0.iter() {
+        for top_lvl in &ast.0 {
             self.declare_top_lvl(&top_lvl, errors);
         }
 
-        for top_lvl in ast.0.iter() {
+        for top_lvl in &ast.0 {
             self.resolve_top_lvl(top_lvl, errors);
         }
     }
@@ -211,12 +211,12 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 .clone();
             self.sym_table.scope_enter();
 
-            for p in params.params.iter() {
+            for p in &params.params {
                 self.bind_param(p);
             }
 
             if !*is_extern {
-                for stmt in body.0.iter() {
+                for stmt in &body.0 {
                     self.resolve_stmt(stmt, errors);
                 }
             }
@@ -961,7 +961,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         first: Type<'src>,
         second: Type<'src>,
     ) -> Result<Type<'src>, ResolveError<'src>> {
-        if first != second {
+        if first == second {
+            Ok(first)
+        } else {
             Err(self.error(
                 err_span,
                 expr_span,
@@ -970,8 +972,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     right_type: second,
                 }),
             ))
-        } else {
-            Ok(first)
         }
     }
 
@@ -1019,7 +1019,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     ) -> Result<Type<'src>, ResolveError<'src>> {
         let (allowed, ty) = Self::allowed_binary(op, first, second);
 
-        if !allowed {
+        if allowed {
+            Ok(ty.clone())
+        } else {
             Err(self.error(
                 err_span,
                 expr_span,
@@ -1028,8 +1030,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     right_type: second.clone(),
                 }),
             ))
-        } else {
-            Ok(ty.clone())
         }
     }
 }

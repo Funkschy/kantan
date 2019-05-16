@@ -27,33 +27,51 @@ pub enum Token<'src> {
     Sizeof,
 
     // Operators
-    Bang,   // !
-    Equals, // =
-    Plus,   // +
-    Minus,  // -
-    Star,   // *
-    Slash,  // /
+    Bang,
+    // !
+    Equals,
+    // =
+    Plus,
+    // +
+    Minus,
+    // -
+    Star,
+    // *
+    Slash, // /
 
-    Smaller,   // <
-    Greater,   // >
+    Smaller,
+    // <
+    Greater,
+    // >
     Ampersand, // &
 
-    TripleDot, // ...
-    Colon,     // :
-    Semi,      // ;
-    Dot,       // .
-    Comma,     // ,
+    TripleDot,
+    // ...
+    Colon,
+    // :
+    Semi,
+    // ;
+    Dot,
+    // .
+    Comma, // ,
 
-    LParen, // (
-    RParen, // )
-    LBrace, // {
+    LParen,
+    // (
+    RParen,
+    // )
+    LBrace,
+    // {
     RBrace, // }
 
     // double Operators
-    EqualsEquals,       // ==
-    BangEquals,         // !=
-    SmallerEquals,      // <=
-    GreaterEquals,      // >=
+    EqualsEquals,
+    // ==
+    BangEquals,
+    // !=
+    SmallerEquals,
+    // <=
+    GreaterEquals,
+    // >=
     AmpersandAmpersand, // &&
 }
 
@@ -94,9 +112,8 @@ impl<'src> fmt::Display for Token<'src> {
             Token::NullLit => write!(f, "null"),
             Token::Ident(ref name) => write!(f, "{}", name),
             Token::StringLit(ref lit) => write!(f, "{}", lit),
-            Token::DecLit(lit) => write!(f, "{}", lit.to_string()),
-            Token::FloatLit(lit) => write!(f, "{}", lit.to_string()),
-            Token::TypeIdent(ty) => write!(f, "{}", ty.to_string()),
+            Token::DecLit(lit) | Token::FloatLit(lit) => write!(f, "{}", lit),
+            Token::TypeIdent(ty) => write!(f, "{}", ty),
             // Keywords
             Token::Type => write!(f, "type"),
             Token::Struct => write!(f, "struct"),

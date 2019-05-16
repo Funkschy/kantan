@@ -104,8 +104,7 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
             TopLvl::Error(err) => {
                 errors.push((err.span, err.node.to_string()));
             }
-            TopLvl::TypeDef(..) => {}
-            TopLvl::Import { .. } => {}
+            TopLvl::TypeDef(..) | TopLvl::Import { .. } => {}
         }
     }
     errors

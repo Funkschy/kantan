@@ -7,7 +7,7 @@ use clap::ArgMatches;
 use codegen::llvm::{emit_to_file, CodeGenArgs, CodeGenOptLevel, OutputType};
 
 mod cli;
-pub mod codegen;
+mod codegen;
 mod mir;
 mod parse;
 mod resolve;
@@ -113,7 +113,7 @@ impl Borrow<str> for &Source {
 
 impl Source {
     pub fn new(name: &str, code: &str) -> Self {
-        Source {
+        Self {
             name: name.to_owned(),
             code: code.to_owned(),
         }
@@ -246,7 +246,7 @@ fn construct_tac<'src>(
 ) -> Mir<'src> {
     let mut tac = MirBuilder::new(resolve_result);
     for (src_name, unit) in ast_sources.iter() {
-        for top_lvl in unit.ast.0.iter() {
+        for top_lvl in &unit.ast.0 {
             if !tac.functions.contains_key(src_name) {
                 // TODO: remove, when stdlib is implemented
                 // since io is currently inserted into the ast manually, the mir generation would
@@ -356,15 +356,15 @@ pub fn llvm_emit_to_file<W: Write>(mir: &Mir, err_writer: &mut W, args: &ArgMatc
     let opt_lvl = args
         .value_of("opt")
         .and_then(CodeGenOptLevel::convert)
-        .unwrap_or(CodeGenOptLevel::OptNone);
+        .unwrap_or(CodeGenOptLevel::None);
 
     let output_type = args
         .value_of("emit")
         .and_then(|ty| OutputType::convert(ty.trim()))
         .unwrap_or(OutputType::Object);
 
-    let codegen_args = CodeGenArgs::new(output_file, err_writer, output_type, opt_lvl);
+    let mut codegen_args = CodeGenArgs::new(output_file, err_writer, output_type, opt_lvl);
     let now = Instant::now();
-    emit_to_file(&mir, codegen_args, dump);
+    emit_to_file(&mir, &mut codegen_args, dump);
     println!("LLVM compilation: {} μs", now.elapsed().as_micros());
 }

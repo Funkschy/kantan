@@ -6,11 +6,9 @@ mod context;
 mod pass;
 mod target;
 
-use context::*;
-use pass::*;
-use target::*;
-
 pub use target::CodeGenOptLevel;
+
+use self::{context::*, pass::*, target::*};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum OutputType {
@@ -53,7 +51,7 @@ impl<'a, W: Write> CodeGenArgs<'a, W> {
     }
 }
 
-pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: CodeGenArgs<'a, W>, dump: bool) {
+pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: &mut CodeGenArgs<'a, W>, dump: bool) {
     let mut ctx = KantanLLVMContext::new("main", &mir);
     ctx.generate(&mir);
 
@@ -73,7 +71,7 @@ pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: CodeGenArgs<'a, W>, dump: boo
         }
     }
 
-    let module = if args.opt_lvl > CodeGenOptLevel::OptNone {
+    let module = if args.opt_lvl > CodeGenOptLevel::None {
         optimize_module(ctx.module(), args.opt_lvl)
     } else {
         ctx.module()
@@ -83,7 +81,7 @@ pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: CodeGenArgs<'a, W>, dump: boo
         ctx.dump_module();
     }
 
-    let target = Target::try_from(TargetTriple::new(arch, vendor, os)).unwrap();
+    let target = Target::try_from(target::Triple::new(arch, vendor, os)).unwrap();
     let tm = TargetMachine::new(target, CpuType::Generic, args.opt_lvl);
 
     let asm = args.output == OutputType::Asm;

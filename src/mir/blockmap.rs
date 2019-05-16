@@ -26,7 +26,10 @@ impl<'src> BlockMap<'src> {
                     vardecls.push(instr);
                 }
                 Instruction::Label(ref l) => {
-                    if !bb.instructions.is_empty() {
+                    if bb.instructions.is_empty() {
+                        label = l.clone();
+                        bb.instructions.push(instr);
+                    } else {
                         // Terminate last block with goto
                         let term = Instruction::Jmp(l.clone());
                         bb.terminator = term;
@@ -36,9 +39,6 @@ impl<'src> BlockMap<'src> {
                         // begin new block with this label
                         label = l.clone();
                         bb = BasicBlock::default();
-                        bb.instructions.push(instr);
-                    } else {
-                        label = l.clone();
                         bb.instructions.push(instr);
                     }
                 }

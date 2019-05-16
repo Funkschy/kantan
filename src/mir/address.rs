@@ -21,11 +21,10 @@ impl<'src> fmt::Display for Address<'src> {
         match self {
             Empty => write!(f, "empty"),
             Null(_) => write!(f, "null"),
-            Name(n) => write!(f, "{}", n),
+            Name(n) | Ref(n) => write!(f, "{}", n),
             Const(c) => write!(f, "{}", c),
             Temp(t) => write!(f, "{}", t),
             Global(l) => write!(f, "{}", l),
-            Ref(n) => write!(f, "{}", n),
         }
     }
 }
@@ -61,7 +60,7 @@ pub struct TempVar(usize);
 
 impl From<usize> for TempVar {
     fn from(value: usize) -> Self {
-        TempVar(value)
+        Self(value)
     }
 }
 
@@ -85,6 +84,6 @@ impl<'src> fmt::Display for Constant<'src> {
 
 impl<'src> Constant<'src> {
     pub fn new(ty: Type<'src>, literal: &'src str) -> Self {
-        Constant { ty, literal }
+        Self { ty, literal }
     }
 }
