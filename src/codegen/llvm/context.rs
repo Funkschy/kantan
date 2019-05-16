@@ -6,8 +6,7 @@ use llvm_sys::{
 };
 
 use crate::{
-    mir::{address::*, tac::*},
-    resolve::ModTypeMap,
+    mir::{address::*, tac::*, ModTypeMap},
     types::*,
     Mir, UserTypeDefinition,
 };
@@ -93,7 +92,8 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     unsafe fn add_user_types(&mut self, types: &ModTypeMap<'src>) {
         for (m, typemap) in types.iter() {
             let mut structs: HashMap<&'src str, _> = HashMap::new();
-            for (n, _) in typemap.iter() {
+            for typedef in typemap.iter() {
+                let n = typedef.name;
                 // forward declaration of types
                 let s = LLVMStructCreateNamed(self.context, self.cstring(n));
                 structs.insert(n, s);
@@ -102,8 +102,8 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         }
 
         for (m, typemap) in types.iter() {
-            for (n, ty) in typemap.iter() {
-                self.add_llvm_struct(m, n, ty);
+            for typedef in typemap.iter() {
+                self.add_llvm_struct(m, typedef);
             }
         }
     }
@@ -132,14 +132,14 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         self.intrinsics.push(memcpy_func);
     }
 
-    unsafe fn add_llvm_struct(&mut self, module: &str, name: &str, def: &UserTypeDefinition<'src>) {
+    unsafe fn add_llvm_struct(&mut self, module: &str, def: &UserTypeDefinition<'src>) {
         let mut fields = vec![ptr::null_mut(); def.fields.len()];
 
         for (_, (i, ty)) in def.fields.iter() {
             fields[*i as usize] = self.convert(&ty.node);
         }
 
-        let s = self.user_types[module][name];
+        let s = self.user_types[module][def.name];
         LLVMStructSetBody(s, fields.as_mut_ptr(), fields.len() as u32, false as i32);
     }
 }

@@ -1,5 +1,5 @@
 use std::{
-    borrow::Borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write, time::Instant,
+    borrow::Borrow, cmp, collections::HashMap, error, fmt, hash, io, io::Write, mem, time::Instant,
 };
 
 use clap::ArgMatches;
@@ -14,13 +14,15 @@ mod resolve;
 mod types;
 
 use self::{
-    mir::{func::Func, tac::Label, FunctionHead, Tac},
+    mir::{func::Func, FunctionHead, Mir, MirBuilder},
     parse::{ast::*, lexer::Lexer, parser::Parser, Span, Spanned},
-    resolve::{ModTypeMap, ResolveResult, Resolver},
+    resolve::{ResolveResult, Resolver},
     types::*,
 };
 
 pub(crate) use self::cli::*;
+use crate::mir::ModTypeMap;
+use crate::resolve::modmap::ModMap;
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -61,16 +63,16 @@ impl<'src> fmt::Display for UserTypeDefinition<'src> {
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionDefinition<'src> {
+pub struct FuncDef<'src> {
     name: &'src str,
     ret_type: Spanned<Type<'src>>,
     params: Vec<Spanned<Type<'src>>>,
     varargs: bool,
 }
 
-impl<'src> Default for FunctionDefinition<'src> {
+impl<'src> Default for FuncDef<'src> {
     fn default() -> Self {
-        FunctionDefinition {
+        FuncDef {
             name: "",
             ret_type: Spanned::new(0, 0, Type::Simple(Simple::Void)),
             params: vec![],
@@ -80,7 +82,7 @@ impl<'src> Default for FunctionDefinition<'src> {
 }
 
 pub type UserTypeMap<'src> = HashMap<&'src str, UserTypeDefinition<'src>>;
-pub type FunctionMap<'src> = HashMap<&'src str, FunctionDefinition<'src>>;
+pub type FunctionMap<'src> = HashMap<&'src str, FuncDef<'src>>;
 pub type MirFuncMap<'src> = HashMap<String, Func<'src>>;
 
 #[derive(Debug)]
@@ -179,7 +181,7 @@ fn init_ansi() {
     }
 }
 
-fn parse<'src>(sources: &'src [Source]) -> (Vec<Program<'src>>, usize) {
+fn parse(sources: &[Source]) -> (Vec<Program>, usize) {
     sources
         .iter()
         .fold((vec![], 0), |(mut asts, err_count), source| {
@@ -238,56 +240,11 @@ fn type_check<'src, W: Write>(
     Ok(resolver.get_result())
 }
 
-// TODO: move to mir module
-#[derive(Debug)]
-pub struct Mir<'src> {
-    pub global_strings: HashMap<Label, &'src str>,
-    pub functions: HashMap<&'src str, MirFuncMap<'src>>,
-    pub types: ModTypeMap<'src>,
-}
-
-impl<'src> fmt::Display for Mir<'src> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let types = self
-            .types
-            .iter()
-            .flat_map(|(m, types)| {
-                types
-                    .iter()
-                    .map(|(_, v)| format!("{}.{}", m, v))
-                    .collect::<Vec<String>>()
-            })
-            .collect::<Vec<String>>()
-            .join("\n");
-
-        let global_strings = self
-            .global_strings
-            .iter()
-            .map(|(k, v)| format!("{} {}", k, v))
-            .collect::<Vec<String>>()
-            .join("\n");
-
-        let funcs = self
-            .functions
-            .iter()
-            .flat_map(|(m, funcs)| {
-                funcs
-                    .iter()
-                    .map(|(_, v)| format!("{}.{}", m, v))
-                    .collect::<Vec<String>>()
-            })
-            .collect::<Vec<String>>()
-            .join("\n\n");
-
-        write!(f, "{}\n{}\n{}", types, global_strings, funcs)
-    }
-}
-
 fn construct_tac<'src>(
     ast_sources: &PrgMap<'src>,
     resolve_result: ResolveResult<'src>,
 ) -> Mir<'src> {
-    let mut tac = Tac::new(resolve_result);
+    let mut tac = MirBuilder::new(resolve_result);
     for (src_name, unit) in ast_sources.iter() {
         for top_lvl in unit.ast.0.iter() {
             if !tac.functions.contains_key(src_name) {
@@ -327,10 +284,18 @@ fn construct_tac<'src>(
         }
     }
 
+    // move definitions out of tac to avoid copying
+    let definitions = mem::replace(&mut tac.definitions, ModMap::default());
+    let mut types: ModTypeMap = HashMap::default();
+    for (mod_name, typedef) in definitions.move_iter_types() {
+        let module = types.entry(mod_name).or_insert_with(Vec::new);
+        module.push(typedef)
+    }
+
     Mir {
         global_strings: tac.literals,
         functions: tac.functions,
-        types: tac.types,
+        types,
     }
 }
 

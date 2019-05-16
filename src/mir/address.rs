@@ -16,7 +16,7 @@ pub enum Address<'src> {
 
 impl<'src> fmt::Display for Address<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use Address::*;
+        use self::Address::*;
 
         match self {
             Empty => write!(f, "empty"),
