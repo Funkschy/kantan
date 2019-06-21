@@ -446,9 +446,9 @@ impl<'src> MirBuilder<'src> {
 
                 // the index of the field inside the struct
                 let (idx, _) =
-                    &self.definitions.get_user_type(&ty_name).unwrap().fields[identifier.node];
+                    self.definitions.get_user_type(&ty_name).unwrap().fields[identifier.node];
 
-                let address = self.temp_assign(Expression::StructGep(address, *idx), block);
+                let address = self.temp_assign(Expression::StructGep(address, idx), block);
                 // Deref by default. This copy has to be removed if the value
                 // should be assigned
                 Expression::Copy(address)
