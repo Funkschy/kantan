@@ -372,11 +372,11 @@ impl<'src> MirBuilder<'src> {
                 if let ExprKind::Ident(ident) = callee.node.kind() {
                     let varargs = self
                         .definitions
-                        .get_function(module, ident)
+                        .get_function(module.get(), ident)
                         .map_or(false, |f| f.varargs);
 
                     Expression::Call {
-                        ident: UserIdent::new(module, ident),
+                        ident: UserIdent::new(module.get(), ident),
                         args,
                         ret_type,
                         varargs,

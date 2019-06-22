@@ -1,4 +1,7 @@
-use std::{cell::RefCell, iter::Peekable};
+use std::{
+    cell::{Cell, RefCell},
+    iter::Peekable,
+};
 
 use super::{ast::*, error::LexError, token::*, *};
 use crate::{types::*, Source};
@@ -618,7 +621,7 @@ where
                 Ok(Spanned::from_span(
                     span,
                     Expr::new(ExprKind::Call {
-                        module,
+                        module: Cell::new(module),
                         callee: Box::new(callee),
                         args: arg_list,
                     }),
@@ -994,7 +997,7 @@ mod tests {
                         34,
                         39,
                         Expr::new(ExprKind::Call {
-                            module: "main",
+                            module: Cell::new("main"),
                             callee: Box::new(Spanned::new(
                                 34,
                                 37,
@@ -1026,7 +1029,7 @@ mod tests {
                     19,
                     29,
                     Expr::new(ExprKind::Call {
-                        module: "test",
+                        module: Cell::new("test"),
                         callee: Box::new(Spanned::new(24, 27, Expr::new(ExprKind::Ident("func")))),
                         args: ArgList(vec![])
                     })
@@ -1080,7 +1083,7 @@ mod tests {
                     19,
                     28,
                     Expr::new(ExprKind::Call {
-                        module: "test",
+                        module: Cell::new("test"),
                         callee: Box::new(Spanned::new(24, 26, Expr::new(ExprKind::Ident("fun")))),
                         args: ArgList(vec![])
                     })
@@ -1107,7 +1110,7 @@ mod tests {
                     19,
                     24,
                     Expr::new(ExprKind::Call {
-                        module: "main",
+                        module: Cell::new("main"),
                         callee: Box::new(Spanned::new(19, 22, Expr::new(ExprKind::Ident("test")))),
                         args: ArgList(vec![])
                     })

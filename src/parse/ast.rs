@@ -1,5 +1,5 @@
 use std::{
-    cell::{Ref, RefCell},
+    cell::{Cell, Ref, RefCell},
     fmt,
 };
 
@@ -183,7 +183,7 @@ pub enum ExprKind<'src> {
         value: Box<Spanned<Expr<'src>>>,
     },
     Call {
-        module: &'src str,
+        module: Cell<&'src str>,
         callee: Box<Spanned<Expr<'src>>>,
         args: ArgList<'src>,
     },

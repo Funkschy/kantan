@@ -3,10 +3,16 @@ use std::collections::HashMap;
 use crate::types::UserIdent;
 use crate::{FuncDef, FunctionMap, UserTypeDefinition, UserTypeMap};
 
+/// Maps the imported name to the actual filename
+/// e.g. for import "test/mod"
+/// it will map "mod" to "test/mod"
+type ImportMap<'src> = HashMap<&'src str, &'src str>;
+
 #[derive(Debug, Default)]
 struct Module<'src> {
     user_types: UserTypeMap<'src>,
     functions: FunctionMap<'src>,
+    imports: ImportMap<'src>,
 }
 
 type ModuleName<'src> = &'src str;
@@ -21,17 +27,17 @@ impl<'src> ModMap<'src> {
         self.modules.insert(module, Module::default());
     }
 
+    fn entry(&mut self, module: ModuleName<'src>) -> &mut Module<'src> {
+        self.modules.entry(module).or_insert_with(Module::default)
+    }
+
     pub fn define_function(
         &mut self,
         module: ModuleName<'src>,
         name: &'src str,
         def: FuncDef<'src>,
     ) {
-        self.modules
-            .entry(module)
-            .or_insert_with(Module::default)
-            .functions
-            .insert(name, def);
+        self.entry(module).functions.insert(name, def);
     }
 
     pub fn define_type(
@@ -40,11 +46,16 @@ impl<'src> ModMap<'src> {
         name: &'src str,
         def: UserTypeDefinition<'src>,
     ) {
-        self.modules
-            .entry(module)
-            .or_insert_with(Module::default)
-            .user_types
-            .insert(name, def);
+        self.entry(module).user_types.insert(name, def);
+    }
+
+    pub fn define_import_alias(
+        &mut self,
+        module: ModuleName<'src>,
+        alias: &'src str,
+        file: &'src str,
+    ) {
+        self.entry(module).imports.insert(alias, file);
     }
 }
 
@@ -72,6 +83,10 @@ impl<'src> ModMap<'src> {
 
     pub fn get_user_type(&self, ident: &UserIdent) -> Option<&UserTypeDefinition<'src>> {
         self.and_then(ident.module(), |m| m.user_types.get(ident.name()))
+    }
+
+    pub fn get_file_for_alias(&self, module: ModuleName, alias: &str) -> Option<&'src str> {
+        self.and_then(module, |m| m.imports.get(alias).cloned())
     }
 
     pub fn iter_types<'a>(

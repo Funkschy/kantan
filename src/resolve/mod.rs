@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::HashSet};
+use std::{borrow::Borrow, collections::HashSet, mem};
 
 use crate::{
     parse::{
@@ -23,8 +23,25 @@ pub struct ResolveResult<'src> {
     pub definitions: ModMap<'src>,
 }
 
-pub(crate) struct Resolver<'src, 'ast> {
+struct Context<'src> {
     current_name: &'src str,
+}
+
+impl<'src> Context<'src> {
+    pub fn new(current_name: &'src str) -> Self {
+        Self { current_name }
+    }
+}
+
+enum FunctionFindResult<'src, 'a> {
+    NormalFunction(&'a FuncDef<'src>),
+    IdentNotFound(ResolveError<'src>),
+    InModuleAlias(&'a FuncDef<'src>, &'src str),
+    NotAnIdent,
+}
+
+pub(crate) struct Resolver<'src, 'ast> {
+    context: Context<'src>,
     programs: &'ast PrgMap<'src>,
     resolved: HashSet<&'src str>,
     pub(crate) sym_table: SymbolTable<'src>,
@@ -38,7 +55,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         resolved.insert(main_file);
 
         Resolver {
-            current_name: main_file,
+            context: Context::new(main_file),
             programs,
             resolved,
             sym_table: SymbolTable::new(),
@@ -79,7 +96,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     }
 
     fn resolve_prg(&mut self, errors: &mut Vec<ResolveError<'src>>) {
-        let name = self.current_name;
+        let name = self.context.current_name;
         self.definitions.create(name);
 
         let Unit { ast, .. } = self.programs.get(name).unwrap();
@@ -109,6 +126,35 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
     }
 
+    fn get_relative_path(&self) -> &str {
+        let name = self.context.current_name;
+        let last_slash = name
+            .bytes()
+            .rev()
+            .enumerate()
+            .find(|(_, c)| *c == b'/' as u8);
+
+        if let Some((idx, _)) = last_slash {
+            &name[..name.len() - idx]
+        } else {
+            ""
+        }
+    }
+
+    fn get_imported_module_name(module: &str) -> &str {
+        let last_slash = module
+            .bytes()
+            .rev()
+            .enumerate()
+            .find(|(_, c)| *c == b'/' as u8);
+
+        if let Some((idx, _)) = last_slash {
+            &module[module.len() - idx..]
+        } else {
+            module
+        }
+    }
+
     fn declare_top_lvl(&mut self, top_lvl: &TopLvl<'src>, errors: &mut Vec<ResolveError<'src>>) {
         match top_lvl {
             TopLvl::FuncDecl {
@@ -117,7 +163,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 params,
                 ..
             } => {
-                let mod_name = self.current_name;
+                let mod_name = self.context.current_name;
 
                 if self.definitions.function_defined(mod_name, &name.node) {
                     // TODO: replace with proper error
@@ -143,7 +189,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .define_function(mod_name, name.node, func_def);
             }
             TopLvl::Import { name, .. } => {
-                if name.node == self.current_name {
+                if name.node == self.context.current_name {
                     errors.push(ResolveError {
                         source: self.current_source(),
                         error: ResolveErrorType::SelfImport(SelfImportError),
@@ -151,12 +197,25 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                         expr_span: name.span,
                     });
                 } else if !self.resolved.contains(name.node) {
-                    if self.programs.contains_key(name.node) {
-                        let current_name = self.current_name;
-                        self.current_name = name.node;
-                        self.resolved.insert(name.node);
+                    let mut full_name = self.get_relative_path().to_owned();
+                    full_name.push_str(name.node);
+
+                    let unit = self
+                        .programs
+                        .get(full_name.as_str())
+                        .or_else(|| self.programs.get(name.node));
+
+                    if let Some(unit) = unit {
+                        self.resolved.insert(unit.name());
+                        self.definitions.define_import_alias(
+                            self.context.current_name,
+                            Self::get_imported_module_name(name.node),
+                            unit.name(),
+                        );
+
+                        let context = mem::replace(&mut self.context, Context::new(unit.name()));
                         self.resolve_prg(errors);
-                        self.current_name = current_name;
+                        self.context = context;
                     } else {
                         errors.push(self.not_defined_error(name.span, name.span, name.node));
                     }
@@ -164,7 +223,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             }
             TopLvl::TypeDef(TypeDef::StructDef { name, fields }) => {
                 // TODO: check for duplicate typedefs
-                let mod_name = self.current_name;
+                let mod_name = self.context.current_name;
 
                 let fields = fields
                     .iter()
@@ -206,7 +265,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         {
             self.current_func_def = self
                 .definitions
-                .get_function(self.current_name, &name.node)
+                .get_function(self.context.current_name, &name.node)
                 .unwrap()
                 .clone();
             self.sym_table.scope_enter();
@@ -610,15 +669,18 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 args,
                 module,
             } => {
-                let func = self.get_function(module, callee);
+                use FunctionFindResult::*;
+                let func = self.get_function(module.get(), callee);
 
                 match func {
-                    // normal function call
-                    Some(Ok(func_type)) => self.call_function(func_type, args, span),
-                    // callee is ident, but not in top level functions
-                    Some(Err(e)) => Err(e),
+                    NormalFunction(func_type) => self.call_function(func_type, args, span),
+                    IdentNotFound(e) => Err(e),
+                    InModuleAlias(func_type, new_module) => {
+                        module.set(new_module);
+                        self.call_function(func_type, args, span)
+                    }
                     // callee is an arbitrary expression
-                    None => Err(self.call_non_function_error(
+                    NotAnIdent => Err(self.call_non_function_error(
                         callee.span,
                         span,
                         callee.node.ty().clone().unwrap(),
@@ -717,7 +779,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     }
 
     fn current_source(&self) -> &'src Source {
-        self.programs[self.current_name].source
+        self.programs[self.context.current_name].source
     }
 
     fn handle_ident(
@@ -797,15 +859,25 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &self,
         module: &'src str,
         ident: &Spanned<Expr<'src>>,
-    ) -> Option<Result<&FuncDef<'src>, ResolveError<'src>>> {
+    ) -> FunctionFindResult<'src, '_> {
         if let ExprKind::Ident(name) = ident.node.kind() {
-            let res = self
-                .definitions
+            self.definitions
                 .get_function(module, name)
-                .ok_or_else(|| self.not_defined_error(ident.span, ident.span, name));
-            Some(res)
+                .map(FunctionFindResult::NormalFunction)
+                .or_else(|| {
+                    // if the definition was not found, try to find it in the import alias map
+                    self.definitions
+                        .get_file_for_alias(self.context.current_name, module)
+                        .and_then(|module| {
+                            self.definitions
+                                .get_function(module, name)
+                                .map(|f| FunctionFindResult::InModuleAlias(f, module))
+                        })
+                })
+                .ok_or_else(|| self.not_defined_error(ident.span, ident.span, name))
+                .unwrap_or_else(FunctionFindResult::IdentNotFound)
         } else {
-            None
+            FunctionFindResult::NotAnIdent
         }
     }
 
@@ -1038,7 +1110,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 mod tests {
     use super::*;
     use crate::parse::token::Token;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     #[test]
     fn test_resolve_should_find_imported_fn() {
@@ -1058,7 +1130,7 @@ mod tests {
                     32,
                     34,
                     Expr::new(ExprKind::Call {
-                        module: "test",
+                        module: Cell::new("test"),
                         callee: Box::new(Spanned::new(29, 37, Expr::new(ExprKind::Ident("func")))),
                         args: ArgList(vec![]),
                     }),
@@ -1099,7 +1171,7 @@ mod tests {
                     18,
                     23,
                     Expr::new(ExprKind::Call {
-                        module: "test",
+                        module: Cell::new("test"),
                         callee: Box::new(Spanned::new(18, 21, Expr::new(ExprKind::Ident("test")))),
                         args: ArgList(vec![]),
                     }),
@@ -1206,5 +1278,42 @@ mod tests {
         } else {
             panic!("Expected one error");
         }
+    }
+
+    #[test]
+    fn test_get_relative_path() {
+        let source = Source::new("test", "");
+        let ast = Program(vec![]);
+
+        let mut map = HashMap::new();
+        map.insert("test", Unit::new(&source, ast));
+        let resolver = Resolver::new("test", &map);
+
+        assert_eq!("", resolver.get_relative_path());
+
+        let source = Source::new("test/test", "");
+        let ast = Program(vec![]);
+
+        let mut map = HashMap::new();
+        map.insert("test/test", Unit::new(&source, ast));
+        let resolver = Resolver::new("test/test", &map);
+
+        assert_eq!("test/", resolver.get_relative_path());
+
+        let source = Source::new("test/test/mod", "");
+        let ast = Program(vec![]);
+
+        let mut map = HashMap::new();
+        map.insert("test/test/mod", Unit::new(&source, ast));
+        let resolver = Resolver::new("test/test/mod", &map);
+
+        assert_eq!("test/test/", resolver.get_relative_path());
+    }
+
+    #[test]
+    fn test_get_imported_module_name() {
+        assert_eq!("mod", Resolver::get_imported_module_name("mod"));
+        assert_eq!("mod", Resolver::get_imported_module_name("test/mod"));
+        assert_eq!("mod", Resolver::get_imported_module_name("test/test2/mod"));
     }
 }

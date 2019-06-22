@@ -39,6 +39,10 @@ impl<'src> Unit<'src> {
     pub fn new(source: &'src Source, ast: Program<'src>) -> Self {
         Unit { source, ast }
     }
+
+    pub fn name(&self) -> &'src str {
+        &self.source.name
+    }
 }
 
 pub type PrgMap<'src> = HashMap<&'src str, Unit<'src>>;
