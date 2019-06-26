@@ -1,0 +1,9 @@
+import "io"
+
+type Type struct {
+    ident: string
+}
+
+def test(t: *Type): void {
+    io.printf("Ident: %s\n", t.ident);
+}

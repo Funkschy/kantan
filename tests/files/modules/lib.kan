@@ -1,4 +1,4 @@
-import "bintree"
+import "tree/bintree"
 
 type Person struct {
     name: string
@@ -10,4 +10,8 @@ def test(): Person {
 
 def bintest(): bintree.Person {
     return bintree.Person { name: "Bintree Person", age: 100 };
+}
+
+def traverse(tree: *bintree.Tree): void {
+    bintree.traverse(tree);
 }

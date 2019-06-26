@@ -72,17 +72,20 @@ impl<'src> ModMap<'src> {
             .unwrap_or(false)
     }
 
-    pub fn type_defined(&self, module: ModuleName, ident: &UserIdent) -> bool {
-        self.and_then(module, |m| Some(m.user_types.contains_key(ident.name())))
-            .unwrap_or(false)
-    }
-
     pub fn get_function(&self, module: ModuleName, name: &str) -> Option<&FuncDef<'src>> {
         self.and_then(module, |m| m.functions.get(name))
     }
 
     pub fn get_user_type(&self, ident: &UserIdent) -> Option<&UserTypeDefinition<'src>> {
         self.and_then(ident.module(), |m| m.user_types.get(ident.name()))
+    }
+
+    pub fn get_user_type_mod(
+        &self,
+        module: ModuleName<'src>,
+        ident: &UserIdent,
+    ) -> Option<&UserTypeDefinition<'src>> {
+        self.and_then(module, |m| m.user_types.get(ident.name()))
     }
 
     pub fn get_file_for_alias(&self, module: ModuleName, alias: &str) -> Option<&'src str> {

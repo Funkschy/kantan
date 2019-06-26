@@ -459,7 +459,7 @@ impl<'src> MirBuilder<'src> {
                     .iter()
                     .map(|(_, e)| self.expr_instr(true, &e.node, block))
                     .collect();
-                Expression::StructInit(identifier.node, values)
+                Expression::StructInit(identifier.node.clone(), values)
             }
             ExprKind::SizeOf(ty) => Expression::SizeOf(ty.clone()),
             ExprKind::New(expr) => {

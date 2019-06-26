@@ -1,0 +1,5 @@
+import "io"
+
+def test(): void {
+    io.printf("OOF\n");
+}

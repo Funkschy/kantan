@@ -1,0 +1,6 @@
+import "mod/mod"
+
+def main(): void {
+    let t = mod.Type{ident:"test"};
+    mod.test(&t); 
+}

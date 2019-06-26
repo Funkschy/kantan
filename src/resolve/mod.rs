@@ -40,6 +40,12 @@ enum FunctionFindResult<'src, 'a> {
     NotAnIdent,
 }
 
+enum UserTypeFindResult<'src, 'a> {
+    Defined(&'a UserTypeDefinition<'src>),
+    Undefined(ResolveError<'src>),
+    InModuleAlias(&'a UserTypeDefinition<'src>, &'src str),
+}
+
 pub(crate) struct Resolver<'src, 'ast> {
     context: Context<'src>,
     programs: &'ast PrgMap<'src>,
@@ -78,6 +84,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         self.resolve_prg(&mut errors);
 
         // TODO: check for recursive type defs
+
         // Check if every field of a user defined type in every struct is defined
         for (_, type_def) in self.definitions.iter_types() {
             for (_, ty) in type_def.fields.values() {
@@ -116,12 +123,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         errors: &mut Vec<ResolveError<'src>>,
     ) {
         if let Simple::UserType(type_name) = ty.node.simple() {
-            let module = type_name.module();
-            let defined = self.definitions.type_defined(module, type_name);
-
-            if !defined {
-                let err = self.not_defined_error(ty.span, ty.span, type_name.name());
-                errors.push(err);
+            match self.get_user_type(ty.span, type_name) {
+                UserTypeFindResult::Undefined(err) => {
+                    errors.push(err);
+                }
+                UserTypeFindResult::InModuleAlias(_, new_module) => {
+                    type_name.set_module(new_module);
+                }
+                _ => {}
             }
         }
     }
@@ -178,6 +187,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .map(|Param(_, ty)| ty.clone())
                     .collect();
 
+                // fix path to return type
+                self.change_modname_to_path(&ret_type.node);
+
                 let func_def = FuncDef {
                     name: name.node,
                     ret_type: ret_type.clone(),
@@ -229,7 +241,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .iter()
                     .enumerate()
                     .map(|(i, (Spanned { node, .. }, ty))| (*node, (i as u32, ty.clone())))
-                    .collect();
+                    .collect::<HashMap<_, _>>();
+
+                for (_, ty) in fields.values() {
+                    self.change_modname_to_path(&ty.node);
+                }
 
                 let def = UserTypeDefinition {
                     name: name.node,
@@ -281,6 +297,18 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             }
 
             self.sym_table.scope_exit();
+        }
+    }
+
+    fn change_modname_to_path(&self, ty: &Type<'src>) {
+        if let Type::Simple(Simple::UserType(ref user_ident)) = ty {
+            let alias = self
+                .definitions
+                .get_file_for_alias(self.context.current_name, user_ident.module());
+
+            if let Some(alias) = alias {
+                user_ident.set_module(alias);
+            }
         }
     }
 
@@ -597,6 +625,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             }
             // currently only field access
             ExprKind::Access { left, identifier } => {
+                use UserTypeFindResult::*;
+
                 let left_ty = self.resolve_type(left, None)?;
                 match left_ty {
                     // if the type is either a struct or a pointer to (pointer to ...) a struct
@@ -604,11 +634,14 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     | Type::Pointer(Pointer {
                         ty: Simple::UserType(type_name),
                         ..
-                    }) => {
-                        let user_type = self.get_user_type(&Spanned::from_span(span, type_name))?;
-                        let field_type = self.get_field(&user_type, identifier)?;
-                        Ok(Some(field_type))
-                    }
+                    }) => match self.get_user_type(span, &type_name) {
+                        Defined(user_type) => Ok(Some(self.get_field(&user_type, identifier)?)),
+                        InModuleAlias(user_type, new_module) => {
+                            type_name.set_module(new_module);
+                            Ok(Some(self.get_field(&user_type, identifier)?))
+                        }
+                        Undefined(err) => Err(err),
+                    },
                     _ => {
                         // TODO: replace with custom error
                         panic!("Cannot access field of primitive type: {:?}", left_ty);
@@ -616,14 +649,43 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             ExprKind::StructInit { identifier, fields } => {
-                for (name, value) in fields.0.iter() {
-                    let user_type = self.get_user_type(identifier)?;
-                    let field_type = self.get_field(&user_type, name)?;
+                use UserTypeFindResult::*;
 
-                    let val_type = self.resolve_type(value, Some(&field_type))?;
-                    self.compare_types(value.span, span, &field_type, &val_type, "struct literal")?
+                let find_result = self.get_user_type(identifier.span, &identifier.node);
+                match find_result {
+                    Defined(user_type) | InModuleAlias(user_type, _) => {
+                        if let InModuleAlias(_, new_module) = find_result {
+                            identifier.node.set_module(new_module);
+                        }
+
+                        if user_type.fields.len() != fields.0.len() {
+                            // TODO: emit custom error
+                            panic!(
+                                "Expected {} values, but got {}!",
+                                user_type.fields.len(),
+                                fields.0.len()
+                            );
+                        }
+
+                        for (name, value) in fields.0.iter() {
+                            let field_type = self.get_field(&user_type, name)?;
+                            let val_type = self.resolve_type(value, Some(&field_type))?;
+
+                            self.compare_types(
+                                value.span,
+                                span,
+                                &field_type,
+                                &val_type,
+                                "struct literal",
+                            )?
+                        }
+                    }
+                    Undefined(err) => return Err(err),
                 }
-                Ok(Some(Type::Simple(Simple::UserType(identifier.node))))
+
+                Ok(Some(Type::Simple(Simple::UserType(
+                    identifier.node.clone(),
+                ))))
             }
             ExprKind::Assign { left, eq, value } => {
                 if let ExprKind::Ident(name) = left.node.kind() {
@@ -761,6 +823,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             .iter()
             .zip(arg_types.iter())
             .filter_map(|(p, (arg_span, a))| {
+                self.change_modname_to_path(a);
                 // compare arguments to expected parameters
                 if let Err(err) = self.compare_types(*arg_span, expr_span, &p.node, a, "argument") {
                     return Some(err);
@@ -834,6 +897,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     ) -> Result<Type<'src>, ResolveError<'src>> {
         let ty = self.ty_unwrap(expr.span, &expr.node.ty(), expected);
         if let Ok(ref ty) = ty {
+            // ugly hack: patch wrong filepaths here
+            self.change_modname_to_path(ty);
+            // TODO: remove clone
             expr.node.set_ty(ty.clone());
         }
         ty
@@ -881,13 +947,21 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         }
     }
 
-    fn get_user_type(
-        &self,
-        ident: &Spanned<UserIdent<'src>>,
-    ) -> Result<&UserTypeDefinition<'src>, ResolveError<'src>> {
+    fn get_user_type(&self, span: Span, ident: &UserIdent<'src>) -> UserTypeFindResult<'src, '_> {
         self.definitions
-            .get_user_type(&ident.node)
-            .ok_or_else(|| self.not_defined_error(ident.span, ident.span, ident.node.name()))
+            .get_user_type(ident)
+            .map(UserTypeFindResult::Defined)
+            .or_else(|| {
+                self.definitions
+                    .get_file_for_alias(self.context.current_name, ident.module())
+                    .and_then(|module| {
+                        self.definitions
+                            .get_user_type_mod(module, ident)
+                            .map(|t| UserTypeFindResult::InModuleAlias(t, module))
+                    })
+            })
+            .ok_or_else(|| self.not_defined_error(span, span, ident.name()))
+            .unwrap_or_else(UserTypeFindResult::Undefined)
     }
 
     fn get_field(

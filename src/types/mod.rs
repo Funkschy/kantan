@@ -1,14 +1,17 @@
-use std::fmt;
+use std::{cell::Cell, fmt, hash};
 
-#[derive(Debug, Eq, Copy, Clone, PartialEq, Hash)]
+#[derive(Debug, Eq, Clone, PartialEq)]
 pub struct UserIdent<'src> {
-    file: &'src str,
+    file: Cell<&'src str>,
     name: &'src str,
 }
 
 impl<'src> UserIdent<'src> {
     pub fn new(file: &'src str, name: &'src str) -> Self {
-        UserIdent { file, name }
+        UserIdent {
+            file: Cell::new(file),
+            name,
+        }
     }
 
     #[inline]
@@ -17,14 +20,26 @@ impl<'src> UserIdent<'src> {
     }
 
     #[inline]
+    pub fn set_module(&self, value: &'src str) {
+        self.file.set(value);
+    }
+
+    #[inline]
     pub fn module(&self) -> &'src str {
-        self.file
+        self.file.get()
     }
 }
 
 impl<'src> fmt::Display for UserIdent<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}.{}", self.file, self.name)
+        write!(f, "{}.{}", self.module(), self.name())
+    }
+}
+
+impl<'src> hash::Hash for UserIdent<'src> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.module().hash(state);
+        self.name().hash(state);
     }
 }
 

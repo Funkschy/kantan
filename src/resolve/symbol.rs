@@ -87,7 +87,7 @@ mod tests {
     use super::*;
 
     impl<'src> SymbolTable<'src> {
-        pub fn lookup_current(&self, name: &'src str) -> Option<&Spanned<Symbol>> {
+        pub fn lookup_current(&self, name: &'src str) -> Option<&Spanned<Symbol<'src>>> {
             let last_scope = self.scopes.last().unwrap();
             last_scope.get(name)
         }
