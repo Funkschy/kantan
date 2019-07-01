@@ -12,7 +12,7 @@ pub struct BasicBlock<'src> {
 
 impl<'src> Default for BasicBlock<'src> {
     fn default() -> Self {
-        BasicBlock {
+        Self {
             instructions: vec![],
             terminator: Instruction::Nop,
         }
@@ -47,7 +47,7 @@ impl<'src> fmt::Display for Label {
 
 impl Label {
     pub fn new(number: usize) -> Self {
-        Label(format!(".L{}", number))
+        Self(format!(".L{}", number))
     }
 }
 
@@ -61,7 +61,7 @@ impl From<String> for Label {
 impl From<&str> for Label {
     #[inline]
     fn from(value: &str) -> Self {
-        Label(value.to_owned())
+        Self(value.to_owned())
     }
 }
 

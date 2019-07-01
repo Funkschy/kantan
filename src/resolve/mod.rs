@@ -1,7 +1,4 @@
-use std::{
-    borrow::Borrow,
-    collections::{HashMap, HashSet},
-};
+use std::{borrow::Borrow, collections::HashSet};
 
 use crate::{
     parse::{
@@ -10,25 +7,20 @@ use crate::{
         Span, Spanned,
     },
     types::*,
-    Source, UserTypeDefinition, UserTypeMap,
+    Source, UserTypeDefinition,
 };
 
-use self::error::*;
-use self::symbol::*;
+use self::{error::*, modmap::ModMap, symbol::*};
 
 use super::*;
 
 mod error;
+pub mod modmap;
 pub mod symbol;
-
-/// modname -> typename -> typedef
-pub type ModTypeMap<'src> = HashMap<&'src str, UserTypeMap<'src>>;
-pub type ModFuncMap<'src> = HashMap<&'src str, FunctionMap<'src>>;
 
 pub struct ResolveResult<'src> {
     pub symbols: SymbolTable<'src>,
-    pub mod_user_types: ModTypeMap<'src>,
-    pub mod_functions: ModFuncMap<'src>,
+    pub definitions: ModMap<'src>,
 }
 
 pub(crate) struct Resolver<'src, 'ast> {
@@ -36,10 +28,8 @@ pub(crate) struct Resolver<'src, 'ast> {
     programs: &'ast PrgMap<'src>,
     resolved: HashSet<&'src str>,
     pub(crate) sym_table: SymbolTable<'src>,
-    // TODO: refactor into one map
-    mod_functions: ModFuncMap<'src>,
-    mod_user_types: ModTypeMap<'src>,
-    current_func_def: FunctionDefinition<'src>,
+    definitions: ModMap<'src>,
+    current_func_def: FuncDef<'src>,
 }
 
 impl<'src, 'ast> Resolver<'src, 'ast> {
@@ -52,17 +42,15 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             programs,
             resolved,
             sym_table: SymbolTable::new(),
-            mod_functions: HashMap::new(),
-            mod_user_types: HashMap::new(),
-            current_func_def: FunctionDefinition::default(),
+            definitions: ModMap::default(),
+            current_func_def: FuncDef::default(),
         }
     }
 
     pub fn get_result(self) -> ResolveResult<'src> {
         ResolveResult {
             symbols: self.sym_table,
-            mod_user_types: self.mod_user_types,
-            mod_functions: self.mod_functions,
+            definitions: self.definitions,
         }
     }
 }
@@ -74,20 +62,16 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
         // TODO: check for recursive type defs
         // Check if every field of a user defined type in every struct is defined
-        for (_, mod_user_types) in self.mod_user_types.iter() {
-            for (_, type_def) in mod_user_types.iter() {
-                for (_, (_, ty)) in type_def.fields.iter() {
-                    self.check_user_type_defined(ty, &mut errors);
-                }
+        for (_, type_def) in self.definitions.iter_types() {
+            for (_, ty) in type_def.fields.values() {
+                self.check_user_type_defined(ty, &mut errors);
             }
         }
 
-        for (_, mod_functions) in self.mod_functions.iter() {
-            for (_, func_def) in mod_functions.iter() {
-                self.check_user_type_defined(&func_def.ret_type, &mut errors);
-                for p_ty in func_def.params.iter() {
-                    self.check_user_type_defined(p_ty, &mut errors);
-                }
+        for (_, func_def) in self.definitions.iter_functions() {
+            self.check_user_type_defined(&func_def.ret_type, &mut errors);
+            for p_ty in &func_def.params {
+                self.check_user_type_defined(p_ty, &mut errors);
             }
         }
 
@@ -96,17 +80,15 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 
     fn resolve_prg(&mut self, errors: &mut Vec<ResolveError<'src>>) {
         let name = self.current_name;
-
-        self.mod_user_types.insert(name, HashMap::new());
-        self.mod_functions.insert(name, HashMap::new());
+        self.definitions.create(name);
 
         let Unit { ast, .. } = self.programs.get(name).unwrap();
 
-        for top_lvl in ast.0.iter() {
+        for top_lvl in &ast.0 {
             self.declare_top_lvl(&top_lvl, errors);
         }
 
-        for top_lvl in ast.0.iter() {
+        for top_lvl in &ast.0 {
             self.resolve_top_lvl(top_lvl, errors);
         }
     }
@@ -118,7 +100,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     ) {
         if let Simple::UserType(type_name) = ty.node.simple() {
             let module = type_name.module();
-            if !self.mod_user_types.contains_key(module) {
+            let defined = self.definitions.type_defined(module, type_name);
+
+            if !defined {
                 let err = self.not_defined_error(ty.span, ty.span, type_name.name());
                 errors.push(err);
             }
@@ -135,7 +119,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             } => {
                 let mod_name = self.current_name;
 
-                if self.mod_functions[mod_name].contains_key(&name.node) {
+                if self.definitions.function_defined(mod_name, &name.node) {
                     // TODO: replace with proper error
                     panic!("Duplicate function '{}'", name.node);
                 }
@@ -148,18 +132,15 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     .map(|Param(_, ty)| ty.clone())
                     .collect();
 
-                let func_def = FunctionDefinition {
+                let func_def = FuncDef {
                     name: name.node,
                     ret_type: ret_type.clone(),
                     params: func_params,
                     varargs,
                 };
 
-                // TODO: error for invalid module
-                self.mod_functions
-                    .get_mut(mod_name)
-                    .unwrap()
-                    .insert(name.node, func_def);
+                self.definitions
+                    .define_function(mod_name, name.node, func_def);
             }
             TopLvl::Import { name, .. } => {
                 if name.node == self.current_name {
@@ -196,11 +177,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     fields,
                 };
 
-                // TODO: error for invalid module
-                self.mod_user_types
-                    .get_mut(mod_name)
-                    .unwrap()
-                    .insert(name.node, def);
+                self.definitions.define_type(mod_name, name.node, def);
             }
             TopLvl::Error(err) => {
                 panic!("Invalid top level declaration {:#?}\n{}", top_lvl, err.node)
@@ -227,15 +204,19 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ..
         } = top_lvl
         {
-            self.current_func_def = self.mod_functions[self.current_name][name.node].clone();
+            self.current_func_def = self
+                .definitions
+                .get_function(self.current_name, &name.node)
+                .unwrap()
+                .clone();
             self.sym_table.scope_enter();
 
-            for p in params.params.iter() {
+            for p in &params.params {
                 self.bind_param(p);
             }
 
             if !*is_extern {
-                for stmt in body.0.iter() {
+                for stmt in &body.0 {
                     self.resolve_stmt(stmt, errors);
                 }
             }
@@ -651,7 +632,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
 impl<'src, 'ast> Resolver<'src, 'ast> {
     fn call_function(
         &self,
-        func_type: &FunctionDefinition<'src>,
+        func_type: &FuncDef<'src>,
         args: &ArgList<'src>,
         expr_span: Span,
     ) -> Result<Option<Type<'src>>, ResolveError<'src>> {
@@ -816,12 +797,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &self,
         module: &'src str,
         ident: &Spanned<Expr<'src>>,
-    ) -> Option<Result<&FunctionDefinition<'src>, ResolveError<'src>>> {
+    ) -> Option<Result<&FuncDef<'src>, ResolveError<'src>>> {
         if let ExprKind::Ident(name) = ident.node.kind() {
             let res = self
-                .mod_functions
-                .get(module)
-                .and_then(|funcs| funcs.get(name))
+                .definitions
+                .get_function(module, name)
                 .ok_or_else(|| self.not_defined_error(ident.span, ident.span, name));
             Some(res)
         } else {
@@ -833,9 +813,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         &self,
         ident: &Spanned<UserIdent<'src>>,
     ) -> Result<&UserTypeDefinition<'src>, ResolveError<'src>> {
-        self.mod_user_types
-            .get(ident.node.module())
-            .and_then(|types| types.get(ident.node.name()))
+        self.definitions
+            .get_user_type(&ident.node)
             .ok_or_else(|| self.not_defined_error(ident.span, ident.span, ident.node.name()))
     }
 
@@ -982,7 +961,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         first: Type<'src>,
         second: Type<'src>,
     ) -> Result<Type<'src>, ResolveError<'src>> {
-        if first != second {
+        if first == second {
+            Ok(first)
+        } else {
             Err(self.error(
                 err_span,
                 expr_span,
@@ -991,8 +972,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     right_type: second,
                 }),
             ))
-        } else {
-            Ok(first)
         }
     }
 
@@ -1040,7 +1019,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
     ) -> Result<Type<'src>, ResolveError<'src>> {
         let (allowed, ty) = Self::allowed_binary(op, first, second);
 
-        if !allowed {
+        if allowed {
+            Ok(ty.clone())
+        } else {
             Err(self.error(
                 err_span,
                 expr_span,
@@ -1049,8 +1030,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     right_type: second.clone(),
                 }),
             ))
-        } else {
-            Ok(ty.clone())
         }
     }
 }
@@ -1171,7 +1150,7 @@ mod tests {
         let expected: Vec<ResolveError> = vec![];
         assert_eq!(expected, errors);
 
-        if let TopLvl::FuncDecl { body, .. } = &(&map["test"].ast).0[0] {
+        if let TopLvl::FuncDecl { body, .. } = &map["test"].ast.0[0] {
             if let Stmt::VarDecl(decl) = &body.0[0] {
                 assert_eq!(
                     decl.value.node.ty().clone(),

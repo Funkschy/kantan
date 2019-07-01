@@ -41,7 +41,7 @@ impl<T> Spanned<T> {
     }
 
     pub fn from_span(span: Span, node: T) -> Self {
-        Spanned { span, node }
+        Self { span, node }
     }
 }
 
@@ -49,7 +49,7 @@ impl<'a> From<Spanned<LexError>> for Spanned<ParseError<'a>> {
     fn from(err: Spanned<LexError>) -> Self {
         let span = err.span;
         let parse_err = ParseError::from(err.node);
-        Spanned {
+        Self {
             span,
             node: parse_err,
         }
@@ -58,7 +58,7 @@ impl<'a> From<Spanned<LexError>> for Spanned<ParseError<'a>> {
 
 impl<T: Clone> Clone for Spanned<T> {
     fn clone(&self) -> Self {
-        Spanned {
+        Self {
             span: self.span,
             node: self.node.clone(),
         }

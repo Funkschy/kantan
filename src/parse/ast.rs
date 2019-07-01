@@ -205,18 +205,10 @@ impl<'src> Expr<'src> {
 
         match self.kind() {
             Error(_) => panic!(),
-            NullLit => vec![],
-            SizeOf(_) => vec![],
-            DecLit(_) => vec![],
-            FloatLit(_) => vec![],
-            StringLit(_) => vec![],
-            New(expr) => vec![expr],
-            Negate(_, expr) => vec![expr],
-            Deref(_, expr) => vec![expr],
-            Ref(_, expr) => vec![expr],
+            NullLit | SizeOf(_) | DecLit(_) | FloatLit(_) | StringLit(_) | Ident(_) => vec![],
+            New(expr) | Negate(_, expr) | Deref(_, expr) | Ref(_, expr) => vec![expr],
             Binary(l, _, r) => vec![l, r],
             BoolBinary(l, _, r) => vec![l, r],
-            Ident(_) => vec![],
             Assign { left, value, .. } => vec![left, value],
             Call { args, callee, .. } => {
                 if let ExprKind::Ident(_) = callee.node.kind() {
@@ -225,7 +217,7 @@ impl<'src> Expr<'src> {
                     let mut vec = Vec::with_capacity(args.0.len() + 1);
 
                     vec.push(callee.as_ref());
-                    for a in args.0.iter() {
+                    for a in &args.0 {
                         vec.push(a);
                     }
 
@@ -241,13 +233,12 @@ impl<'src> Expr<'src> {
         use self::ExprKind::*;
 
         match self.kind() {
-            Ident(_) => false,
-            Access { .. } => false,
+            Ident(_) | Access { .. } => false,
             _ => true,
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn is_l_value(&self) -> bool {
         !self.is_r_value()
     }
@@ -259,17 +250,16 @@ impl<'src> fmt::Display for Expr<'src> {
 
         match self.kind() {
             Error(err) => write!(f, "{}", err),
+            DecLit(lit) | FloatLit(lit) | StringLit(lit) => write!(f, "{}", lit),
             NullLit => write!(f, "null"),
             SizeOf(ty) => write!(f, "sizeof({})", ty),
-            DecLit(lit) => write!(f, "{}", lit),
-            FloatLit(lit) => write!(f, "{}", lit),
-            StringLit(lit) => write!(f, "{}", lit),
             New(expr) => write!(f, "new {}", expr.node),
             Negate(_, expr) => write!(f, "-{}", expr.node),
             Deref(_, expr) => write!(f, "*{}", expr.node),
             Ref(_, expr) => write!(f, "&{}", expr.node),
-            Binary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
-            BoolBinary(l, op, r) => write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node)),
+            Binary(l, op, r) | BoolBinary(l, op, r) => {
+                write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node))
+            }
             Ident(name) => write!(f, "{}", name),
             Assign { left, value, .. } => write!(f, "{} = {}", left.node, value.node),
             Call { callee, args, .. } => write!(f, "{}({})", callee.node, args),

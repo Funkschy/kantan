@@ -8,7 +8,7 @@ type ExprResult<'src> = ParseResult<'src, Spanned<Expr<'src>>>;
 type StmtResult<'src> = ParseResult<'src, Stmt<'src>>;
 type TopLvlResult<'src> = ParseResult<'src, TopLvl<'src>>;
 
-fn as_err_stmt<'src>(err: Spanned<ParseError<'src>>) -> Stmt<'src> {
+fn as_err_stmt(err: Spanned<ParseError>) -> Stmt {
     Stmt::Expr(Spanned::new(
         err.span.start,
         err.span.end,
@@ -55,7 +55,7 @@ where
             } else if let Err(err) = decl {
                 top_lvl_decls.push(TopLvl::Error(err));
                 self.err_count += 1;
-                while !(self.peek_eq(Token::Def) || self.peek_eq(Token::Type) || self.at_end()) {
+                while !(self.peek_eq(&Token::Def) || self.peek_eq(&Token::Type) || self.at_end()) {
                     self.advance().unwrap();
                 }
             }
@@ -65,15 +65,15 @@ where
     }
 
     fn top_lvl_decl(&mut self) -> TopLvlResult<'src> {
-        if self.peek_eq(Token::Import) {
+        if self.peek_eq(&Token::Import) {
             return self.import();
         }
 
-        if self.peek_eq(Token::Type) {
+        if self.peek_eq(&Token::Type) {
             return self.type_definition();
         }
 
-        let is_extern = self.peek_eq(Token::Extern);
+        let is_extern = self.peek_eq(&Token::Extern);
         if is_extern {
             self.consume(Token::Extern)?;
         }
@@ -85,11 +85,11 @@ where
         self.consume(Token::Colon)?;
         let ret_type = self.consume_type()?;
 
-        let body = if !is_extern {
-            self.block()?
-        } else {
+        let body = if is_extern {
             self.consume(Token::Semi)?;
             Block::default()
+        } else {
+            self.block()?
         };
 
         Ok(TopLvl::FuncDecl {
@@ -110,14 +110,14 @@ where
 
         let mut fields = Vec::new();
 
-        if !self.at_end() && !self.peek_eq(Token::RBrace) {
+        if !self.at_end() && !self.peek_eq(&Token::RBrace) {
             loop {
                 let field_name = self.consume_ident()?;
                 self.consume(Token::Colon)?;
                 let field_type = self.consume_type()?;
                 fields.push((field_name, field_type));
 
-                if self.at_end() || self.peek_eq(Token::RBrace) {
+                if self.at_end() || self.peek_eq(&Token::RBrace) {
                     break;
                 }
 
@@ -131,7 +131,7 @@ where
 
     fn import(&mut self) -> TopLvlResult<'src> {
         self.consume(Token::Import)?;
-        let name = self.consume_ident()?;
+        let name = self.consume_string()?;
 
         Ok(TopLvl::Import { name })
     }
@@ -146,8 +146,8 @@ where
 
         let mut params = vec![];
 
-        while !self.peek_eq(Token::RParen) {
-            if self.peek_eq(Token::TripleDot) {
+        while !self.peek_eq(&Token::RParen) {
+            if self.peek_eq(&Token::TripleDot) {
                 if !is_extern {
                     // TODO: replace with custom error
                     panic!("Varargs are currently only supported in extern functions");
@@ -171,7 +171,7 @@ where
             let ty = self.consume_type()?;
             params.push(Param::new(ident, ty));
 
-            if !self.peek_eq(Token::RParen) {
+            if !self.peek_eq(&Token::RParen) {
                 self.consume(Token::Comma)?;
             }
         }
@@ -184,7 +184,7 @@ where
         self.consume(Token::LBrace)?;
         let mut stmts = vec![];
 
-        while !self.at_end() && !self.peek_eq(Token::RBrace) {
+        while !self.at_end() && !self.peek_eq(&Token::RBrace) {
             let stmt = self.statement();
             if let Ok(stmt) = stmt {
                 stmts.push(stmt);
@@ -244,7 +244,7 @@ where
     fn return_stmt(&mut self) -> StmtResult<'src> {
         self.consume(Token::Return)?;
 
-        let ret = Ok(Stmt::Return(if self.peek_eq(Token::Semi) {
+        let ret = Ok(Stmt::Return(if self.peek_eq(&Token::Semi) {
             None
         } else {
             Some(self.expression(false)?)
@@ -260,10 +260,10 @@ where
         let condition = self.expression(true)?;
         let then_block = self.block()?;
 
-        let else_branch = if self.peek_eq(Token::Else) {
+        let else_branch = if self.peek_eq(&Token::Else) {
             self.consume(Token::Else)?;
 
-            let else_branch = if self.peek_eq(Token::If) {
+            let else_branch = if self.peek_eq(&Token::If) {
                 let else_if = Box::new(self.if_stmt()?);
                 Else::IfStmt(else_if)
             } else {
@@ -308,7 +308,7 @@ where
 
     pub fn expression(&mut self, no_struct: bool) -> ExprResult<'src> {
         let mut left = self.parse_expression(Precedence::Assign, no_struct)?;
-        while self.peek_eq(Token::Equals) {
+        while self.peek_eq(&Token::Equals) {
             let eq = self.consume(Token::Equals)?;
             let value = Box::new(self.parse_expression(Precedence::Assign, no_struct)?);
             left = Spanned::new(
@@ -348,7 +348,7 @@ where
     }
 
     fn match_tok(&mut self, expected: Token<'src>) -> ParseResult<'src, bool> {
-        if self.peek_eq_ref(&expected) {
+        if self.peek_eq(&expected) {
             self.consume(expected)?;
             return Ok(true);
         }
@@ -356,14 +356,7 @@ where
         Ok(false)
     }
 
-    fn peek_eq(&mut self, expected: Token<'src>) -> bool {
-        self.scanner.peek().map_or(false, |peek| match peek {
-            Ok(Spanned { node, .. }) => *node == expected,
-            _ => false,
-        })
-    }
-
-    fn peek_eq_ref(&mut self, expected: &Token<'src>) -> bool {
+    fn peek_eq(&mut self, expected: &Token<'src>) -> bool {
         self.scanner.peek().map_or(false, |peek| match peek {
             Ok(Spanned { node, .. }) => *node == *expected,
             _ => false,
@@ -385,6 +378,31 @@ where
                         let tok = Spanned::clone(&peek);
                         return Err(self
                             .make_consume_err(&tok, "Identifier".to_owned())
+                            .unwrap_err());
+                    }
+                }
+                Err(err) => Err(err),
+            };
+        }
+
+        Err(self.eof().unwrap_err())
+    }
+
+    fn consume_string(&mut self) -> ParseResult<'src, Spanned<&'src str>> {
+        if let Some(peek) = self.scanner.peek().cloned() {
+            return match peek {
+                Ok(peek) => {
+                    if let Spanned {
+                        node: Token::StringLit(lit),
+                        span,
+                    } = peek
+                    {
+                        self.advance()?;
+                        return Ok(Spanned::from_span(span, lit));
+                    } else {
+                        let tok = Spanned::clone(&peek);
+                        return Err(self
+                            .make_consume_err(&tok, "string".to_owned())
                             .unwrap_err());
                     }
                 }
@@ -707,12 +725,12 @@ where
     fn init_list(&mut self) -> ParseResult<'src, InitList<'src>> {
         let mut inits = vec![];
 
-        while !self.at_end() && !self.peek_eq(Token::RBrace) {
+        while !self.at_end() && !self.peek_eq(&Token::RBrace) {
             let ident = self.consume_ident()?;
             self.consume(Token::Colon)?;
             let expr = self.expression(false)?;
             inits.push((ident, expr));
-            if !self.peek_eq(Token::RBrace) {
+            if !self.peek_eq(&Token::RBrace) {
                 self.consume(Token::Comma)?;
             }
         }
@@ -723,9 +741,9 @@ where
     fn arg_list(&mut self) -> ParseResult<'src, ArgList<'src>> {
         let mut args = vec![];
 
-        while !self.at_end() && !self.peek_eq(Token::RParen) {
+        while !self.at_end() && !self.peek_eq(&Token::RParen) {
             args.push(self.expression(false)?);
-            if !self.peek_eq(Token::RParen) {
+            if !self.peek_eq(&Token::RParen) {
                 self.consume(Token::Comma)?;
             }
         }
@@ -1020,7 +1038,10 @@ mod tests {
 
     #[test]
     fn test_parse_import() {
-        let source = Source::new("main", "import test\ndef main(): void {}");
+        let source = Source::new(
+            "main",
+            concat!("import ", r#""test""#, "\ndef main(): void {}"),
+        );
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
 
@@ -1028,12 +1049,12 @@ mod tests {
         assert_eq!(
             Program(vec![
                 TopLvl::Import {
-                    name: Spanned::new(7, 10, "test")
+                    name: Spanned::new(8, 11, "test")
                 },
                 TopLvl::FuncDecl {
-                    name: Spanned::new(16, 19, "main"),
+                    name: Spanned::new(18, 21, "main"),
                     is_extern: false,
-                    ret_type: Spanned::new(24, 27, Type::Simple(Simple::Void)),
+                    ret_type: Spanned::new(26, 29, Type::Simple(Simple::Void)),
                     params: ParamList::default(),
                     body: Block(vec![])
                 }

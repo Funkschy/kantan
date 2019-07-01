@@ -67,19 +67,19 @@ impl Into<&'static str> for CpuType {
     }
 }
 
-pub struct TargetTriple {
+pub struct Triple {
     arch: ArchType,
     vendor: VendorType,
     os: OsType,
 }
 
-impl TargetTriple {
+impl Triple {
     pub fn new(arch: ArchType, vendor: VendorType, os: OsType) -> Self {
-        TargetTriple { arch, vendor, os }
+        Self { arch, vendor, os }
     }
 }
 
-impl Into<String> for TargetTriple {
+impl Into<String> for Triple {
     fn into(self) -> String {
         let arch: &str = self.arch.into();
         let vendor: &str = self.vendor.into();
@@ -89,7 +89,7 @@ impl Into<String> for TargetTriple {
     }
 }
 
-impl Into<Vec<u8>> for TargetTriple {
+impl Into<Vec<u8>> for Triple {
     fn into(self) -> Vec<u8> {
         let s: String = self.into();
         s.into()
@@ -98,19 +98,19 @@ impl Into<Vec<u8>> for TargetTriple {
 
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum CodeGenOptLevel {
-    OptNone,
-    OptLess,
-    OptDefault,
-    OptAggressive,
+    None,
+    Less,
+    Default,
+    Aggressive,
 }
 
 impl CodeGenOptLevel {
     pub fn convert(value: &str) -> Option<Self> {
         Some(match value {
-            "0" => CodeGenOptLevel::OptNone,
-            "1" => CodeGenOptLevel::OptLess,
-            "2" => CodeGenOptLevel::OptDefault,
-            "3" => CodeGenOptLevel::OptAggressive,
+            "0" => CodeGenOptLevel::None,
+            "1" => CodeGenOptLevel::Less,
+            "2" => CodeGenOptLevel::Default,
+            "3" => CodeGenOptLevel::Aggressive,
             _ => return None,
         })
     }
@@ -118,13 +118,11 @@ impl CodeGenOptLevel {
 
 impl Into<LLVMCodeGenOptLevel> for CodeGenOptLevel {
     fn into(self) -> LLVMCodeGenOptLevel {
-        use LLVMCodeGenOptLevel::*;
-
         match self {
-            CodeGenOptLevel::OptNone => LLVMCodeGenLevelNone,
-            CodeGenOptLevel::OptLess => LLVMCodeGenLevelLess,
-            CodeGenOptLevel::OptDefault => LLVMCodeGenLevelDefault,
-            CodeGenOptLevel::OptAggressive => LLVMCodeGenLevelAggressive,
+            CodeGenOptLevel::None => LLVMCodeGenOptLevel::LLVMCodeGenLevelNone,
+            CodeGenOptLevel::Less => LLVMCodeGenOptLevel::LLVMCodeGenLevelLess,
+            CodeGenOptLevel::Default => LLVMCodeGenOptLevel::LLVMCodeGenLevelDefault,
+            CodeGenOptLevel::Aggressive => LLVMCodeGenOptLevel::LLVMCodeGenLevelAggressive,
         }
     }
 }
@@ -132,10 +130,10 @@ impl Into<LLVMCodeGenOptLevel> for CodeGenOptLevel {
 impl Into<u32> for CodeGenOptLevel {
     fn into(self) -> u32 {
         match self {
-            CodeGenOptLevel::OptNone => 0,
-            CodeGenOptLevel::OptLess => 1,
-            CodeGenOptLevel::OptDefault => 2,
-            CodeGenOptLevel::OptAggressive => 3,
+            CodeGenOptLevel::None => 0,
+            CodeGenOptLevel::Less => 1,
+            CodeGenOptLevel::Default => 2,
+            CodeGenOptLevel::Aggressive => 3,
         }
     }
 }
@@ -145,18 +143,17 @@ pub struct Target {
     triple: *mut i8,
 }
 
-impl TryFrom<TargetTriple> for Target {
+impl TryFrom<Triple> for Target {
     type Error = *mut i8;
 
-    fn try_from(triple: TargetTriple) -> Result<Self, *mut i8> {
+    fn try_from(triple: Triple) -> Result<Self, *mut i8> {
         unsafe {
             let mut target = ptr::null_mut();
             let mut error = ptr::null_mut();
 
             triple.arch.register();
 
-            let cstring = CString::new(triple).unwrap();
-            let triple = cstring.into_raw();
+            let triple = CString::new(triple).unwrap().into_raw();
 
             if LLVMGetTargetFromTriple(triple, &mut target, &mut error) != 0 {
                 LLVMDisposeMessage(triple);
@@ -186,11 +183,11 @@ pub struct TargetMachine {
 }
 
 impl TargetMachine {
-    pub fn new(target: Target, cpu: CpuType, level: CodeGenOptLevel) -> Self {
+    pub fn new(target: Target, cpu_type: CpuType, level: CodeGenOptLevel) -> Self {
         unsafe {
             let features = CString::new("").unwrap().into_raw();
 
-            let cpu_string: &str = cpu.into();
+            let cpu_string: &str = cpu_type.into();
             let cpu = CString::new(cpu_string).unwrap().into_raw();
 
             let machine = LLVMCreateTargetMachine(

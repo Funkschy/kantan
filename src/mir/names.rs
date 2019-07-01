@@ -9,7 +9,7 @@ use std::collections::HashMap;
 /// }
 ///
 /// In the outer scope, nametable.lookup("x") will return x.
-/// In the inner scope, is will return "x_1"
+/// In the inner scope, is will return `x_1`
 #[derive(Debug)]
 pub struct NameTable<'src> {
     scopes: Vec<HashMap<&'src str, String>>,
@@ -41,10 +41,10 @@ impl<'src> NameTable<'src> {
         let num = *self.total.entry(name).or_insert(0);
 
         let scope = self.scopes.last_mut().unwrap();
-        if num != 0 {
-            scope.insert(name, format!("{}_{}", name, num));
-        } else {
+        if num == 0 {
             scope.insert(name, name.to_string());
+        } else {
+            scope.insert(name, format!("{}_{}", name, num));
         }
         self.total.insert(name, num + 1);
     }
@@ -66,7 +66,7 @@ impl<'src> NameTable<'src> {
         panic!("Name {} could not be resolved", name);
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn num_scopes(&self) -> usize {
         self.scopes.len()
     }
