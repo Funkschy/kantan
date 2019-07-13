@@ -689,8 +689,7 @@ where
                 ))
             }
             Token::Ampersand => {
-                // TODO: change false Precedence
-                let next = self.parse_expression(Precedence::Sum, no_struct)?;
+                let next = self.parse_expression(Precedence::Unary, no_struct)?;
 
                 Ok(Spanned::new(
                     token.span.start,
@@ -699,8 +698,7 @@ where
                 ))
             }
             Token::Star => {
-                // TODO: change false Precedence
-                let next = self.parse_expression(Precedence::Sum, no_struct)?;
+                let next = self.parse_expression(Precedence::Unary, no_struct)?;
 
                 Ok(Spanned::new(
                     token.span.start,

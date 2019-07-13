@@ -100,8 +100,8 @@ impl<'src> Token<'src> {
                 Precedence::Comparison
             }
             Token::Plus | Token::Minus => Precedence::Sum,
-            Token::Star | Token::Slash => Precedence::Product,
-            Token::LParen | Token::Dot | Token::LBrace | Token::As => Precedence::Call,
+            Token::Star | Token::Slash | Token::As => Precedence::Product,
+            Token::LParen | Token::Dot | Token::LBrace => Precedence::Call,
             _ => Precedence::None,
         }
     }

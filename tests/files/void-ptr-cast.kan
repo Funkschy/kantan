@@ -6,7 +6,7 @@ type Person struct {
 
 def main(): void {
     let p = Person { age: 42 };
-    print_as_int((&p) as *void);
+    print_as_int(&p as *void);
 }
 
 def print_as_int(ptr: *void): void {
