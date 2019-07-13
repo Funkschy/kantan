@@ -210,6 +210,11 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 Simple::Varargs => panic!("Varargs is not a real type"),
             },
             Type::Pointer(ptr) => {
+                if ptr.ty == Simple::Void {
+                    // LLVM doesn't have a void pointer, so we use *i8 instead
+                    return LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE);
+                }
+
                 let mut ty = self.convert(&Type::Simple(ptr.ty.clone()));
                 for _ in 0..ptr.number {
                     ty = LLVMPointerType(ty, ADDRESS_SPACE);
@@ -485,6 +490,11 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     unsafe fn translate_mir_expr(&mut self, e: &Expression<'src>, name: &str) -> LLVMValueRef {
         match e {
             Expression::GetParam(i) => LLVMGetParam(self.current_function.unwrap(), *i),
+            Expression::BitCast(a, ty) => {
+                let val = self.translate_mir_address(a);
+                let dest_ty = self.convert(ty);
+                LLVMBuildBitCast(self.builder, val, dest_ty, self.cstring(name))
+            }
             Expression::SizeOf(ty) => {
                 let ty = self.convert(ty);
                 // TODO: remove when i64 is supported

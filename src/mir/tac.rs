@@ -146,6 +146,9 @@ pub enum Expression<'src> {
     SizeOf(Type<'src>),
     /// x = param #y
     GetParam(u32),
+    /// Cast the value at the address to the supplied type
+    /// x = bitcast e to ty2
+    BitCast(Address<'src>, Type<'src>),
 }
 
 impl<'src> fmt::Display for Expression<'src> {
@@ -160,6 +163,7 @@ impl<'src> fmt::Display for Expression<'src> {
             SizeOf(ty) => format!("sizeof({})", ty),
             StructGep(a, offset) => format!("structgep {} offset {}", a, offset),
             GetParam(i) => format!("param #{}", i),
+            BitCast(a, ty) => format!("bitcast {} to {}", a, ty),
             StructInit(ident, values) => format!(
                 "{} {{ {} }}",
                 ident,

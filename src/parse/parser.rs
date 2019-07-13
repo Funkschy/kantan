@@ -238,7 +238,7 @@ where
         let condition = self.expression(true)?;
         let body = self.block()?;
 
-        Ok(Stmt::While { condition, body })
+        Ok(Stmt::While(Box::new(WhileStmt { condition, body })))
     }
 
     fn return_stmt(&mut self) -> StmtResult<'src> {
@@ -582,6 +582,15 @@ where
                     Expr::new(expr),
                 ))
             }
+            Token::As => {
+                let expr = Box::new(left);
+                let ty = self.consume_type()?;
+                Ok(Spanned::new(
+                    expr.span.start,
+                    ty.span.end,
+                    Expr::new(ExprKind::Cast(expr, token.clone(), ty)),
+                ))
+            }
             Token::Dot => {
                 let ident = self.consume_ident()?;
                 Ok(Spanned::new(
@@ -680,8 +689,7 @@ where
                 ))
             }
             Token::Ampersand => {
-                // TODO: change false Precedence
-                let next = self.parse_expression(Precedence::Sum, no_struct)?;
+                let next = self.parse_expression(Precedence::Unary, no_struct)?;
 
                 Ok(Spanned::new(
                     token.span.start,
@@ -690,8 +698,7 @@ where
                 ))
             }
             Token::Star => {
-                // TODO: change false Precedence
-                let next = self.parse_expression(Precedence::Sum, no_struct)?;
+                let next = self.parse_expression(Precedence::Unary, no_struct)?;
 
                 Ok(Spanned::new(
                     token.span.start,
@@ -980,7 +987,7 @@ mod tests {
                 params: ParamList::default(),
                 ret_type: Spanned::new(12, 15, Type::Simple(Simple::Void)),
                 is_extern: false,
-                body: Block(vec![Stmt::While {
+                body: Block(vec![Stmt::While(Box::new(WhileStmt {
                     condition: Spanned::new(
                         25,
                         30,
@@ -1003,7 +1010,7 @@ mod tests {
                             args: ArgList(vec![])
                         })
                     ))])
-                }])
+                }))])
             }]),
             prg
         );
