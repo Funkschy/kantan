@@ -1,4 +1,4 @@
-# Kantan
+# Kantan (簡単)
 
 Official git repository of the Kantan programming Language.
 
