@@ -38,10 +38,7 @@ pub enum TypeDef<'src> {
 pub enum Stmt<'src> {
     VarDecl(Box<VarDecl<'src>>),
     If(Box<IfStmt<'src>>),
-    While {
-        condition: Spanned<Expr<'src>>,
-        body: Block<'src>,
-    },
+    While(Box<WhileStmt<'src>>),
     Return(Option<Spanned<Expr<'src>>>),
     Delete(Box<Spanned<Expr<'src>>>),
     Expr(Spanned<Expr<'src>>),
@@ -52,6 +49,12 @@ pub struct IfStmt<'src> {
     pub condition: Spanned<Expr<'src>>,
     pub then_block: Block<'src>,
     pub else_branch: Option<Box<Else<'src>>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct WhileStmt<'src> {
+    pub condition: Spanned<Expr<'src>>,
+    pub body: Block<'src>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -175,6 +178,11 @@ pub enum ExprKind<'src> {
         Spanned<Token<'src>>,
         Box<Spanned<Expr<'src>>>,
     ),
+    Cast(
+        Box<Spanned<Expr<'src>>>,
+        Spanned<Token<'src>>,
+        Spanned<Type<'src>>,
+    ),
     Ident(&'src str),
     New(Box<Spanned<Expr<'src>>>),
     Assign {
@@ -209,6 +217,7 @@ impl<'src> Expr<'src> {
             New(expr) | Negate(_, expr) | Deref(_, expr) | Ref(_, expr) => vec![expr],
             Binary(l, _, r) => vec![l, r],
             BoolBinary(l, _, r) => vec![l, r],
+            Cast(e, _, _) => vec![e],
             Assign { left, value, .. } => vec![left, value],
             Call { args, callee, .. } => {
                 if let ExprKind::Ident(_) = callee.node.kind() {
@@ -261,6 +270,7 @@ impl<'src> fmt::Display for Expr<'src> {
                 write!(f, "{}", format!("{} {} {}", l.node, op.node, r.node))
             }
             Ident(name) => write!(f, "{}", name),
+            Cast(expr, _, ty) => write!(f, "{} as {}", expr.node, ty.node),
             Assign { left, value, .. } => write!(f, "{} = {}", left.node, value.node),
             Call { callee, args, .. } => write!(f, "{}({})", callee.node, args),
             Access { left, identifier } => write!(f, "{}.{}", left.node, identifier.node),

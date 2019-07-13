@@ -25,6 +25,7 @@ pub enum Token<'src> {
     New,
     Delete,
     Sizeof,
+    As,
 
     // Operators
     Bang,
@@ -100,7 +101,7 @@ impl<'src> Token<'src> {
             }
             Token::Plus | Token::Minus => Precedence::Sum,
             Token::Star | Token::Slash => Precedence::Product,
-            Token::LParen | Token::Dot | Token::LBrace => Precedence::Call,
+            Token::LParen | Token::Dot | Token::LBrace | Token::As => Precedence::Call,
             _ => Precedence::None,
         }
     }
@@ -128,6 +129,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::New => write!(f, "new"),
             Token::Delete => write!(f, "delete"),
             Token::Sizeof => write!(f, "sizeof"),
+            Token::As => write!(f, "as"),
 
             // Operators
             Token::Bang => write!(f, "!"),

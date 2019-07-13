@@ -8,10 +8,9 @@ use super::{
     tac::*,
     FunctionHead,
 };
-use crate::resolve::modmap::ModMap;
 use crate::{
     parse::ast::*,
-    resolve::{symbol::SymbolTable, ResolveResult},
+    resolve::{modmap::ModMap, symbol::SymbolTable, ResolveResult},
     types::*,
 };
 
@@ -198,7 +197,9 @@ impl<'src> MirBuilder<'src> {
                 let address = self.temp_assign(Expression::Copy(address), block);
                 block.push(Instruction::Delete(address));
             }
-            Stmt::While { condition, body } => {
+            Stmt::While(while_stmt) => {
+                let WhileStmt { condition, body } = while_stmt.as_ref();
+
                 let end_label = self.label();
                 self.while_loop(&condition.node, body, block, end_label.clone());
                 block.push(Instruction::Label(end_label));
@@ -483,6 +484,10 @@ impl<'src> MirBuilder<'src> {
                     }
                 };
                 Expression::New(address, ty)
+            }
+            ExprKind::Cast(expr, _, ty) => {
+                let address = self.expr_instr(rhs, &expr.node, block);
+                Expression::BitCast(address, ty.node.clone())
             }
             _ => unimplemented!("{:?}", expr),
         }

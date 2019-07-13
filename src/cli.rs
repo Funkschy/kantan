@@ -45,14 +45,16 @@ fn find_errors(prg: &Program) -> Vec<(Span, String)> {
                     }
                 }
             }
-            Stmt::While {
-                condition:
-                    Spanned {
-                        node: condition,
-                        span,
-                    },
-                body,
-            } => {
+            Stmt::While(while_stmt) => {
+                let WhileStmt {
+                    condition:
+                        Spanned {
+                            node: condition,
+                            span,
+                        },
+                    body,
+                } = while_stmt.as_ref();
+
                 if condition.is_err() {
                     errors.push((*span, condition.to_string()));
                 }

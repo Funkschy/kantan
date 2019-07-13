@@ -317,7 +317,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     }
                 }
             }
-            Stmt::While { condition, body } => {
+            Stmt::While(while_stmt) => {
+                let WhileStmt { condition, body } = while_stmt.as_ref();
+
                 match self.resolve_expr(condition.span, &condition.node, None) {
                     Err(msg) => errors.push(msg),
                     Ok(ty) => self.expect_bool(ty, "while condition", condition.span, errors),
@@ -437,7 +439,6 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             ExprKind::SizeOf(_) => Ok(Some(Type::Simple(Simple::I32))),
             ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
             ExprKind::Ident(name) => self.handle_ident(span, name).map(|t| Some(t.node.clone())),
-
             ExprKind::New(expr) => {
                 let ty = self.resolve_type(expr, None)?;
 
@@ -486,6 +487,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 } else {
                     Err(self.error(op.span, span, ResolveErrorType::Deref(NonPtrError(ty))))
                 }
+            }
+            ExprKind::Cast(expr, _token, ty) => {
+                let _expr_type = self.resolve_type(expr, None)?;
+                // TODO: check convertability
+                Ok(Some(ty.node.clone()))
             }
             ExprKind::Binary(l, op, r) => {
                 let left = self.resolve_type(l, None)?;

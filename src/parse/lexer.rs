@@ -183,6 +183,7 @@ impl<'src> Lexer<'src> {
                 "new" => Token::New,
                 "delete" => Token::Delete,
                 "sizeof" => Token::Sizeof,
+                "as" => Token::As,
                 _ => return None,
             },
         ))
