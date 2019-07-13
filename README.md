@@ -20,7 +20,7 @@ Currently there are only structs, but a interface system similar to Rusts traits
 
 ## Getting started
 
-To compile the Kantan compiler just clone it and run `cargo build --release`. <br/>
+To compile the Kantan compiler you need to have the development version of LLVM-7 installed. After installing LLVM just clone the repo and run `cargo build --release`. <br/>
 Run `target/release/kantan --help` to get the help dialog
 
 There currently is no way to link the resulting object files into an executable directly.<br/>
