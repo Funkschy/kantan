@@ -215,6 +215,7 @@ impl<'a> From<&Token<'a>> for Option<UnaryType> {
     fn from(value: &Token) -> Self {
         match value {
             Token::Minus => Some(UnaryType::I32Negate),
+            Token::Bang => Some(UnaryType::BoolNegate),
             Token::Star => Some(UnaryType::Deref),
             _ => None,
         }

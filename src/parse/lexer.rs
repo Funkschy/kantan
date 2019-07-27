@@ -281,23 +281,22 @@ impl<'src> Lexer<'src> {
             '"' => self.scan_string(),
             '\'' => {
                 self.advance();
-                let c = self.slice(start + 1, start + 2);
+                let c = self.read_while(|c| c != '\'');
+
+                let result = match c.len() {
+                    1 => Ok(Spanned::new(start + 1, start + 1, Token::Char(&c[..]))),
+                    2 if c == "\\0" => Ok(Spanned::new(start + 1, start + 1, Token::Char("\0"))),
+                    _ => Err(Spanned::new(
+                        start,
+                        self.pos(),
+                        ParseError::LexError(LexError::with_cause(
+                            "char must have a length of one",
+                        )),
+                    )),
+                };
+
                 self.advance();
-                let mut end = start + 2;
-
-                if let Some(InputPos { value, .. }) = self.current {
-                    if value == '\'' {
-                        self.advance();
-                        return Some(Ok(Spanned::new(start + 1, start + 1, Token::Char(c))));
-                    }
-
-                    end = start + 1;
-                }
-                Err(Spanned::new(
-                    end,
-                    end,
-                    ParseError::LexError(LexError::with_cause("char must have a length of one")),
-                ))
+                result
             }
             c if c.is_alphabetic() => self.scan_ident(),
             c if c.is_digit(10) => self.scan_num(),

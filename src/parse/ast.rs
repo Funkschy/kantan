@@ -169,6 +169,7 @@ pub enum ExprKind<'src> {
     Ref(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Deref(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Negate(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
+    BoolNegate(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Binary(
         Box<Spanned<Expr<'src>>>,
         Spanned<Token<'src>>,
@@ -217,7 +218,9 @@ impl<'src> Expr<'src> {
             NullLit | SizeOf(_) | DecLit(_) | FloatLit(_) | StringLit(_) | Ident(_) | Char(_) => {
                 vec![]
             }
-            New(expr) | Negate(_, expr) | Deref(_, expr) | Ref(_, expr) => vec![expr],
+            New(expr) | Negate(_, expr) | BoolNegate(_, expr) | Deref(_, expr) | Ref(_, expr) => {
+                vec![expr]
+            }
             Binary(l, _, r) => vec![l, r],
             BoolBinary(l, _, r) => vec![l, r],
             Cast(e, _, _) => vec![e],
@@ -267,6 +270,7 @@ impl<'src> fmt::Display for Expr<'src> {
             SizeOf(ty) => write!(f, "sizeof({})", ty),
             New(expr) => write!(f, "new {}", expr.node),
             Negate(_, expr) => write!(f, "-{}", expr.node),
+            BoolNegate(_, expr) => write!(f, "-{}", expr.node),
             Deref(_, expr) => write!(f, "*{}", expr.node),
             Ref(_, expr) => write!(f, "&{}", expr.node),
             Binary(l, op, r) | BoolBinary(l, op, r) => {

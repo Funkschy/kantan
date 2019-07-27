@@ -710,6 +710,15 @@ where
                     Expr::new(ExprKind::Deref(token.clone(), Box::new(next))),
                 ))
             }
+            Token::Bang => {
+                let next = self.parse_expression(Precedence::Unary, no_struct)?;
+
+                Ok(Spanned::new(
+                    token.span.start,
+                    next.span.end,
+                    Expr::new(ExprKind::BoolNegate(token.clone(), Box::new(next))),
+                ))
+            }
             Token::Ident(ref name) => {
                 if !no_struct && self.match_tok(Token::LBrace)? {
                     let init_list = self.init_list()?;

@@ -424,6 +424,18 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         Ok(ty)
     }
 
+    fn check_negate(
+        &mut self,
+        op: &Spanned<Token<'src>>,
+        expr: &Spanned<Expr<'src>>,
+        span: Span,
+        expected_ty: &Type<'src>,
+    ) -> Result<Option<Type<'src>>, ResolveError<'src>> {
+        let ty = self.resolve_type(expr, None)?;
+        // TODO: unary operation error
+        Some(self.compare_binary_types(op.span, span, &op.node, &ty, expected_ty)).transpose()
+    }
+
     fn check_expr(
         &mut self,
         span: Span,
@@ -451,16 +463,10 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                 }
             }
             ExprKind::Negate(op, expr) => {
-                let ty = self.resolve_type(expr, None)?;
-                // TODO: unary operation error
-                Some(self.compare_binary_types(
-                    op.span,
-                    span,
-                    &op.node,
-                    &ty,
-                    &Type::Simple(Simple::I32),
-                ))
-                .transpose()
+                self.check_negate(op, expr, span, &Type::Simple(Simple::I32))
+            }
+            ExprKind::BoolNegate(op, expr) => {
+                self.check_negate(op, expr, span, &Type::Simple(Simple::Bool))
             }
             ExprKind::Ref(_, expr) => {
                 if expr.node.is_r_value() {

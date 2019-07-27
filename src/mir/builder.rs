@@ -404,7 +404,7 @@ impl<'src> MirBuilder<'src> {
                 };
                 Expression::Copy(self.assign(address, expr, block))
             }
-            ExprKind::Negate(op, expr) => {
+            ExprKind::Negate(op, expr) | ExprKind::BoolNegate(op, expr) => {
                 // TODO: find correct dec size
                 let u_type = Option::from(&op.node).unwrap();
                 let address = self.expr_instr(true, &expr.node, block);
