@@ -435,6 +435,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             }
             ExprKind::NullLit => Ok(None),
             ExprKind::DecLit(_) => Ok(Some(Type::Simple(Simple::I32))),
+            ExprKind::Char(_) => Ok(Some(Type::Simple(Simple::Char))),
             ExprKind::FloatLit(_) => Ok(Some(Type::Simple(Simple::F32))),
             ExprKind::SizeOf(_) => Ok(Some(Type::Simple(Simple::I32))),
             ExprKind::StringLit(_) => Ok(Some(Type::Simple(Simple::String))),
@@ -484,6 +485,8 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
                     } else {
                         Type::Simple(ptr.ty)
                     }))
+                } else if let Type::Simple(Simple::String) = ty {
+                    Ok(Some(Type::Simple(Simple::Char)))
                 } else {
                     Err(self.error(op.span, span, ResolveErrorType::Deref(NonPtrError(ty))))
                 }
@@ -992,7 +995,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             // but not +, *, ... . So we use the precedence, to determine, if
             // this is an arithmetic expression
             if prec == Precedence::Sum || prec == Precedence::Product {
-                return (first.is_num() && second.is_num(), first);
+                let allowed =
+                    (first.is_num() && second.is_num()) || (first.is_char() && second.is_char());
+                return (allowed, first);
             }
             return (true, first);
         }

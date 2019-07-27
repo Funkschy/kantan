@@ -200,6 +200,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     unsafe fn convert(&mut self, ty: &Type<'src>) -> LLVMTypeRef {
         match ty {
             Type::Simple(ty) => match ty {
+                Simple::Char => LLVMInt8TypeInContext(self.context),
                 Simple::I32 => LLVMInt32TypeInContext(self.context),
                 Simple::F32 => LLVMFloatTypeInContext(self.context),
                 Simple::Bool => LLVMInt1TypeInContext(self.context),
@@ -313,6 +314,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
     unsafe fn add_global_string(&mut self, label: &Label, string: &str) {
         // TODO: find better solution
         let string = string.replace("\\n", "\n");
+        let string = string.replace("\\0", "\0");
 
         let length = string.len() as u32;
         let name = self.global_string_name();
@@ -441,6 +443,12 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             Address::Const(c) => {
                 if c.ty.is_int() {
                     LLVMConstInt(self.convert(&c.ty), c.literal.parse().unwrap(), true as i32)
+                } else if c.ty.is_char() {
+                    LLVMConstInt(
+                        self.convert(&c.ty),
+                        c.literal.chars().next().unwrap() as u64,
+                        false as i32,
+                    )
                 } else {
                     LLVMConstRealOfString(self.convert(&c.ty), self.cstring(c.literal))
                 }
@@ -518,7 +526,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 let right = self.translate_mir_address(r);
 
                 match ty {
-                    BinaryType::I16(ty) | BinaryType::I32(ty) => {
+                    BinaryType::Char(ty) | BinaryType::I16(ty) | BinaryType::I32(ty) => {
                         self.int_binary(left, right, *ty, name)
                     }
                     BinaryType::F32(ty) => self.float_binary(left, right, *ty, name),

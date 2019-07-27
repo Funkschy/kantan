@@ -341,6 +341,7 @@ impl<'src> MirBuilder<'src> {
                     let bin_type = Option::from(&op.node)
                         .map(match lty {
                             Type::Simple(Simple::I32) => BinaryType::I32,
+                            Type::Simple(Simple::Char) => BinaryType::Char,
                             Type::Simple(Simple::F32) => BinaryType::F32,
                             // TODO: is this even reachable? Maybe internal error
                             _ => unimplemented!(),
@@ -561,6 +562,7 @@ impl<'src> MirBuilder<'src> {
         Some(match expr.kind() {
             ExprKind::NullLit => Address::Null(expr.clone_ty().unwrap()),
             ExprKind::DecLit(lit) => Address::new_const(Type::Simple(Simple::I32), lit),
+            ExprKind::Char(c) => Address::new_const(Type::Simple(Simple::Char), c),
             ExprKind::FloatLit(lit) => Address::new_const(Type::Simple(Simple::F32), lit),
             ExprKind::StringLit(lit) => Address::new_global_ref(self.string_lit(lit)),
             ExprKind::Ident(ident) => self.lookup_ident(ident),

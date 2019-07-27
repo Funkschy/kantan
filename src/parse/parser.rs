@@ -56,7 +56,10 @@ where
                 top_lvl_decls.push(TopLvl::Error(err));
                 self.err_count += 1;
                 while !(self.peek_eq(&Token::Def) || self.peek_eq(&Token::Type) || self.at_end()) {
-                    self.advance().unwrap();
+                    if let Err(err) = self.advance() {
+                        // TODO
+                        panic!("ERROR: {:?}", err);
+                    }
                 }
             }
         }
@@ -660,6 +663,7 @@ where
             Token::DecLit(lit) => ok_spanned(ExprKind::DecLit(lit)),
             Token::FloatLit(lit) => ok_spanned(ExprKind::FloatLit(lit)),
             Token::StringLit(lit) => ok_spanned(ExprKind::StringLit(lit)),
+            Token::Char(c) => ok_spanned(ExprKind::Char(c)),
             Token::Sizeof => {
                 // TODO: support sizeof expr
                 let ty = self.consume_type()?;

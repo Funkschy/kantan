@@ -224,6 +224,7 @@ impl<'a> From<&Token<'a>> for Option<UnaryType> {
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum BinaryType {
     Ptr(PtrBinaryType),
+    Char(NumBinaryType),
     I16(NumBinaryType),
     I32(NumBinaryType),
     F32(NumBinaryType),
@@ -234,7 +235,7 @@ impl fmt::Display for BinaryType {
         use BinaryType::*;
 
         let s = match self {
-            I16(bt) | I32(bt) | F32(bt) => bt.to_string(),
+            Char(bt) | I16(bt) | I32(bt) | F32(bt) => bt.to_string(),
             Ptr(bt) => bt.to_string(),
         };
 

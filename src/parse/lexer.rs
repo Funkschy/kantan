@@ -164,6 +164,7 @@ impl<'src> Lexer<'src> {
         Some(self.spanned(
             start,
             match slice {
+                "char" => Token::TypeIdent(Simple::Char),
                 "i32" => Token::TypeIdent(Simple::I32),
                 "f32" => Token::TypeIdent(Simple::F32),
                 "string" => Token::TypeIdent(Simple::String),
@@ -278,6 +279,26 @@ impl<'src> Lexer<'src> {
             }
             ',' => consume_single!(self, start, Token::Comma),
             '"' => self.scan_string(),
+            '\'' => {
+                self.advance();
+                let c = self.slice(start + 1, start + 2);
+                self.advance();
+                let mut end = start + 2;
+
+                if let Some(InputPos { value, .. }) = self.current {
+                    if value == '\'' {
+                        self.advance();
+                        return Some(Ok(Spanned::new(start + 1, start + 1, Token::Char(c))));
+                    }
+
+                    end = start + 1;
+                }
+                Err(Spanned::new(
+                    end,
+                    end,
+                    ParseError::LexError(LexError::with_cause("char must have a length of one")),
+                ))
+            }
             c if c.is_alphabetic() => self.scan_ident(),
             c if c.is_digit(10) => self.scan_num(),
             _ => {

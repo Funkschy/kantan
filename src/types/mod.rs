@@ -52,6 +52,14 @@ impl<'src> Type<'src> {
     }
 
     #[inline]
+    pub fn is_char(&self) -> bool {
+        match self {
+            Type::Simple(Simple::Char) => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
     pub fn is_float(&self) -> bool {
         match self {
             Type::Simple(Simple::F32) => true,
@@ -78,7 +86,7 @@ impl<'src> Type<'src> {
         if self.is_ptr() {
             true
         } else if let Type::Simple(s) = self {
-            s.arithmetic()
+            s.arithmetic() || self.is_char()
         } else {
             false
         }
@@ -87,6 +95,7 @@ impl<'src> Type<'src> {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Simple<'src> {
+    Char,
     I32,
     F32,
     Bool,
@@ -99,7 +108,7 @@ pub enum Simple<'src> {
 impl<'src> Simple<'src> {
     pub fn arithmetic(&self) -> bool {
         match self {
-            Simple::I32 | Simple::F32 => true,
+            Simple::I32 | Simple::F32 | Simple::Char => true,
             _ => false,
         }
     }
@@ -108,6 +117,7 @@ impl<'src> Simple<'src> {
 impl<'src> fmt::Display for Simple<'src> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
+            Simple::Char => "char",
             Simple::I32 => "i32",
             Simple::F32 => "f32",
             Simple::String => "string",

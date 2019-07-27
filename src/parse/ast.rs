@@ -165,6 +165,7 @@ pub enum ExprKind<'src> {
     DecLit(&'src str),
     FloatLit(&'src str),
     StringLit(&'src str),
+    Char(&'src str),
     Ref(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Deref(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
     Negate(Spanned<Token<'src>>, Box<Spanned<Expr<'src>>>),
@@ -213,7 +214,9 @@ impl<'src> Expr<'src> {
 
         match self.kind() {
             Error(_) => panic!(),
-            NullLit | SizeOf(_) | DecLit(_) | FloatLit(_) | StringLit(_) | Ident(_) => vec![],
+            NullLit | SizeOf(_) | DecLit(_) | FloatLit(_) | StringLit(_) | Ident(_) | Char(_) => {
+                vec![]
+            }
             New(expr) | Negate(_, expr) | Deref(_, expr) | Ref(_, expr) => vec![expr],
             Binary(l, _, r) => vec![l, r],
             BoolBinary(l, _, r) => vec![l, r],
@@ -259,7 +262,7 @@ impl<'src> fmt::Display for Expr<'src> {
 
         match self.kind() {
             Error(err) => write!(f, "{}", err),
-            DecLit(lit) | FloatLit(lit) | StringLit(lit) => write!(f, "{}", lit),
+            DecLit(lit) | FloatLit(lit) | StringLit(lit) | Char(lit) => write!(f, "{}", lit),
             NullLit => write!(f, "null"),
             SizeOf(ty) => write!(f, "sizeof({})", ty),
             New(expr) => write!(f, "new {}", expr.node),
