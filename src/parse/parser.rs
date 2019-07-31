@@ -552,11 +552,13 @@ where
             | Token::SmallerEquals
             | Token::GreaterEquals
             | Token::AmpersandAmpersand
+            | Token::PipePipe
             | Token::Smaller
             | Token::Greater
             | Token::Plus
             | Token::Minus
             | Token::Star
+            | Token::Percent
             | Token::Slash => {
                 let right = self.parse_expression(tok.precedence(), no_struct)?;
                 let right_span = right.span;
@@ -568,6 +570,7 @@ where
                     | Token::BangEquals
                     | Token::GreaterEquals
                     | Token::AmpersandAmpersand
+                    | Token::PipePipe
                     | Token::Greater
                     | Token::SmallerEquals
                     | Token::Smaller => {

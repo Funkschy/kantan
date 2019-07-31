@@ -9,7 +9,7 @@ use super::{
     FunctionHead,
 };
 use crate::{
-    parse::ast::*,
+    parse::{ast::*, token::Token},
     resolve::{modmap::ModMap, symbol::SymbolTable, ResolveResult},
     types::*,
 };
@@ -329,7 +329,15 @@ impl<'src> MirBuilder<'src> {
                 let right = self.expr_instr(true, &r.node, block);
 
                 // TODO: find correct dec size
-                if lty.is_ptr() || rty.is_ptr() {
+                if lty.is_ptr() && rty.is_ptr() {
+                    let bin_type = BinaryType::Ptr(match op.node {
+                        Token::Plus => PtrBinaryType::AddPointers,
+                        Token::Minus => PtrBinaryType::SubPointers,
+                        _ => unimplemented!("Should be unreachable, but probably isn't"),
+                    });
+
+                    Expression::Binary(left, bin_type, right)
+                } else if lty.is_ptr() || rty.is_ptr() {
                     let bin_type = Option::from(&op.node).map(BinaryType::Ptr).unwrap();
                     // the pointer has to be on the left side of the Expression
                     if lty.is_ptr() {

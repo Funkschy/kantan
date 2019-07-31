@@ -773,7 +773,7 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
             return Ok(ty.clone());
         } else if let Some(expected) = expected {
             // the ty is null, but since a pointer is expected, we can "cast" it
-            if let Type::Pointer(_) = expected {
+            if expected.is_ptr() {
                 return Ok(expected.clone());
             }
         }
@@ -998,9 +998,9 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         if first == second {
             let prec = op.precedence();
             // Hacky solution, because we want to allow ==, <, !=, ... for pointers,
-            // but not +, *, ... . So we use the precedence, to determine, if
+            // but not /, *, ... . So we use the precedence, to determine, if
             // this is an arithmetic expression
-            if prec == Precedence::Sum || prec == Precedence::Product {
+            if prec == Precedence::Product {
                 let allowed =
                     (first.is_num() && second.is_num()) || (first.is_char() && second.is_char());
                 return (allowed, first);
@@ -1037,6 +1037,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         let (allowed, ty) = Self::allowed_binary(op, first, second);
 
         if allowed {
+            if first.is_ptr() && second.is_ptr() {
+                // TODO: this should be i64 on 64 bit systems...
+                return Ok(Type::Simple(Simple::I32));
+            }
+
             Ok(ty.clone())
         } else {
             Err(self.error(

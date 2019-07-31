@@ -530,12 +530,41 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                         self.int_binary(left, right, *ty, name)
                     }
                     BinaryType::F32(ty) => self.float_binary(left, right, *ty, name),
+                    BinaryType::Ptr(PtrBinaryType::AddPointers)
+                    | BinaryType::Ptr(PtrBinaryType::SubPointers) => {
+                        let l_int = self.cstring("lint");
+                        let r_int = self.cstring("rint");
+
+                        let ty = if let BinaryType::Ptr(PtrBinaryType::AddPointers) = ty {
+                            NumBinaryType::Add
+                        } else {
+                            NumBinaryType::Sub
+                        };
+
+                        self.int_binary(
+                            LLVMBuildPtrToInt(
+                                self.builder,
+                                left,
+                                LLVMInt32TypeInContext(self.context),
+                                l_int,
+                            ),
+                            LLVMBuildPtrToInt(
+                                self.builder,
+                                right,
+                                LLVMInt32TypeInContext(self.context),
+                                r_int,
+                            ),
+                            ty,
+                            name,
+                        )
+                    }
                     BinaryType::Ptr(ty) => {
                         let mut right = match ty {
                             PtrBinaryType::Add => vec![right],
                             PtrBinaryType::Sub => {
                                 vec![LLVMBuildNeg(self.builder, right, self.cstring("offset"))]
                             }
+                            _ => unreachable!(),
                         };
 
                         LLVMBuildInBoundsGEP(
@@ -676,6 +705,9 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             NumBinaryType::Sub => LLVMBuildSub(self.builder, left, right, n),
             NumBinaryType::Mul => LLVMBuildMul(self.builder, left, right, n),
             NumBinaryType::And => LLVMBuildAnd(self.builder, left, right, n),
+            NumBinaryType::Or => LLVMBuildOr(self.builder, left, right, n),
+            // TODO: not actually modulo, but remainder
+            NumBinaryType::Mod => LLVMBuildSRem(self.builder, left, right, n),
             // TODO: signed vs unsigned
             NumBinaryType::Div => LLVMBuildSDiv(self.builder, left, right, n),
             _ => {

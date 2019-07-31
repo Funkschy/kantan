@@ -244,9 +244,11 @@ impl<'src> Lexer<'src> {
             '<' => consume_double!(self, start, '=', Token::Smaller, Token::SmallerEquals),
             '>' => consume_double!(self, start, '=', Token::Greater, Token::GreaterEquals),
             '&' => consume_double!(self, start, Token::Ampersand, Token::AmpersandAmpersand),
+            '|' => consume_double!(self, start, Token::Pipe, Token::PipePipe),
             '+' => consume_single!(self, start, Token::Plus),
             '-' => consume_single!(self, start, Token::Minus),
             '*' => consume_single!(self, start, Token::Star),
+            '%' => consume_single!(self, start, Token::Percent),
             '/' => {
                 if let Some((_, '/')) = self.chars.peek() {
                     self.read_while(|c| c != '\n');

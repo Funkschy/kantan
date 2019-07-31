@@ -29,52 +29,37 @@ pub enum Token<'src> {
     As,
 
     // Operators
-    Bang,
-    // !
-    Equals,
-    // =
-    Plus,
-    // +
-    Minus,
-    // -
-    Star,
-    // *
-    Slash, // /
+    Bang,    // !
+    Equals,  // =
+    Plus,    // +
+    Minus,   // -
+    Star,    // *
+    Slash,   // /
+    Percent, // %
 
-    Smaller,
-    // <
-    Greater,
-    // >
+    Smaller,   // <
+    Greater,   // >
     Ampersand, // &
+    Pipe,      // |
 
-    TripleDot,
-    // ...
-    Colon,
-    // :
-    Semi,
-    // ;
-    Dot,
-    // .
-    Comma, // ,
+    TripleDot, // ...
+    Colon,     // :
+    Semi,      // ;
+    Dot,       // .
+    Comma,     // ,
 
-    LParen,
-    // (
-    RParen,
-    // )
-    LBrace,
-    // {
+    LParen, // (
+    RParen, // )
+    LBrace, // {
     RBrace, // }
 
     // double Operators
-    EqualsEquals,
-    // ==
-    BangEquals,
-    // !=
-    SmallerEquals,
-    // <=
-    GreaterEquals,
-    // >=
+    EqualsEquals,       // ==
+    BangEquals,         // !=
+    SmallerEquals,      // <=
+    GreaterEquals,      // >=
     AmpersandAmpersand, // &&
+    PipePipe,           // ||
 }
 
 #[repr(u8)]
@@ -95,13 +80,13 @@ impl<'src> Token<'src> {
     pub fn precedence(&self) -> Precedence {
         match self {
             Token::Equals => Precedence::Assign,
-            Token::AmpersandAmpersand => Precedence::And,
+            Token::AmpersandAmpersand | Token::PipePipe => Precedence::And,
             Token::EqualsEquals | Token::BangEquals => Precedence::Equality,
             Token::Greater | Token::GreaterEquals | Token::Smaller | Token::SmallerEquals => {
                 Precedence::Comparison
             }
             Token::Plus | Token::Minus => Precedence::Sum,
-            Token::Star | Token::Slash | Token::As => Precedence::Product,
+            Token::Star | Token::Slash | Token::Percent | Token::As => Precedence::Product,
             Token::LParen | Token::Dot | Token::LBrace => Precedence::Call,
             _ => Precedence::None,
         }
@@ -140,10 +125,12 @@ impl<'src> fmt::Display for Token<'src> {
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
             Token::Slash => write!(f, "/"),
+            Token::Percent => write!(f, "%"),
 
             Token::Smaller => write!(f, "<"),
             Token::Greater => write!(f, ">"),
             Token::Ampersand => write!(f, "&"),
+            Token::Pipe => write!(f, "|"),
 
             Token::TripleDot => write!(f, "..."),
             Token::Colon => write!(f, ":"),
@@ -162,6 +149,7 @@ impl<'src> fmt::Display for Token<'src> {
             Token::SmallerEquals => write!(f, "<="),
             Token::GreaterEquals => write!(f, ">="),
             Token::AmpersandAmpersand => write!(f, "&&"),
+            Token::PipePipe => write!(f, "||"),
         }
     }
 }

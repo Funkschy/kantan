@@ -247,7 +247,9 @@ impl fmt::Display for BinaryType {
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum PtrBinaryType {
     Add,
+    AddPointers,
     Sub,
+    SubPointers,
 }
 
 impl fmt::Display for PtrBinaryType {
@@ -256,7 +258,9 @@ impl fmt::Display for PtrBinaryType {
 
         let s = match self {
             Add => "+",
+            AddPointers => "+",
             Sub => "-",
+            SubPointers => "-",
         };
 
         write!(f, "{}", s)
@@ -281,7 +285,9 @@ pub enum NumBinaryType {
     Sub,
     Mul,
     Div,
+    Mod,
     And,
+    Or,
     Eq,
     Neq,
     Smaller,
@@ -299,7 +305,9 @@ impl<'a> From<&Token<'a>> for Option<NumBinaryType> {
             Token::Minus => Some(Sub),
             Token::Star => Some(Mul),
             Token::Slash => Some(Div),
+            Token::Percent => Some(Mod),
             Token::AmpersandAmpersand => Some(And),
+            Token::PipePipe => Some(Or),
             Token::EqualsEquals => Some(Eq),
             Token::BangEquals => Some(Neq),
             Token::Smaller => Some(Smaller),
@@ -320,7 +328,9 @@ impl fmt::Display for NumBinaryType {
             Sub => "-",
             Mul => "*",
             Div => "/",
+            Mod => "%",
             And => "&&",
+            Or => "||",
             Eq => "==",
             Neq => "!=",
             Smaller => "<",
