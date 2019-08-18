@@ -459,7 +459,7 @@ where
                             node: Token::Ident(_),
                             ..
                         } => {
-                            let expr = self.expression(true)?;
+                            let expr = self.parse_expression(Precedence::Assign, true)?;
                             let ident = self.user_ident(&expr)?;
 
                             Ok(Spanned::from_span(
