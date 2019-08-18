@@ -211,12 +211,13 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 Simple::Varargs => panic!("Varargs is not a real type"),
             },
             Type::Pointer(ptr) => {
-                if ptr.ty == Simple::Void {
+                let mut ty = if ptr.ty == Simple::Void {
                     // LLVM doesn't have a void pointer, so we use *i8 instead
-                    return LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE);
-                }
+                    LLVMInt8TypeInContext(self.context)
+                } else {
+                    self.convert(&Type::Simple(ptr.ty.clone()))
+                };
 
-                let mut ty = self.convert(&Type::Simple(ptr.ty.clone()));
                 for _ in 0..ptr.number {
                     ty = LLVMPointerType(ty, ADDRESS_SPACE);
                 }
