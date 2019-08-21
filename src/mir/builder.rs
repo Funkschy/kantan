@@ -62,7 +62,7 @@ impl<'src> MirBuilder<'src> {
         } else {
             let mut block = InstructionBlock::default();
             self.fill_params(&mut block, &head.params);
-            block = self.fill_block(&body.0, block);
+            block = self.fill_block(&body.0, main_func, block);
 
             // the main function has to return an int
             let ret_type = if main_func {
@@ -132,20 +132,25 @@ impl<'src> MirBuilder<'src> {
         self.assign(address, Expression::GetParam(index), block);
     }
 
-    fn create_block(&mut self, statements: &[Stmt<'src>]) -> InstructionBlock<'src> {
+    fn create_block(
+        &mut self,
+        main_func: bool,
+        statements: &[Stmt<'src>],
+    ) -> InstructionBlock<'src> {
         let block = InstructionBlock::default();
-        self.fill_block(statements, block)
+        self.fill_block(statements, main_func, block)
     }
 
     fn fill_block(
         &mut self,
         statements: &[Stmt<'src>],
+        main_func: bool,
         mut block: InstructionBlock<'src>,
     ) -> InstructionBlock<'src> {
         self.names.scope_enter();
 
         for s in statements {
-            self.stmt(s, &mut block);
+            self.stmt(s, main_func, &mut block);
         }
 
         self.names.scope_exit();
@@ -167,7 +172,7 @@ impl<'src> MirBuilder<'src> {
         self.assign(address, value, block)
     }
 
-    fn stmt(&mut self, stmt: &Stmt<'src>, block: &mut InstructionBlock<'src>) {
+    fn stmt(&mut self, stmt: &Stmt<'src>, main_func: bool, block: &mut InstructionBlock<'src>) {
         match stmt {
             Stmt::Expr(e) => {
                 self.expr_instr(true, &e.node, block);
@@ -190,8 +195,8 @@ impl<'src> MirBuilder<'src> {
                 let ty = ty.borrow().clone().unwrap().node;
                 self.var_decl(name.node, ty, expr, block);
             }
-            Stmt::Return(Some(e)) => self.return_stmt(Some(&e.node), block),
-            Stmt::Return(None) => self.return_stmt(None, block),
+            Stmt::Return(Some(e)) => self.return_stmt(Some(&e.node), main_func, block),
+            Stmt::Return(None) => self.return_stmt(None, main_func, block),
             Stmt::Delete(expr) => {
                 let address = self.expr_instr(true, &expr.node, block);
                 let address = self.temp_assign(Expression::Copy(address), block);
@@ -201,7 +206,7 @@ impl<'src> MirBuilder<'src> {
                 let WhileStmt { condition, body } = while_stmt.as_ref();
 
                 let end_label = self.label();
-                self.while_loop(&condition.node, body, block, end_label.clone());
+                self.while_loop(&condition.node, body, main_func, block, end_label.clone());
                 block.push(Instruction::Label(end_label));
             }
             Stmt::If(if_stmt) => {
@@ -216,6 +221,7 @@ impl<'src> MirBuilder<'src> {
                     &condition.node,
                     then_block,
                     else_branch,
+                    main_func,
                     block,
                     end_label.clone(),
                 );
@@ -224,7 +230,12 @@ impl<'src> MirBuilder<'src> {
         };
     }
 
-    fn return_stmt(&mut self, e: Option<&Expr<'src>>, block: &mut InstructionBlock<'src>) {
+    fn return_stmt(
+        &mut self,
+        e: Option<&Expr<'src>>,
+        main_func: bool,
+        block: &mut InstructionBlock<'src>,
+    ) {
         let ret = if let Some(node) = e {
             // If the return value is a struct initilizer, we need to first declare it
             // as a variable, because the llvm codegenerator expects that the target of
@@ -232,7 +243,14 @@ impl<'src> MirBuilder<'src> {
             let address = self.expr_instr(true, node, block);
             Instruction::Return(Some(address))
         } else {
-            Instruction::Return(None)
+            if main_func {
+                Instruction::Return(Some(Address::Const(Constant::new(
+                    Type::Simple(Simple::I32),
+                    "0",
+                ))))
+            } else {
+                Instruction::Return(None)
+            }
         };
         block.push(ret);
     }
@@ -241,6 +259,7 @@ impl<'src> MirBuilder<'src> {
         &mut self,
         condition: &Expr<'src>,
         body: &Block<'src>,
+        main_func: bool,
         block: &mut InstructionBlock<'src>,
         end_label: Label,
     ) {
@@ -248,7 +267,7 @@ impl<'src> MirBuilder<'src> {
         block.push(condition_label.clone().into());
 
         let condition = self.expr_instr(true, condition, block);
-        let mut body = self.create_block(&body.0);
+        let mut body = self.create_block(main_func, &body.0);
         let body_label = self.label();
 
         let instr = Instruction::JmpIf(condition, body_label.clone(), end_label);
@@ -263,12 +282,13 @@ impl<'src> MirBuilder<'src> {
         condition: &Expr<'src>,
         then_block: &Block<'src>,
         else_branch: &Option<Box<Else<'src>>>,
+        main_func: bool,
         block: &mut InstructionBlock<'src>,
         end_label: Label,
     ) {
         let condition = self.expr_instr(true, condition, block);
 
-        let mut then_block = self.create_block(&then_block.0);
+        let mut then_block = self.create_block(main_func, &then_block.0);
         let then_label = self.label();
 
         let else_label = if else_branch.is_some() {
@@ -299,6 +319,7 @@ impl<'src> MirBuilder<'src> {
                             &condition.node,
                             &then_block,
                             &else_branch,
+                            main_func,
                             block,
                             end_label.clone(),
                         );
@@ -307,7 +328,7 @@ impl<'src> MirBuilder<'src> {
                     }
                 }
                 Else::Block(b) => {
-                    let mut b = self.create_block(&b.0);
+                    let mut b = self.create_block(main_func, &b.0);
                     block.append(&mut b);
                 }
             }
