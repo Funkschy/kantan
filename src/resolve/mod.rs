@@ -658,9 +658,11 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         if !varargs && func_type.params.len() != args.0.len() {
             // TODO: emit custom error
             panic!(
-                "Expected {} arguments, but got {}!",
+                "Expected {} arguments, but got {} for {} in {}!",
                 func_type.params.len(),
-                args.0.len()
+                args.0.len(),
+                func_type.name,
+                self.current_source().name
             );
         }
 
