@@ -59,16 +59,14 @@ pub fn emit_to_file<'a, W: Write>(mir: &Mir, args: &mut CodeGenArgs<'a, W>, dump
     let vendor = VendorType::PC;
     let os = OsType::GnuLinux;
 
-    if dump {
-        if let Err(msg) = ctx.verify_module() {
-            unsafe {
-                let cstr = CString::from_raw(msg);
-                let msg = cstr.to_str().unwrap();
-                print_error(msg, args.err_writer).unwrap();
-                ctx.dump_module();
-            }
-            panic!("Error while verifying");
+    if let Err(msg) = ctx.verify_module() {
+        unsafe {
+            let cstr = CString::from_raw(msg);
+            let msg = cstr.to_str().unwrap();
+            print_error(msg, args.err_writer).unwrap();
+            ctx.dump_module();
         }
+        panic!("Error while verifying");
     }
 
     let module = if args.opt_lvl > CodeGenOptLevel::None {
