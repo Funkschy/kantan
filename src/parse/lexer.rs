@@ -287,7 +287,11 @@ impl<'src> Lexer<'src> {
 
                 let result = match c.len() {
                     1 => Ok(Spanned::new(start + 1, start + 1, Token::Char(&c[..]))),
+                    // TODO: find real solution
                     2 if c == "\\0" => Ok(Spanned::new(start + 1, start + 1, Token::Char("\0"))),
+                    2 if c == "\\n" => Ok(Spanned::new(start + 1, start + 1, Token::Char("\n"))),
+                    2 if c == "\\r" => Ok(Spanned::new(start + 1, start + 1, Token::Char("\r"))),
+                    2 if c == "\\t" => Ok(Spanned::new(start + 1, start + 1, Token::Char("\t"))),
                     _ => Err(Spanned::new(
                         start,
                         self.pos(),
