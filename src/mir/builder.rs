@@ -55,7 +55,7 @@ impl<'src> MirBuilder<'src> {
         // reset scopes
         self.names = NameTable::new();
 
-        let main_func = head.name == "main";
+        let main_func = head.name.as_str() == "main";
 
         let (ret_type, block_map) = if head.is_extern {
             (head.ret_type, BlockMap::default())
@@ -365,20 +365,13 @@ impl<'src> MirBuilder<'src> {
                         Expression::Binary(right, bin_type, left)
                     }
                 } else {
-                    let bin_type = Option::from(&op.node)
-                        .map(match lty {
-                            Type::Simple(Simple::I32) => BinaryType::I32,
-                            Type::Simple(Simple::Char) => BinaryType::Char,
-                            Type::Simple(Simple::F32) => BinaryType::F32,
-                            // TODO: is this even reachable? Maybe internal error
-                            _ => unimplemented!(),
-                        })
-                        .unwrap();
+                    let bin_type = BinaryType::from_tok_and_type(&op.node, &lty);
                     Expression::Binary(left, bin_type, right)
                 }
             }
             ExprKind::BoolBinary(l, op, r) => {
-                let bin_type = Option::from(&op.node).map(BinaryType::I32).unwrap();
+                let bin_type =
+                    BinaryType::from_tok_and_type(&op.node, (&l.node.ty()).as_ref().unwrap());
 
                 let left = self.expr_instr(true, &l.node, block);
                 let right = self.expr_instr(true, &r.node, block);

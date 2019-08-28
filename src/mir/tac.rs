@@ -225,10 +225,19 @@ impl<'a> From<&Token<'a>> for Option<UnaryType> {
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum BinaryType {
     Ptr(PtrBinaryType),
-    Char(NumBinaryType),
-    I16(NumBinaryType),
-    I32(NumBinaryType),
+    Int(NumBinaryType),
     F32(NumBinaryType),
+}
+
+impl BinaryType {
+    pub fn from_tok_and_type(tok: &Token, ty: &Type) -> BinaryType {
+        Option::from(tok)
+            .map(match ty {
+                Type::Simple(Simple::F32) => BinaryType::F32,
+                _ => BinaryType::Int, // TODO: this is probably wrong...
+            })
+            .unwrap()
+    }
 }
 
 impl fmt::Display for BinaryType {
@@ -236,7 +245,7 @@ impl fmt::Display for BinaryType {
         use BinaryType::*;
 
         let s = match self {
-            Char(bt) | I16(bt) | I32(bt) | F32(bt) => bt.to_string(),
+            Int(bt) | F32(bt) => bt.to_string(),
             Ptr(bt) => bt.to_string(),
         };
 

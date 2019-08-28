@@ -527,9 +527,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 let right = self.translate_mir_address(r);
 
                 match ty {
-                    BinaryType::Char(ty) | BinaryType::I16(ty) | BinaryType::I32(ty) => {
-                        self.int_binary(left, right, *ty, name)
-                    }
+                    BinaryType::Int(ty) => self.int_binary(left, right, *ty, name),
                     BinaryType::F32(ty) => self.float_binary(left, right, *ty, name),
                     BinaryType::Ptr(PtrBinaryType::AddPointers)
                     | BinaryType::Ptr(PtrBinaryType::SubPointers) => {

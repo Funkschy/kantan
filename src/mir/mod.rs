@@ -143,7 +143,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x".to_string()),
-                    BinaryType::I32(NumBinaryType::Mul),
+                    BinaryType::Int(NumBinaryType::Mul),
                     Address::Name("y".to_string()),
                 )),
             ),
@@ -151,7 +151,7 @@ mod tests {
                 Address::Name("z".to_string()),
                 Box::new(Expression::Binary(
                     Address::Temp(TempVar::from(0)),
-                    BinaryType::I32(NumBinaryType::Add),
+                    BinaryType::Int(NumBinaryType::Add),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "2")),
                 )),
             ),
@@ -226,7 +226,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x".to_string()),
-                    BinaryType::I32(NumBinaryType::Eq),
+                    BinaryType::Int(NumBinaryType::Eq),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 )),
             ),
@@ -318,7 +318,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x".to_string()),
-                    BinaryType::I32(NumBinaryType::Eq),
+                    BinaryType::Int(NumBinaryType::Eq),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "0")),
                 )),
             ),
@@ -427,7 +427,7 @@ mod tests {
                 Address::Temp(TempVar::from(0)),
                 Box::new(Expression::Binary(
                     Address::Name("x".to_string()),
-                    BinaryType::I32(NumBinaryType::Smaller),
+                    BinaryType::Int(NumBinaryType::Smaller),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "10")),
                 )),
             ),
@@ -445,7 +445,7 @@ mod tests {
                 Address::Name("x".to_string()),
                 Box::new(Expression::Binary(
                     Address::Name("x".to_string()),
-                    BinaryType::I32(NumBinaryType::Add),
+                    BinaryType::Int(NumBinaryType::Add),
                     Address::Const(Constant::new(Type::Simple(Simple::I32), "1")),
                 )),
             ),
