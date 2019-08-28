@@ -286,8 +286,9 @@ impl<'src> Lexer<'src> {
                 let c = self.read_while(|c| c != '\'');
 
                 let result = match c.len() {
-                    1 => Ok(Spanned::new(start + 1, start + 1, Token::Char(&c[..]))),
+                    1 if c != "\\" => Ok(Spanned::new(start + 1, start + 1, Token::Char(&c[..]))),
                     // TODO: find real solution
+                    2 if c == "\\\\" => Ok(Spanned::new(start + 1, start + 1, Token::Char("\\"))),
                     2 if c == "\\0" => Ok(Spanned::new(start + 1, start + 1, Token::Char("\0"))),
                     2 if c == "\\n" => Ok(Spanned::new(start + 1, start + 1, Token::Char("\n"))),
                     2 if c == "\\r" => Ok(Spanned::new(start + 1, start + 1, Token::Char("\r"))),
@@ -295,9 +296,10 @@ impl<'src> Lexer<'src> {
                     _ => Err(Spanned::new(
                         start,
                         self.pos(),
-                        ParseError::LexError(LexError::with_cause(
-                            "char must have a length of one",
-                        )),
+                        ParseError::LexError(LexError::with_cause(&format!(
+                            "char must have a length of one, but was: '{}'",
+                            c
+                        ))),
                     )),
                 };
 
