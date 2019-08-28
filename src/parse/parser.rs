@@ -313,7 +313,7 @@ where
         let mut left = self.parse_expression(Precedence::Assign, no_struct)?;
         while self.peek_eq(&Token::Equals) {
             let eq = self.consume(Token::Equals)?;
-            let value = Box::new(self.parse_expression(Precedence::Assign, no_struct)?);
+            let value = Box::new(self.expression(no_struct)?);
             left = Spanned::new(
                 left.span.start,
                 value.span.end,
