@@ -242,15 +242,13 @@ impl<'src> MirBuilder<'src> {
             // the struct memcpy was already alloca'd
             let address = self.expr_instr(true, node, block);
             Instruction::Return(Some(address))
+        } else if main_func {
+            Instruction::Return(Some(Address::Const(Constant::new(
+                Type::Simple(Simple::I32),
+                "0",
+            ))))
         } else {
-            if main_func {
-                Instruction::Return(Some(Address::Const(Constant::new(
-                    Type::Simple(Simple::I32),
-                    "0",
-                ))))
-            } else {
-                Instruction::Return(None)
-            }
+            Instruction::Return(None)
         };
         block.push(ret);
     }
