@@ -654,12 +654,23 @@ impl<'src, 'ast> Resolver<'src, 'ast> {
         let varargs = func_type.varargs;
         let no_vararg_passed = func_type.params.len() == args.0.len() + 1;
 
-        // don't check number of arguments for variadic functions
         if !varargs && func_type.params.len() != args.0.len() {
             // TODO: emit custom error
             panic!(
                 "Expected {} arguments, but got {} for {} in {}!",
                 func_type.params.len(),
+                args.0.len(),
+                func_type.name,
+                self.current_source().name
+            );
+        }
+
+        // less args where passed than required
+        if varargs && func_type.num_params_without_varargs() > args.0.len() {
+            // TODO: emit custom error
+            panic!(
+                "First {} arguments are required, but only {} where passed for {} in {}!",
+                func_type.num_params_without_varargs(),
                 args.0.len(),
                 func_type.name,
                 self.current_source().name

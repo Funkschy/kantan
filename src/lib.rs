@@ -70,6 +70,20 @@ pub struct FuncDef<'src> {
     varargs: bool,
 }
 
+impl<'src> FuncDef<'src> {
+    pub fn num_params_without_varargs(&self) -> usize {
+        if self.varargs {
+            if self.params.len() > 0 {
+                return self.params.len() - 1;
+            } else {
+                return 0;
+            }
+        }
+
+        self.params.len()
+    }
+}
+
 impl<'src> Default for FuncDef<'src> {
     fn default() -> Self {
         FuncDef {
