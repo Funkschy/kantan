@@ -136,6 +136,10 @@ where
         self.consume(Token::Import)?;
         let name = self.consume_string()?;
 
+        if self.peek_eq(&Token::Semi) {
+            self.consume(Token::Semi)?;
+        }
+
         Ok(TopLvl::Import { name })
     }
 
@@ -687,7 +691,7 @@ where
                 Ok(expr)
             }
             Token::Minus => {
-                let next = self.expression(no_struct)?;
+                let next = self.parse_expression(Precedence::Unary, no_struct)?;
 
                 Ok(Spanned::new(
                     token.span.start,
