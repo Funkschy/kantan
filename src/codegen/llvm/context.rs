@@ -15,6 +15,7 @@ const ADDRESS_SPACE: u32 = 0;
 
 enum Intrinsic {
     MemCpy = 0,
+    MemSet = 1,
 }
 
 type LLVMFuncDef = (LLVMValueRef, LLVMTypeRef);
@@ -129,7 +130,27 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             memcpy_type,
         );
 
-        self.intrinsics.push(memcpy_func);
+        let mut memset_params = vec![
+            LLVMPointerType(LLVMInt8TypeInContext(self.context), ADDRESS_SPACE),
+            LLVMInt8TypeInContext(self.context),
+            LLVMInt64TypeInContext(self.context),
+            LLVMInt1TypeInContext(self.context),
+        ];
+
+        let memset_type = LLVMFunctionType(
+            LLVMVoidTypeInContext(self.context),
+            memset_params.as_mut_ptr(),
+            memset_params.len() as u32,
+            false as i32,
+        );
+
+        let memset_func = LLVMAddFunction(
+            self.module,
+            self.cstring("llvm.memset.p0i8.i64"),
+            memset_type,
+        );
+
+        self.intrinsics.extend(&[memcpy_func, memset_func]);
     }
 
     unsafe fn add_llvm_struct(&mut self, module: &str, def: &UserTypeDefinition<'src>) {
@@ -384,19 +405,12 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             Instruction::Assignment(a, e) => {
                 let n = a.to_string();
 
-                if let Expression::StructInit(_, values) = e.as_ref() {
-                    let var = self.name_table[&n];
+                if let Expression::StructInit(identifier, values) = e.as_ref() {
+                    let struct_ty = self.get_user_type(identifier);
+                    let new_struct = self.create_struct(struct_ty, values);
 
-                    for (i, value) in values.iter().enumerate() {
-                        let val = self.translate_mir_address(value);
-                        let ptr = LLVMBuildStructGEP(
-                            self.builder,
-                            var,
-                            i as u32,
-                            self.cstring(&format!("{}.{}", n, i)),
-                        );
-                        LLVMBuildStore(self.builder, val, ptr);
-                    }
+                    let var = self.name_table[&n];
+                    self.build_memcpy(var, new_struct, struct_ty);
                     return;
                 }
 
@@ -478,10 +492,8 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         src: LLVMValueRef,
         ty: LLVMTypeRef,
     ) -> LLVMValueRef {
-        let byte_ty = LLVMInt8TypeInContext(self.context);
-        let ptr_ty = LLVMPointerType(byte_ty, ADDRESS_SPACE);
-        let dest = LLVMBuildBitCast(self.builder, dest, ptr_ty, self.cstring("dest"));
-        let src = LLVMBuildBitCast(self.builder, src, ptr_ty, self.cstring("src"));
+        let dest = self.build_i8_ptr_cast(dest, "dest");
+        let src = self.build_i8_ptr_cast(src, "src");
         let size = LLVMSizeOf(ty);
 
         let memcpy = self.get_intrinsic(Intrinsic::MemCpy);
@@ -636,27 +648,58 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
             }
             Expression::StructInit(identifier, values) => {
                 let struct_ty = self.get_user_type(identifier);
-                self.struct_init(struct_ty, values)
+                self.create_struct(struct_ty, values)
             }
         }
     }
 
+    unsafe fn build_i8_ptr_cast(&mut self, value: LLVMValueRef, name: &str) -> LLVMValueRef {
+        let byte_ty = LLVMInt8TypeInContext(self.context);
+        let ptr_ty = LLVMPointerType(byte_ty, ADDRESS_SPACE);
+        LLVMBuildBitCast(self.builder, value, ptr_ty, self.cstring(name))
+    }
+
     unsafe fn struct_init(
         &mut self,
+        struct_val: LLVMValueRef,
         struct_ty: LLVMTypeRef,
         values: &[Address<'src>],
-    ) -> LLVMValueRef {
-        let struct_alloca = LLVMBuildAlloca(self.builder, struct_ty, self.cstring("structtmp"));
+    ) {
+        let memset = self.get_intrinsic(Intrinsic::MemSet);
+        let mut args = vec![
+            self.build_i8_ptr_cast(struct_val, "i8structptr"),
+            LLVMConstInt(LLVMInt8TypeInContext(self.context), 0 as u64, true as i32),
+            LLVMSizeOf(struct_ty),
+            self.llvm_bool(false),
+        ];
+
+        LLVMBuildCall(
+            self.builder,
+            memset,
+            args.as_mut_ptr(),
+            args.len() as u32,
+            self.cstring(""),
+        );
+
         for (i, value) in values.iter().enumerate() {
             let a = self.translate_mir_address(value);
             let ptr = LLVMBuildStructGEP(
                 self.builder,
-                struct_alloca,
+                struct_val,
                 i as u32,
                 self.cstring(&format!("value.{}", i)),
             );
             LLVMBuildStore(self.builder, a, ptr);
         }
+    }
+
+    unsafe fn create_struct(
+        &mut self,
+        struct_ty: LLVMTypeRef,
+        values: &[Address<'src>],
+    ) -> LLVMValueRef {
+        let struct_alloca = LLVMBuildAlloca(self.builder, struct_ty, self.cstring("structtmp"));
+        self.struct_init(struct_alloca, struct_ty, values);
         struct_alloca
     }
 
