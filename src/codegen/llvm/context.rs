@@ -29,6 +29,7 @@ pub struct KantanLLVMContext<'src, 'mir> {
     current_function: Option<LLVMValueRef>,
     globals: HashMap<Label, LLVMValueRef>,
     blocks: HashMap<Label, LLVMBasicBlockRef>,
+    extern_functions: HashMap<&'mir str, LLVMFuncDef>,
     functions: HashMap<&'src str, HashMap<&'mir str, LLVMFuncDef>>,
     user_types: HashMap<&'src str, HashMap<&'src str, LLVMTypeRef>>,
     // TODO: make hashmap to save memory
@@ -47,6 +48,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
 
             let name_table = HashMap::new();
             let functions = HashMap::new();
+            let extern_functions = HashMap::new();
             let globals = HashMap::new();
             let blocks = HashMap::new();
 
@@ -58,6 +60,7 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                 module,
                 name_table,
                 functions,
+                extern_functions,
                 current_function: None,
                 globals,
                 blocks,
@@ -80,7 +83,13 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
                     let func_type = ctx.func_type(function.is_varargs, ret_type, &mut params);
 
                     let f = ctx.llvm_add_func(func_type, &function.name, function.is_extern);
-                    llvm_funcs.insert(function.name.as_ref(), (f, func_type));
+                    let func_def = (f, func_type);
+                    let name = function.name.as_ref();
+                    llvm_funcs.insert(name, func_def);
+
+                    if function.is_extern {
+                        ctx.extern_functions.insert(name, func_def);
+                    }
                 }
 
                 ctx.functions.insert(file, llvm_funcs);
@@ -371,6 +380,13 @@ impl<'src, 'mir> KantanLLVMContext<'src, 'mir> {
         } else {
             n
         };
+
+        // don't declare extern functions multiple times
+        if is_extern {
+            if let Some((prev_def, _)) = self.extern_functions.get(real_name) {
+                return *prev_def;
+            }
+        }
 
         let real_name = self.cstring(real_name);
 

@@ -573,11 +573,7 @@ mod tests {
         let mut lexer = Lexer::new(&source);
 
         let ident = lexer.scan_token().unwrap().unwrap();
-        let expected = Spanned::new(
-            1,
-            source.code.len() - 2,
-            Token::StringLit("こんにちは"),
-        );
+        let expected = Spanned::new(1, source.code.len() - 2, Token::StringLit("こんにちは"));
 
         assert_eq!(expected, ident);
     }
