@@ -58,7 +58,7 @@ where
                 while !(self.peek_eq(&Token::Def) || self.peek_eq(&Token::Type) || self.at_end()) {
                     if let Err(err) = self.advance() {
                         // TODO
-                        panic!("ERROR: {:?}", err);
+                        panic!("ERROR in {}: {:?}", self.source.name, err);
                     }
                 }
             }
