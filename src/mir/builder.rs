@@ -175,7 +175,7 @@ impl<'src> MirBuilder<'src> {
     fn stmt(&mut self, stmt: &Stmt<'src>, main_func: bool, block: &mut InstructionBlock<'src>) {
         match stmt {
             Stmt::Expr(e) => {
-                self.expr_instr(true, &e.node, block);
+                self.expr_instr(false, &e.node, block);
             }
             Stmt::VarDecl(decl) => {
                 let VarDecl {

@@ -21,7 +21,8 @@ impl<'src> fmt::Display for Address<'src> {
         match self {
             Empty => write!(f, "empty"),
             Null(_) => write!(f, "null"),
-            Name(n) | Ref(n) => write!(f, "{}", n),
+            Name(n) => write!(f, "{}", n),
+            Ref(n) => write!(f, "&{}", n),
             Const(c) => write!(f, "{}", c),
             Temp(t) => write!(f, "{}", t),
             Global(l) => write!(f, "{}", l),
