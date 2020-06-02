@@ -1,8 +1,8 @@
 # Kantan (簡単)
 
-Official git repository of the Kantan programming Language.
+This compiler is deprecated in favor of the [self-hosted](https://github.com/Funkschy/kantan-lang) one.
 
-I'm currently working on a Kantan compiler written in Kantan, therefore 
+I'm only working on the self-hosted Kantan compiler, therefore 
 this repository will probably not receive a lot of further updates.
 
 ## Elevator pitch
